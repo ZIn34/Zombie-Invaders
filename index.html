@@ -2621,8 +2621,8 @@ function drawZombies(){
         // so the zombie never changes size as the walk cycle plays
         dhA = z.w*1.62; dwA = z.w*1.55; topY = -dhA;
       }
-      if(explore && explore.endless && z.face!=null){
-        // Open World: rotate the whole zombie so it crawls toward you from any direction
+      if(explore && z.face!=null){
+        // Open World & Mission 3: rotate the whole zombie so it crawls toward you from any direction
         const ccy=feetY+hop-dhA/2;
         ctx.save(); ctx.translate(cx, ccy); ctx.rotate(z.face - Math.PI/2);
         ctx.drawImage(wimg, -dwA/2, -dhA/2, dwA, dhA);
@@ -2632,8 +2632,6 @@ function drawZombies(){
         ctx.save();
         ctx.translate(cx, feetY+hop);
         ctx.rotate(tilt);
-        // Mission-3 explore zombies turn to point toward the player (left/right)
-        if(explore && z.face!=null && Math.cos(z.face)<0) ctx.scale(-1,1);
         ctx.drawImage(wimg, -dwA/2, topY, dwA, dhA);
         if(z.flash>0){ ctx.globalAlpha=Math.min(1,z.flash*9); ctx.drawImage(Zwhite,-dwA/2,topY,dwA,dhA); ctx.globalAlpha=1; }
         ctx.restore();
