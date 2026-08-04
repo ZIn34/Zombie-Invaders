@@ -2604,19 +2604,21 @@ function drawZombies(){
       const AWa = attacking ? ZatkAW : ZwalkAW, AHa = attacking ? ZatkAH : ZwalkAH;
       let wimg, iaw, iah;
       if(frames.length){
+        if(z.phase==null) z.phase=Math.random()*7;   // fixed per-zombie offset so they don't march in sync
         const paleZ = equippedZombieSkin==='pale';   // pale zombie animates slower
-        const speed = attacking ? (paleZ?0.001:0.0018) : (paleZ?0.0024:0.0048);
-        const fi = ((Math.floor(performance.now()*speed + z.bob) % frames.length)+frames.length)%frames.length;
+        const speed = attacking ? (paleZ?0.0012:0.0022) : (paleZ?0.0019:0.0032);   // calmer, steady step rate
+        // steady clock-driven cycle (no growing term) → smooth, even frames instead of a fast flicker
+        const fi = ((Math.floor(performance.now()*speed + z.phase) % frames.length)+frames.length)%frames.length;
         wimg = frames[fi]||Zsprite; iaw = AWa[fi]||ZAW; iah = AHa[fi]||ZAH;
       } else { wimg=Zsprite; iaw=ZAW; iah=ZAH; }
       let dwA, dhA, topY;
       if(attacking){
-        // area (geometric-mean) scaling → every pose has equal visual mass, so the flat frame isn't tiny
-        const k = (z.w*1.55)/Math.sqrt(iaw*iah); dwA = iaw*k; dhA = iah*k;
-        topY = -(z.h*0.55) - dhA/2;   // centred around the body so wide↔tall frames don't pop
+        // constant height across attack frames → the pose doesn't pop in size; width flexes with the lunge
+        dhA = z.h*1.66; dwA = dhA*iaw/iah;
+        topY = -(z.h*0.55) - dhA/2;   // centred around the body
       } else {
-        // walk poses are similar — area (geometric-mean) scaling keeps every frame the same visual mass
-        const k = (z.w*1.5)/Math.sqrt(iaw*iah); dwA = iaw*k; dhA = iah*k; topY = -dhA;
+        // constant height across walk frames → only the pixels swap, the box stays put (no vertical jump)
+        dhA = z.w*1.6; dwA = dhA*iaw/iah; topY = -dhA;
       }
       if(explore && explore.endless && z.face!=null){
         // Open World: rotate the whole zombie so it crawls toward you from any direction
