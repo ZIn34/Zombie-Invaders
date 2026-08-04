@@ -2634,8 +2634,12 @@ function drawZombies(){
       } else { wimg=Zsprite; iaw=ZAW; iah=ZAH; }
       let dwA, dhA, topY;
       if(attacking){
-        // constant height across attack frames → the pose doesn't pop in size; width flexes with the lunge
-        dhA = z.h*1.66; dwA = dhA*iaw/iah;
+        // every attack frame the SAME visual size (constant area), box shaped to the average attack aspect
+        // → no single frame blows up huge, even the wide lunge poses
+        let asum=0,an=0; for(let q=0;q<ZatkAW.length;q++){ if(ZatkAH[q]>0){ asum+=ZatkAW[q]/ZatkAH[q]; an++; } }
+        const boxAsp = an ? asum/an : (iah? iaw/iah : 1);
+        const s = z.w*1.62, r = Math.sqrt(boxAsp);
+        dhA = s/r; dwA = s*r;
         topY = -(z.h*0.55) - dhA/2;   // centred around the body
       } else {
         // every walk frame at the SAME visual size (constant area), in a box shaped to THIS skin's
