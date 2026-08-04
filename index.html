@@ -1526,7 +1526,7 @@ function updatePlay(dt){
   ebullets=ebullets.filter(b=>!b.dead && b.y<H+30 && b.y>-30);
 
   // tick dying corpses (bleed-out, topple, fade)
-  for(const z of zombies){ if(z.dying) tickDying(z,dt,1.9); }
+  for(const z of zombies){ if(z.dying) tickDying(z,dt,1.05); }
 
   // ---- wave clear? (wait for corpses to finish falling) ----
   const remaining=zombies.some(z=>z.alive||z.dying);
@@ -1981,7 +1981,7 @@ function updateExplore(dt){
   // zombies: wake within range, then chase the crystal-bearer
   const AGGRO=200;
   for(const z of zombies){
-    if(z.dying){ tickDying(z,dt,1.35); continue; }
+    if(z.dying){ tickDying(z,dt,1.05); continue; }
     if(!z.alive) continue;
     z.bob+=dt*4; if(z.flash>0) z.flash-=dt;
     const dx=(p.x+p.w/2)-(z.x+z.w/2), dy=(p.y+p.h/2)-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
@@ -2121,7 +2121,7 @@ function updateEndless(dt){
   ex.powT-=dt; if(ex.powT<=0){ ex.powT=8+Math.random()*5; endlessDropPower(); }
   // zombies chase
   for(const z of zombies){
-    if(z.dying){ tickDying(z,dt,1.35); continue; }
+    if(z.dying){ tickDying(z,dt,1.05); continue; }
     if(!z.alive) continue;
     z.bob+=dt*4; if(z.flash>0)z.flash-=dt;
     const dx=(p.x+p.w/2)-(z.x+z.w/2), dy=(p.y+p.h/2)-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
@@ -2662,12 +2662,11 @@ function drawZombies(){
       }
     } else if(z.dying){
       const t=z.deadT;
-      let alpha=1; if(t>1.25) alpha=Math.max(0,1-(t-1.25)/0.6);  // fade the corpse away at the end
+      let alpha=1; if(t>0.6) alpha=Math.max(0,1-(t-0.6)/0.4);  // fade the corpse away at the end (snappier)
       const feetY=z.y+z.h;
       if(Zdeath.length){
-        // play through the uploaded death frames, then hold the last while it fades.
-        // scale ALL frames by one factor (tallest frame ≈ standing height) so the zombie visibly sinks as it collapses
-        const fi = Math.min(Zdeath.length-1, Math.floor(t/0.28));
+        // play through the uploaded death frames quickly, then hold the last briefly while it fades
+        const fi = Math.min(Zdeath.length-1, Math.floor(t/0.14));
         const aw=ZdeathAW[fi], ah=ZdeathAH[fi];
         const pale = equippedZombieSkin==='pale', pixel = equippedZombieSkin==='pixel';
         const lastFrame = fi===Zdeath.length-1;
