@@ -1,0 +1,13 @@
+{
+  "name": "Zombie Invaders",
+  "short_name": "Zombie Invaders",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a1408",
+  "theme_color": "#0a1408",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
