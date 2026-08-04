@@ -428,6 +428,7 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, vpLocalBtn)) state=STATE.VERSUSMODE;
     else if(inRect(p, vpOnlineBtn)){ netEnterLobby(); }
+    else if(inRect(p, vpAIBtn)) startAIDuel();
   } else if(state===STATE.VERSUSMODE){
     if(inRect(p, backBtn)) state=STATE.VERSUSPICK;
     else if(inRect(p, vBasicBtn)) startCoop(false);
@@ -1329,6 +1330,7 @@ function update(dt){
     if(pressed['Escape']){ netQuit(); state=STATE.MENU; }
   } else if(state===STATE.DUEL){
     if(pressed['Escape']){ netQuit(); state=STATE.MENU; }
+    else if(duel && duel.ai) updateDuelAI(dt);
     else if(net && net.role==='host') updateDuelHost(dt);
     else if(net) updateDuelGuest(dt);
   } else if(state===STATE.VERSUSPICK){
@@ -4022,8 +4024,9 @@ function drawOver(){
    One device is authoritative each round (the current DEFENDER simulates);
    the ATTACKER sends live spawn taps and watches a streamed mirror.
    ====================================================================== */
-const vpLocalBtn  = {x:W/2-150, y:150, w:300, h:98};
-const vpOnlineBtn = {x:W/2-150, y:266, w:300, h:98};
+const vpLocalBtn  = {x:W/2-150, y:126, w:300, h:88};
+const vpOnlineBtn = {x:W/2-150, y:226, w:300, h:88};
+const vpAIBtn     = {x:W/2-150, y:326, w:300, h:88};
 const playNormalBtn = {x:W/2-150, y:170, w:300, h:104};
 const playOpenBtn   = {x:W/2-150, y:296, w:300, h:104};
 const netQuickBtn = {x:W/2-150, y:126, w:300, h:70};
@@ -4134,7 +4137,7 @@ function netShowCodeInput(show){ if(!netInput) return; netInput.style.display=sh
 function netReadCodeInput(){ return netInput? netInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'') : ''; }
 
 function netEnterLobby(){ net=netNew(); state=STATE.NETLOBBY; }
-function netQuit(){ try{ NetIO.send({t:'bye'}); }catch(e){} try{ if(net&&net._autoStart) clearTimeout(net._autoStart); }catch(e){} NetIO.cleanup(); netShowCodeInput(false); if(mode==='net') mode='arcade'; net=null; coop=null; duel=null; }
+function netQuit(){ try{ NetIO.send({t:'bye'}); }catch(e){} try{ if(net&&net._autoStart) clearTimeout(net._autoStart); }catch(e){} NetIO.cleanup(); netShowCodeInput(false); if(mode==='net'||mode==='duel') mode='arcade'; net=null; coop=null; duel=null; }
 
 function netToggleMode(){ net.gtype = (net.gtype==='duel')?'horde':'duel'; Sound.hit(); }
 function netLobbyTap(p){
@@ -4286,6 +4289,65 @@ function netStartDuel(){
   duel.foeKey=(net.role==='host')?'p2':'p1';
   net.guestInput={mvx:0,mvy:0,aim:null,fire:false}; net.snapT=0; net.inT=0;
   state=STATE.DUEL; toast('SHOOTOUT — hunt them down!');
+}
+function startAIDuel(){
+  mode='duel'; explore=null; coop=null; net=null;
+  const mkP=(x,y,aim)=>({x,y,aim,hp:DUEL_HP,cd:0,recoil:0,flash:0,walkT:0,moving:false,weapon:'pistol',mag:DUEL_MAG,wammo:0,reloadT:0});
+  duel={ W:DUEL_W, H:DUEL_H, camX:0, camY:0, bullets:[], over:false, winner:0, t:0, _snap:null, ai:true,
+    p1:mkP(DUEL_W/2-22, DUEL_H-110, -Math.PI/2),
+    p2:mkP(DUEL_W/2-22, 70, Math.PI/2),
+    pickups:DUEL_PICKS.map(k=>({type:k.type, x:k.x, y:k.y, taken:false, respawnT:0})),
+    aiWander:0, aiStrafe:1, aiStrafeT:0 };
+  duel.meKey='p1'; duel.foeKey='p2';   // you are p1, the bot is p2
+  state=STATE.DUEL; toast('SHOOTOUT vs AI — hunt it down!');
+}
+// is the straight line between two duelists blocked by a wall?
+function aiLineBlocked(a,b){
+  const ax=a.x+DUEL_PS/2, ay=a.y+DUEL_PS/2, bx=b.x+DUEL_PS/2, by=b.y+DUEL_PS/2, steps=12;
+  for(let i=1;i<steps;i++){ const t=i/steps, x=ax+(bx-ax)*t, y=ay+(by-ay)*t; if(duelBlocks(x-3,y-3,6,6)) return true; }
+  return false;
+}
+function aiDuelInput(dt){
+  const me=duel.p2, foe=duel.p1;
+  const dx=foe.x-me.x, dy=foe.y-me.y, dist=Math.hypot(dx,dy)||1, ux=dx/dist, uy=dy/dist;
+  // aim at the player with a little wander so it isn't a perfect shot
+  duel.aiWander = clamp((duel.aiWander||0)+(Math.random()-0.5)*0.5, -0.35, 0.35);
+  const aim = Math.atan2(dy,dx) + duel.aiWander*0.35;
+  // grab a nearby weapon pickup if it's on a plain pistol
+  let goX=null,goY=null;
+  if(me.weapon==='pistol'){ for(const k of duel.pickups){ if(!k.taken){ const pd=Math.hypot(k.x-(me.x+DUEL_PS/2),k.y-(me.y+DUEL_PS/2)); if(pd<340){ goX=k.x; goY=k.y; break; } } } }
+  let mvx,mvy;
+  if(goX!=null){ const gx=goX-(me.x+DUEL_PS/2), gy=goY-(me.y+DUEL_PS/2), gd=Math.hypot(gx,gy)||1; mvx=gx/gd; mvy=gy/gd; }
+  else {
+    const want=240; mvx=0; mvy=0;
+    if(dist>want+70){ mvx=ux; mvy=uy; } else if(dist<want-70){ mvx=-ux; mvy=-uy; }
+    duel.aiStrafeT-=dt; if(duel.aiStrafeT<=0){ duel.aiStrafe=(Math.random()<0.5?1:-1); duel.aiStrafeT=0.7+Math.random()*0.9; }
+    mvx += -uy*0.75*duel.aiStrafe; mvy += ux*0.75*duel.aiStrafe;
+    const m=Math.hypot(mvx,mvy)||1; mvx/=m; mvy/=m;
+  }
+  // fire when it has a clear shot and the player is within a sensible range
+  const fire = dist<640 && !aiLineBlocked(me,foe);
+  return {mvx,mvy,aim,fire};
+}
+function updateDuelAI(dt){
+  if(!duel) return; duel.t+=dt;
+  if(!duel.over){
+    duelActor(duel.p1, duelLocalInput(), dt, true);
+    duelActor(duel.p2, aiDuelInput(dt), dt, true);
+    duelPickups(dt);
+    for(const b of duel.bullets){ if(b.dead) continue;
+      b.x+=b.vx*dt; b.y+=b.vy*dt; b.t+=dt;
+      if(duelBlocks(b.x-2,b.y-2,4,4)){ b.dead=true; continue; }
+      const tgt=(b.own===1)?duel.p2:duel.p1;
+      const hx=tgt.x+DUEL_PS/2, hy=tgt.y+DUEL_PS/2, HR=26;
+      if(Math.abs(b.x-hx)<HR && Math.abs(b.y-hy)<HR){
+        tgt.hp-=1; tgt.flash=0.16; b.dead=true; Sound.zHit();
+        if(tgt.hp<=0 && !duel.over){ duel.over=true; duel.winner=b.own; Sound.over(); } }
+    }
+    duel.bullets=duel.bullets.filter(b=>!b.dead && b.t<3);
+  }
+  if(duel.p1.flash>0)duel.p1.flash-=dt; if(duel.p2.flash>0)duel.p2.flash-=dt;
+  duelCam();
 }
 function duelLocalInput(){
   let mvx=0,mvy=0;
@@ -4488,11 +4550,13 @@ function drawVersusPick(){
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
   ctx.fillStyle='#9f8dff'; ctx.font='bold 26px '+CF; ctx.fillText('VERSUS', W/2, 64);
   ctx.shadowBlur=0;
-  ctx.fillStyle='#c9e6b0'; ctx.font='bold 14px '+CF; ctx.fillText('play a friend', W/2, 96);
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 14px '+CF; ctx.fillText('pick a way to play', W/2, 96);
   drawVersusModeButton(vpLocalBtn, '#3f7ad1','#2b559e','#7fb0ff','LOCAL',
     'pass & play on one device', 'attack once, defend once');
   drawVersusModeButton(vpOnlineBtn, '#2fa35a','#1c7a41','#5dff8a','ONLINE',
-    'live match over the internet', 'share a room code with a friend');
+    'live match over the internet', 'horde defense or shootout');
+  drawVersusModeButton(vpAIBtn, '#c24a1a','#8f3210','#ff8a3d','⚔ SHOOTOUT vs AI',
+    'solo 1v1 duel against a bot', 'no internet needed');
 }
 // draw the currently-equipped zombie's sprite as a small icon centred at (cx,cy)
 function drawZombieIcon(cx, cy, size){
