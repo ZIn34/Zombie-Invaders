@@ -387,7 +387,13 @@ function canvasPoint(e){
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
 canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
   const p=canvasPoint(e);
-  if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){ tapAim.active=true; tapAim.id=e.pointerId; tapAim.x=p.x; tapAim.y=p.y; return; }  // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
+  if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){
+    if(explore && explore.defense){   // defense build buttons take the tap before aiming
+      if(inRect(p, defTurretBtn)){ defBuild('turret'); return; }
+      if(inRect(p, defWallBtn)){ defBuild('wall'); return; }
+    }
+    tapAim.active=true; tapAim.id=e.pointerId; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
+  }
   if(state===STATE.MENU){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
     else if(inRect(p, tutBtn)){ tutPage=0; state=STATE.TUTORIAL; }   // how-to-play
@@ -424,6 +430,7 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, playNormalBtn)) startGame();
     else if(inRect(p, playOpenBtn)) setupEndless();
+    else if(inRect(p, playDefenseBtn)) setupDefense();
     else if(inRect(p, playAIBtn)) startAIDuel();
   } else if(state===STATE.VERSUSPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
@@ -1937,6 +1944,7 @@ function exploreFire(p){
 }
 function updateExplore(dt){
   const p=player, ex=explore; if(!p||!ex) return;
+  if(ex.defense){ updateDefense(dt); return; }
   if(ex.endless){ updateEndless(dt); return; }
   if(p.invuln>0) p.invuln-=dt;
   if(p.cd>0) p.cd-=dt;
@@ -2182,8 +2190,236 @@ function drawEndlessUI(ex){
   ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills+'  ·  survive as long as you can', 14, 46);
   ctx.shadowBlur=0;
 }
+/* ===================== DEFENSE — protect the flag ===================== */
+const DEF_HALF=720, DEF_TCOST=50, DEF_WCOST=25, DEF_START_CASH=90, DEF_KILL_CASH=7;
+const defTurretBtn = {x:W/2-128, y:8, w:122, h:42};
+const defWallBtn   = {x:W/2+6,   y:8, w:122, h:42};
+function defRectsOverlap(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by; }
+function setupDefense(){
+  mode='arcade'; wasEndless=false;
+  explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2,
+    cash:DEF_START_CASH,
+    flag:{x:0, y:0, r:46, hp:600, hpMax:600},
+    turrets:[], walls:[] };
+  player=makePlayer(); player.x=150; player.y=150; player.ammo=12;
+  lives=3; score=0;
+  bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
+  zombies=[];
+  defSpawn(5);
+  state=STATE.PLAY; toast('DEFENSE — PROTECT THE FLAG!');
+}
+function defBlocks(x,y,w,h, forZombie){   // arena walls + barricades block everyone; turrets block only zombies; flag is walk-through
+  const ex=explore; if(!ex) return false;
+  const H2=DEF_HALF;
+  if(x<-H2 || x+w>H2 || y<-H2 || y+h>H2) return true;
+  for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(x,y,w,h, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) return true; }
+  if(forZombie) for(const t of ex.turrets){ if(t.hp>0 && defRectsOverlap(x,y,w,h, t.x-t.w/2,t.y-t.h/2,t.w,t.h)) return true; }
+  return false;
+}
+function defBulletBlocks(x,y){   // only the arena bounds stop bullets — barricades can be shot through
+  const ex=explore; if(!ex) return false;
+  const H2=DEF_HALF;
+  if(x<-H2 || x>H2 || y<-H2 || y>H2) return true;
+  return false;
+}
+function defMove(e,mvx,mvy,dt,spd,forZombie){
+  const nx=e.x+mvx*spd*dt; if(!defBlocks(nx,e.y,e.w,e.h,forZombie)) e.x=nx;
+  const ny=e.y+mvy*spd*dt; if(!defBlocks(e.x,ny,e.w,e.h,forZombie)) e.y=ny;
+}
+function defSpawn(n){
+  const ex=explore; if(!ex) return;
+  if(zombies.filter(z=>z.alive).length>58) return;
+  const R=DEF_HALF-34;
+  for(let i=0;i<n;i++){ const a=Math.random()*6.28;
+    zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
+      hp:3, hpMax:3, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
+      spdMul:rand(0.7,1.12), aggro:true, face:Math.PI/2 }); }
+}
+function defBuild(type){
+  const ex=explore, p=player; if(!ex||!p) return;
+  const cost = type==='turret'?DEF_TCOST:DEF_WCOST;
+  if(ex.cash<cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
+  const ang=(p.aim!=null)?p.aim:-Math.PI/2, dist=60;
+  const cx=p.x+p.w/2+Math.cos(ang)*dist, cy=p.y+p.h/2+Math.sin(ang)*dist;
+  const size=type==='turret'?42:56;
+  if(defBlocks(cx-size/2, cy-size/2, size, size)){ toast('NO ROOM'); Sound.empty(); return; }
+  ex.cash-=cost;
+  if(type==='turret') ex.turrets.push({x:cx, y:cy, w:size, h:size, hp:70, hpMax:70, cd:0, range:250, aim:ang});
+  else                ex.walls.push({x:cx, y:cy, w:size, h:size, hp:140, hpMax:140});
+  Sound.power(); toast(type==='turret'?'TURRET BUILT':'BARRICADE BUILT');
+}
+function updateDefense(dt){
+  const p=player, ex=explore; if(!p||!ex) return;
+  ex.elapsed+=dt;
+  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*7;
+  if(p.rapidT>0)p.rapidT-=dt; if(p.shieldT>0)p.shieldT-=dt;
+  if(p.weaponT>0){ p.weaponT-=dt; if(p.weaponT<=0) p.weapon=p.permSpread?'spread':'gun'; }
+  // movement (blocked by arena, flag, structures)
+  let mvx=0,mvy=0;
+  if(keys['ArrowLeft']||keys['KeyA'])mvx-=1; if(keys['ArrowRight']||keys['KeyD'])mvx+=1;
+  if(keys['ArrowUp']||keys['KeyW'])mvy-=1; if(keys['ArrowDown']||keys['KeyS'])mvy+=1;
+  if(mvx&&mvy){mvx*=0.7071;mvy*=0.7071;}
+  if(touch.mvx||touch.mvy){mvx=touch.mvx;mvy=touch.mvy;}
+  defMove(p, mvx,mvy, dt, p.speed);
+  p.moving=!!(mvx||mvy); if(p.moving)p.walkT+=dt*11;
+  ex.camX=clamp(p.x+p.w/2-W/2, -DEF_HALF-30, DEF_HALF-W+30);
+  ex.camY=clamp(p.y+p.h/2-H/2, -DEF_HALF-30, DEF_HALF-H+30);
+  // ammo regen
+  p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
+  // aim: stick / tap, else nearest on-screen
+  { const manual=aimAngleFromInput(p, ex);
+    if(manual!=null){ p.aim=manual; p.aimManual=true; }
+    else { p.aimManual=false; let best=null,bd=1e9;
+      for(const z of zombies){ if(!z.alive||!zOnScreen(z)) continue; const d=Math.hypot((z.x+z.w/2)-(p.x+p.w/2),(z.y+z.h/2)-(p.y+p.h/2)); if(d<bd){bd=d;best=z;} }
+      p.aim=best?Math.atan2((best.y+best.h/2)-(p.y+p.h/2),(best.x+best.w/2)-(p.x+p.w/2)):null; } }
+  // player fire
+  const wantFire=keys['Space']||touch.fire||touch.aimActive||tapAim.active;
+  const fireRate=Math.max(0.08,((p.rapidT>0||p.permRapid)?0.11:0.28)-(p.fireCut||0));
+  if(wantFire && p.cd<=0){ if(p.ammo>0){ exploreFire(p); p.ammo--; p.cd=(p.weapon==='spread')?fireRate*2.9:fireRate; } else { Sound.empty(); p.cd=0.25; } }
+  // ramping spawns from all sides
+  ex.spawnT-=dt;
+  if(ex.spawnT<=0){ defSpawn(Math.min(5, 1+Math.floor(ex.elapsed/24))); ex.spawnT=Math.max(0.6, 1.7-ex.elapsed*0.02); }
+  // turrets auto-fire at nearest zombie in range
+  for(const t of ex.turrets){ if(t.hp<=0) continue;
+    if(t.cd>0)t.cd-=dt;
+    let best=null,bd=t.range;
+    for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
+    if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
+      if(t.cd<=0){ const vx=Math.cos(t.aim), vy=Math.sin(t.aim), sp=760;
+        bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:7,h:7, vx:vx*sp, vy:vy*sp, col:'#7fd0ff', dmg:1, t:0, turret:true});
+        t.cd=0.5; } }
+  }
+  // zombies march on the flag; attack the flag or anything blocking them
+  const f=ex.flag;
+  for(const z of zombies){
+    if(z.dying){ tickDying(z,dt,1.05); continue; }
+    if(!z.alive) continue;
+    if(z.flash>0)z.flash-=dt;
+    const dx=f.x-(z.x+z.w/2), dy=f.y-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
+    z.face=Math.atan2(dy,dx);
+    let attacked=false;
+    if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
+    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1), true);
+    for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
+    if(zombieTouchesPlayer(z) && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(12,.35);
+      if(lives<=0){ explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
+  }
+  // separation — don't stack
+  const MINSEP=40;
+  for(let a=0;a<zombies.length;a++){ const za=zombies[a]; if(!za.alive) continue;
+    for(let bI=a+1;bI<zombies.length;bI++){ const zb=zombies[bI]; if(!zb.alive) continue;
+      let sx=(zb.x+zb.w/2)-(za.x+za.w/2), sy=(zb.y+zb.h/2)-(za.y+za.h/2); let sd=Math.hypot(sx,sy);
+      if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
+      if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
+  ex.turrets=ex.turrets.filter(t=>t.hp>0);
+  ex.walls=ex.walls.filter(s=>s.hp>0);
+  // bullets (player + turret): move, blocked by barricades/arena, hit zombies
+  for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; if(defBulletBlocks(b.x,b.y)) b.dead=true; }
+  for(const b of bullets){ if(b.dead) continue;
+    for(const z of zombies){ if(!z.alive) continue;
+      if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
+        spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
+        if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=DEF_KILL_CASH; } break; } } }
+  bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
+  // power-up pickups still work if any exist
+  for(const pu of powerups){ pu.t=(pu.t||0)+dt; if(rectHit(pu,p)){ pu.dead=true; applyPower(pu.type); } }
+  powerups=powerups.filter(pu=>!pu.dead);
+  // flag fell → game over
+  if(f.hp<=0){ explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; }
+  zombies=zombies.filter(z=> z.alive || z.dying);
+}
+function drawDefense(){
+  const ex=explore; if(!ex) return;
+  ctx.fillStyle='#0e130c'; ctx.fillRect(0,0,W,H);
+  ctx.save(); ctx.translate(-Math.round(ex.camX),-Math.round(ex.camY));
+  drawDefenseGround(ex);
+  drawDefenseArena();
+  drawBloodPools();
+  drawDefenseFlag(ex);
+  drawDefenseWalls(ex);
+  drawDefenseTurrets(ex);
+  drawZombies(); drawBullets(); drawPlayer(); drawParticles();
+  ctx.restore();
+  drawDefenseUI(ex);
+}
+function drawDefenseGround(ex){
+  const x0=ex.camX-10,y0=ex.camY-10,x1=ex.camX+W+10,y1=ex.camY+H+10;
+  for(let y=Math.floor(y0/48)*48;y<y1;y+=48) for(let x=Math.floor(x0/48)*48;x<x1;x+=48){
+    const inside = x>=-DEF_HALF && x<DEF_HALF && y>=-DEF_HALF && y<DEF_HALF;
+    ctx.fillStyle = inside ? (((Math.floor(x/48)+Math.floor(y/48))&1)?'#20301a':'#1b2917') : '#0a0d07';
+    ctx.fillRect(x,y,48,48); }
+}
+function drawDefenseArena(){
+  const H2=DEF_HALF, t=26;
+  ctx.fillStyle='#3a2f22';
+  ctx.fillRect(-H2-t,-H2-t, 2*H2+2*t, t);
+  ctx.fillRect(-H2-t, H2,   2*H2+2*t, t);
+  ctx.fillRect(-H2-t,-H2, t, 2*H2);
+  ctx.fillRect(H2,   -H2, t, 2*H2);
+  ctx.fillStyle='#4c3d2a';
+  ctx.fillRect(-H2-t,-H2-t, 2*H2+2*t, 6);
+  ctx.fillRect(-H2-t, H2,   2*H2+2*t, 6);
+}
+function drawDefenseFlag(ex){
+  const f=ex.flag;
+  ctx.fillStyle='#243019'; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,6.28); ctx.fill();
+  ctx.strokeStyle='#6f8f4f'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,6.28); ctx.stroke();
+  ctx.fillStyle='#caa15a'; ctx.fillRect(f.x-3, f.y-66, 6, 80);
+  const wv=Math.sin(performance.now()/220)*4;
+  ctx.fillStyle='#3ea22f';
+  ctx.beginPath(); ctx.moveTo(f.x+3,f.y-66); ctx.lineTo(f.x+42,f.y-59+wv); ctx.lineTo(f.x+3,f.y-45); ctx.closePath(); ctx.fill();
+  const bw=80, hp=Math.max(0,f.hp/f.hpMax);
+  ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(f.x-bw/2, f.y-88, bw, 9);
+  ctx.fillStyle= hp>0.5?'#5dff8a':hp>0.25?'#ffd14b':'#ff5b5b'; ctx.fillRect(f.x-bw/2, f.y-88, bw*hp, 9);
+  ctx.lineWidth=1; ctx.strokeStyle='#0e1a08'; ctx.strokeRect(f.x-bw/2, f.y-88, bw, 9);
+}
+function drawDefenseWalls(ex){
+  for(const s of ex.walls){ if(s.hp<=0) continue; const x=s.x-s.w/2, y=s.y-s.h/2;
+    ctx.fillStyle='#6b5436'; roundRectPath(x,y,s.w,s.h,5); ctx.fill();
+    ctx.fillStyle='#856a45'; roundRectPath(x+3,y+3,s.w-6,Math.max(4,s.h*0.38),4); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#3e3020'; roundRectPath(x,y,s.w,s.h,5); ctx.stroke();
+    const hp=s.hp/s.hpMax; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, y-7, s.w, 4);
+    ctx.fillStyle=hp>0.4?'#9fe27f':'#ff7a7a'; ctx.fillRect(x, y-7, s.w*hp, 4); }
+}
+function drawDefenseTurrets(ex){
+  for(const t of ex.turrets){ if(t.hp<=0) continue;
+    ctx.save(); ctx.translate(t.x,t.y);
+    ctx.fillStyle='#3b4a5a'; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.fill();
+    ctx.strokeStyle='#8fb0d0'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.stroke();
+    ctx.rotate(t.aim||0);
+    ctx.fillStyle='#20303f'; ctx.fillRect(0,-4, t.w*0.64, 8);
+    ctx.fillStyle='#5f7f9f'; ctx.beginPath(); ctx.arc(0,0,7,0,6.28); ctx.fill();
+    ctx.restore();
+    const hp=t.hp/t.hpMax, x=t.x-t.w/2; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, t.y-t.h/2-7, t.w, 4);
+    ctx.fillStyle=hp>0.4?'#7fd0ff':'#ff7a7a'; ctx.fillRect(x, t.y-t.h/2-7, t.w*hp, 4); }
+}
+function drawDefenseUI(ex){
+  ctx.textAlign='right'; ctx.textBaseline='alphabetic';
+  for(let i=0;i<lives;i++) drawHeart(W-22-i*24,20,9, performance.now()/300+i*0.5);
+  ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3; ctx.font='bold 15px '+CF;
+  ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 46);
+  drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 41); ctx.shadowBlur=0;
+  ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 28);
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills, 14, 46); ctx.shadowBlur=0;
+  drawDefBuildBtn(defTurretBtn, '🔫 TURRET', DEF_TCOST, ex.cash>=DEF_TCOST);
+  drawDefBuildBtn(defWallBtn,   '🧱 WALL',   DEF_WCOST, ex.cash>=DEF_WCOST);
+}
+function drawDefBuildBtn(b, label, cost, afford){
+  ctx.save();
+  ctx.fillStyle= afford?'rgba(28,50,26,.92)':'rgba(40,40,40,.85)';
+  roundRectPath(b.x,b.y,b.w,b.h,9); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle= afford?'#7ee06a':'#666'; roundRectPath(b.x,b.y,b.w,b.h,9); ctx.stroke();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle= afford?'#eafff0':'#999'; ctx.font='bold 13px '+CF; ctx.fillText(label, b.x+b.w/2, b.y+15);
+  ctx.fillStyle= afford?'#ffe14b':'#888'; ctx.font='bold 12px '+CF; ctx.fillText('$'+cost, b.x+b.w/2, b.y+31);
+  ctx.restore();
+}
 function drawExplore(){
   const ex=explore; if(!ex) return;
+  if(ex.defense){ drawDefense(); return; }
   if(ex.endless){ drawEndless(); return; }
   ctx.fillStyle='#161f12'; ctx.fillRect(0,0,W,H);
   ctx.save(); ctx.translate(-Math.round(ex.camX),-Math.round(ex.camY));
@@ -4027,9 +4263,10 @@ function drawOver(){
 const vpLocalBtn  = {x:W/2-150, y:126, w:300, h:88};
 const vpOnlineBtn = {x:W/2-150, y:226, w:300, h:88};
 const vpAIBtn     = {x:W/2-150, y:326, w:300, h:88};
-const playNormalBtn = {x:W/2-150, y:150, w:300, h:96};
-const playOpenBtn   = {x:W/2-150, y:258, w:300, h:96};
-const playAIBtn     = {x:W/2-150, y:366, w:300, h:96};
+const playNormalBtn  = {x:W/2-150, y:110, w:300, h:82};
+const playOpenBtn    = {x:W/2-150, y:202, w:300, h:82};
+const playDefenseBtn = {x:W/2-150, y:294, w:300, h:82};
+const playAIBtn      = {x:W/2-150, y:386, w:300, h:82};
 const netQuickBtn = {x:W/2-150, y:126, w:300, h:70};
 const netHostBtn  = {x:W/2-150, y:210, w:300, h:70};
 const netJoinBtn  = {x:W/2-150, y:294, w:300, h:70};
@@ -4537,13 +4774,15 @@ function drawPlayPick(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#7ee06a'; ctx.font='bold 28px '+CF; ctx.fillText('PLAY', W/2, 96);
+  ctx.fillStyle='#7ee06a'; ctx.font='bold 28px '+CF; ctx.fillText('PLAY', W/2, 68);
   ctx.shadowBlur=0;
-  ctx.fillStyle='#c9e6b0'; ctx.font='bold 13px '+CF; ctx.fillText('pick how you survive', W/2, 126);
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 13px '+CF; ctx.fillText('pick how you survive', W/2, 96);
   drawVersusModeButton(playNormalBtn, '#3ea22f','#2a7d24','#7ee06a','NORMAL',
     'wave survival at the gate', 'wire, power-ups & bosses');
   drawVersusModeButton(playOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD',
     'endless twin-stick survival', 'roam free · zombies never stop');
+  drawVersusModeButton(playDefenseBtn, '#2f7ad1','#1c559e','#7fb0ff','DEFENSE',
+    'buy turrets & barricades', 'protect the flag from all sides');
   drawVersusModeButton(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','⚔ SHOOTOUT vs AI',
     'solo 1v1 duel against a bot', 'no internet needed');
 }
