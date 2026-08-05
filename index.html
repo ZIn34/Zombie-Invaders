@@ -2244,7 +2244,7 @@ function defSpawn(n){
 function defSpawnBoss(){
   const ex=explore; if(!ex) return;
   ex.bossCount=(ex.bossCount||0)+1;
-  const R=DEF_HALF-46, a=Math.random()*6.28, hp=150+(ex.bossCount-1)*55;
+  const R=DEF_HALF-46, a=Math.random()*6.28, hp=80+(ex.bossCount-1)*28;
   ex.boss={ x:Math.cos(a)*R-48, y:Math.sin(a)*R-48, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
   toast('⚠ BOSS INCOMING!'); shake(12,.4); Sound.power();
 }
@@ -2348,10 +2348,10 @@ function updateDefense(dt){
   if(ex.boss && !ex.boss.dead){ const bo=ex.boss; if(bo.flash>0)bo.flash-=dt;
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face = Math.atan2(bdy,bdx);   // angle toward the flag (sprite head points that way)
-    if(bd < f.r + bo.w*0.5){ f.hp-=dt*26; }
-    else defMove(bo, bdx/bd, bdy/bd, dt, 48, true);
-    for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*45; }
-    for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*45; }
+    if(bd < f.r + bo.w*0.5){ f.hp-=dt*14; }
+    else defMove(bo, bdx/bd, bdy/bd, dt, 40, true);
+    for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
+    for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     const px=p.x+p.w/2, py=p.y+p.h/2;
     if(px>bo.x-6 && px<bo.x+bo.w+6 && py>bo.y-6 && py<bo.y+bo.h+6 && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(14,.4);
       if(lives<=0){ explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
