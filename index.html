@@ -124,10 +124,10 @@ const controlsBar = document.getElementById('controls');
 let _ctrlShown = true;
 let _aimShown = false;
 function syncControls(){   // only show the joystick/pause/fire bar during actual play
-  const show = (state===STATE.PLAY || state===STATE.CHASE || state===STATE.PAUSE || state===STATE.DEATH || state===STATE.DUEL);
+  const show = (state===STATE.PLAY || state===STATE.CHASE || state===STATE.PAUSE || state===STATE.DEATH || state===STATE.DUEL || state===STATE.COOPDEF);
   if(show!==_ctrlShown){ _ctrlShown=show; if(controlsBar) controlsBar.style.display = show ? '' : 'none'; }
   // Mission 3 (explore) and online duels use a twin-stick layout: swap the FIRE button for the AIM stick
-  const aimMode = !!explore || state===STATE.DUEL;
+  const aimMode = !!explore || state===STATE.DUEL || state===STATE.COOPDEF;
   if(aimMode!==_aimShown){
     _aimShown=aimMode;
     const fb=document.getElementById('tfire'), aj=document.getElementById('aimjoy');
@@ -338,7 +338,8 @@ window.addEventListener('keyup', e=>{ keys[e.code]=false; });
 const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false};
 // tap/click anywhere on the play field to aim there (open world, duel, mission 3)
 const tapAim = {active:false, id:null, x:0, y:0};
-function isAimState(){ return (state===STATE.PLAY && explore) || state===STATE.DUEL; }
+function isAimState(){ return (state===STATE.PLAY && explore) || state===STATE.DUEL || state===STATE.COOPDEF; }
+let codef=null;
 (function(){
   const joy=document.getElementById('joy'), thumb=document.getElementById('joyThumb'), fireBtn=document.getElementById('tfire');
   const aimJoy=document.getElementById('aimjoy'), aimThumb=document.getElementById('aimThumb');
@@ -394,13 +395,17 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
       if(inRect(p, defTurretBtn)){ defBuild('turret'); return; }
       if(inRect(p, defWallBtn)){ defBuild('wall'); return; }
     }
+    if(state===STATE.COOPDEF && codef){   // co-op build buttons
+      if(inRect(p, defTurretBtn)){ coopBuildRequest('turret'); return; }
+      if(inRect(p, defWallBtn)){ coopBuildRequest('wall'); return; }
+    }
     tapAim.active=true; tapAim.id=e.pointerId; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
   }
   if(state===STATE.MENU){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
     else if(inRect(p, tutBtn)){ tutPage=0; state=STATE.TUTORIAL; }   // how-to-play
     else if(inRect(p, campBtn)) enterCampaign(); // story mode — jump straight into the cutscene
-    else if(inRect(p, coopBtn)) state=STATE.VERSUSPICK;  // choose local (pass & play) or online
+    else if(inRect(p, coopBtn)) state=STATE.ONLINEPICK;  // choose Versus or Co-op
     else if(inRect(p, storeBtn)) state=STATE.STORE;
     else if(inRect(p, playBtn)) state=STATE.PLAYPICK;   // choose Normal or Open World
   } else if(state===STATE.STORE){
@@ -434,8 +439,12 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
     else if(inRect(p, playOpenBtn)) setupEndless();
     else if(inRect(p, playDefenseBtn)) setupDefense();
     else if(inRect(p, playAIBtn)) startAIDuel();
-  } else if(state===STATE.VERSUSPICK){
+  } else if(state===STATE.ONLINEPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
+    else if(inRect(p, opVersusBtn)) state=STATE.VERSUSPICK;
+    else if(inRect(p, opCoopBtn)) netEnterCoopLobby();
+  } else if(state===STATE.VERSUSPICK){
+    if(inRect(p, backBtn)) state=STATE.ONLINEPICK;
     else if(inRect(p, vpLocalBtn)) state=STATE.VERSUSMODE;
     else if(inRect(p, vpOnlineBtn)){ netEnterLobby(); }
   } else if(state===STATE.VERSUSMODE){
@@ -494,7 +503,7 @@ const chance=p=>Math.random()<p;
 function rectHit(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
 
 /* ============================ STATE =================================== */
-const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26};
+const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28};
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
 let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true};
@@ -1349,6 +1358,12 @@ function update(dt){
     if(pressed['Escape']) state=STATE.MENU;
   } else if(state===STATE.PLAYPICK){
     if(pressed['Escape']) state=STATE.MENU;
+  } else if(state===STATE.ONLINEPICK){
+    if(pressed['Escape']) state=STATE.MENU;
+  } else if(state===STATE.COOPDEF){
+    if(pressed['Escape']){ if(net&&net.role==='host'){ try{NetIO.send({t:'cover',ki:codef?codef.kills:0});}catch(e){} } coopDefEnd(codef?codef.kills:0); }
+    else if(net && net.role==='host') updateCoopHost(dt);
+    else if(net) updateCoopGuest(dt);
   } else if(state===STATE.NETLOBBY){
     if(pressed['Escape']){ netQuit(); state=STATE.MENU; }
   } else if(state===STATE.NETRESULT){
@@ -2577,6 +2592,8 @@ function render(){
   if(state===STATE.MISSIONDONE){ ctx.restore(); drawMissionDone(); drawToast(); return; }
   if(state===STATE.CUTSCENE){ ctx.restore(); drawCutscene(); drawToast(); return; }
   if(state===STATE.PLAYPICK){ ctx.restore(); drawPlayPick(); drawToast(); return; }
+  if(state===STATE.ONLINEPICK){ ctx.restore(); drawOnlinePick(); drawToast(); return; }
+  if(state===STATE.COOPDEF){ ctx.restore(); drawCoopDef(); drawToast(); return; }
   if(state===STATE.VERSUSPICK){ ctx.restore(); drawVersusPick(); drawToast(); return; }
   if(state===STATE.NETLOBBY){ ctx.restore(); drawNetLobby(); drawToast(); return; }
   if(state===STATE.NETRESULT){ ctx.restore(); drawNetResult(); drawToast(); return; }
@@ -2863,8 +2880,8 @@ function drawGun(p, artHasGun){
   ctx.imageSmoothingEnabled=true;
 }
 
-function drawPlayer(){
-  const p=player;
+function drawPlayer(){ drawPlayerObj(player, !!explore); }
+function drawPlayerObj(p, faceAim){
   if(p.invuln>0 && Math.floor(p.invuln*12)%2===0) return; // blink when hit
   const cx=p.x+p.w/2;
   // shield glow
@@ -2889,8 +2906,8 @@ function drawPlayer(){
   ctx.translate(cx+sway, feetY+wob+rec*4);
   ctx.rotate(lean - rec*0.07);
   ctx.translate(-cx, -feetY);
-  // Mission 3: turn to face the zombie being shot (sprite's default facing is up = -90°)
-  if(explore && p.aim!=null){ const pcy=p.y+p.h*0.5; ctx.translate(cx,pcy); ctx.rotate(p.aim+Math.PI/2); ctx.translate(-cx,-pcy); }
+  // twin-stick: turn to face the aim direction (sprite's default facing is up = -90°)
+  if(faceAim && p.aim!=null){ const pcy=p.y+p.h*0.5; ctx.translate(cx,pcy); ctx.rotate(p.aim+Math.PI/2); ctx.translate(-cx,-pcy); }
   ctx.drawImage(pimg, dx, dy, dw, dh);
   drawGun(p, hasGun); // uploaded art already includes the weapon (no separate flash)
   ctx.restore();
@@ -3528,7 +3545,7 @@ function drawCoopButton(cy){
   ctx.lineWidth=3; ctx.strokeStyle='#241a5c'; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.stroke();
   ctx.fillStyle='#efe9ff'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='bold '+Math.round(b.h*0.42)+'px '+CF;
-  ctx.fillText('⚔ VERSUS', b.x+b.w/2, cy+1);
+  ctx.fillText('🌐 ONLINE', b.x+b.w/2, cy+1);
   ctx.textBaseline='alphabetic';
   ctx.restore();
 }
@@ -4314,6 +4331,20 @@ function drawOver(){
 const vpLocalBtn  = {x:W/2-150, y:126, w:300, h:88};
 const vpOnlineBtn = {x:W/2-150, y:226, w:300, h:88};
 const vpAIBtn     = {x:W/2-150, y:326, w:300, h:88};
+const opVersusBtn = {x:W/2-150, y:150, w:300, h:96};
+const opCoopBtn   = {x:W/2-150, y:270, w:300, h:96};
+function drawOnlinePick(){
+  panelBg(); drawBackBtn();
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
+  ctx.fillStyle='#9f8dff'; ctx.font='bold 26px '+CF; ctx.fillText('ONLINE', W/2, 96);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 13px '+CF; ctx.fillText('play with a friend', W/2, 126);
+  drawVersusModeButton(opVersusBtn, '#c24a1a','#8f3210','#ff8a3d','⚔ VERSUS',
+    'fight each other', 'local pass & play or online');
+  drawVersusModeButton(opCoopBtn, '#2fa35a','#1c7a41','#5dff8a','🤝 CO-OP',
+    'team up online — shared cash', 'defend the flag together');
+}
 const playNormalBtn  = {x:W/2-150, y:110, w:300, h:82};
 const playOpenBtn    = {x:W/2-150, y:202, w:300, h:82};
 const playDefenseBtn = {x:W/2-150, y:294, w:300, h:82};
@@ -4426,26 +4457,27 @@ function netShowCodeInput(show){ if(!netInput) return; netInput.style.display=sh
 function netReadCodeInput(){ return netInput? netInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'') : ''; }
 
 function netEnterLobby(){ net=netNew(); state=STATE.NETLOBBY; }
-function netQuit(){ try{ NetIO.send({t:'bye'}); }catch(e){} try{ if(net&&net._autoStart) clearTimeout(net._autoStart); }catch(e){} NetIO.cleanup(); netShowCodeInput(false); if(mode==='net'||mode==='duel') mode='arcade'; net=null; coop=null; duel=null; }
+function netEnterCoopLobby(){ net=netNew(); net.gtype='coop'; net.coop=true; state=STATE.NETLOBBY; }
+function netQuit(){ try{ NetIO.send({t:'bye'}); }catch(e){} try{ if(net&&net._autoStart) clearTimeout(net._autoStart); }catch(e){} NetIO.cleanup(); netShowCodeInput(false); if(mode==='net'||mode==='duel') mode='arcade'; net=null; coop=null; duel=null; codef=null; if(explore&&explore.defense2) explore=null; }
 
 function netToggleMode(){ net.gtype = (net.gtype==='duel')?'horde':'duel'; Sound.hit(); }
 function netLobbyTap(p){
-  if(inRect(p, backBtn)){ netQuit(); state=STATE.VERSUSPICK; return; }
+  if(inRect(p, backBtn)){ const coop=net&&net.coop; netQuit(); state=coop?STATE.ONLINEPICK:STATE.VERSUSPICK; return; }
   if(net.lobby==='choose'){
-    if(inRect(p, netModeBtn)){ netToggleMode(); return; }   // pick HORDE or SHOOTOUT before you host/quick-match
+    if(!net.coop && inRect(p, netModeBtn)){ netToggleMode(); return; }   // pick HORDE or SHOOTOUT before you host/quick-match
     if(inRect(p, netQuickBtn)) NetIO.quickMatch();
     else if(inRect(p, netHostBtn)) NetIO.host();
     else if(inRect(p, netJoinBtn)){ net.lobby='joining'; net.status=''; netShowCodeInput(true); }
   } else if(net.lobby==='joining'){
     if(inRect(p, netConnectBtn)){ const c=netReadCodeInput(); if(c.length>=3){ NetIO.join(c); } else toast('type the room code'); }
   } else if(net.lobby==='hosting'){
-    if(inRect(p, netModeBtn)){ netToggleMode(); return; }
-    if(inRect(p, netAdvBtn)) net.adv=!net.adv;
+    if(!net.coop && inRect(p, netModeBtn)){ netToggleMode(); return; }
+    if(!net.coop && inRect(p, netAdvBtn)) net.adv=!net.adv;
   } else if(net.lobby==='connected'){
     if(net.role==='host'){
       if(inRect(p, netStartBtn)){ NetIO.send({t:'begin', adv:net.adv, gtype:net.gtype}); netBeginMatch(net.adv, net.gtype); }
-      else if(inRect(p, netModeBtn)) netToggleMode();
-      else if(inRect(p, netAdvBtn)) net.adv=!net.adv;
+      else if(!net.coop && inRect(p, netModeBtn)) netToggleMode();
+      else if(!net.coop && inRect(p, netAdvBtn)) net.adv=!net.adv;
     }
   }
 }
@@ -4458,6 +4490,10 @@ function netOnMessage(d){ if(!net||!d||!d.t) return;
     case 'roundEnd': netOnOpponentRoundEnd(d); break;
     case 'din': if(duel && net.role==='host'){ net.guestInput={mvx:d.mvx||0,mvy:d.mvy||0,aim:(d.aim==null?null:d.aim),fire:!!d.fire}; } break;
     case 'dst': if(duel && net.role==='guest'){ duel._snap=d; } break;
+    case 'cin': if(codef && net.role==='host'){ net.guestInput={mvx:d.mvx||0,mvy:d.mvy||0,aim:(d.aim==null?null:d.aim),fire:!!d.fire}; } break;
+    case 'cbuild': if(codef && net.role==='host'){ net.pendingBuild=d.bt; } break;
+    case 'cst': if(codef && net.role==='guest'){ codef._snap=d; } break;
+    case 'cover': if(codef && net.role==='guest'){ coopDefEnd(d.ki); } break;
     case 'bye': netOnDisconnect(); break;
   }
 }
@@ -4467,6 +4503,7 @@ function netOnDisconnect(){ if(!net) return;
 }
 
 function netBeginMatch(adv, gtype){ if(!net) return; net.adv=adv; net.gtype=gtype||'horde'; net.round=0; net.myResult=null; net.oppResult=null;
+  if(net.gtype==='coop'){ netStartCoopDefense(); return; }
   if(net.gtype==='duel'){ netStartDuel(); return; }
   netStartRound(0);
 }
@@ -4566,6 +4603,235 @@ function duelBlocks(x,y,w,h){
   if(x<4||y<4||x+w>DUEL_W-4||y+h>DUEL_H-4) return true;
   for(const o of DUEL_OBS){ if(x<o.x+o.w && x+w>o.x && y<o.y+o.h && y+h>o.y) return true; }
   return false;
+}
+/* ===================== ONLINE CO-OP DEFENSE ===================== */
+function netStartCoopDefense(){
+  mode='net'; coop=null; duel=null;
+  const p1=makePlayer(), p2=makePlayer();
+  p1.x=-70; p1.y=110; p1.aim=null; p1.ammo=14;
+  p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14;
+  codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
+    cash:DEF_START_CASH+50, lives:6, over:false, _snap:null,
+    flag:{x:0,y:0,r:46,hp:700,hpMax:700},
+    turrets:[], walls:[], boss:null, bossMark:20, bossCount:0, p1, p2 };
+  codef.meKey =(net.role==='host')?'p1':'p2';
+  codef.foeKey=(net.role==='host')?'p2':'p1';
+  player=codef[codef.meKey];   // globals that helpers reference point at the local player
+  explore=codef;               // reuse camera / zombie-rotation / aim plumbing
+  zombies=[]; bullets=[]; ebullets=[]; particles=[]; bloodPools=[]; boss=null;
+  net.guestInput={mvx:0,mvy:0,aim:null,fire:false}; net.snapT=0; net.inT=0; net.pendingBuild=null;
+  if(net.role==='host') coopSpawn(5);
+  state=STATE.COOPDEF; toast('CO-OP DEFENSE — protect the flag together!');
+}
+function codefBlocks(x,y,w,h,forZombie){ const cd=codef; if(!cd) return false; const H2=DEF_HALF;
+  if(x<-H2||x+w>H2||y<-H2||y+h>H2) return true;
+  for(const s of cd.walls){ if(s.hp>0 && defRectsOverlap(x,y,w,h, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) return true; }
+  if(forZombie) for(const t of cd.turrets){ if(t.hp>0 && defRectsOverlap(x,y,w,h, t.x-t.w/2,t.y-t.h/2,t.w,t.h)) return true; }
+  return false;
+}
+function codefBulletBlocks(x,y){ const H2=DEF_HALF; return (x<-H2||x>H2||y<-H2||y>H2); }
+function codefMove(e,mvx,mvy,dt,spd,forZombie){
+  const nx=e.x+mvx*spd*dt; if(!codefBlocks(nx,e.y,e.w,e.h,forZombie)) e.x=nx;
+  const ny=e.y+mvy*spd*dt; if(!codefBlocks(e.x,ny,e.w,e.h,forZombie)) e.y=ny;
+}
+function coopSpawn(n){ const cd=codef; if(!cd) return;
+  if(zombies.filter(z=>z.alive).length>62) return;
+  const R=DEF_HALF-34;
+  for(let i=0;i<n;i++){ const a=Math.random()*6.28;
+    zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
+      hp:3, hpMax:3, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
+      spdMul:rand(0.7,1.12), aggro:true, face:Math.PI/2 }); }
+}
+function coopSpawnBoss(){ const cd=codef; cd.bossCount=(cd.bossCount||0)+1;
+  const R=DEF_HALF-46, a=Math.random()*6.28, hp=80+(cd.bossCount-1)*28;
+  cd.boss={ x:Math.cos(a)*R-48, y:Math.sin(a)*R-48, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
+  toast('⚠ BOSS INCOMING!'); shake(10,.3); Sound.power();
+}
+function coopBuild(pl,type){ const cd=codef; if(!cd) return;
+  const cost=type==='turret'?DEF_TCOST:DEF_WCOST;
+  if(cd.cash<cost){ toast('NOT ENOUGH $'); return; }
+  const ang=(pl.aim!=null)?pl.aim:-Math.PI/2, dist=60;
+  const cx=pl.x+pl.w/2+Math.cos(ang)*dist, cy=pl.y+pl.h/2+Math.sin(ang)*dist;
+  const size=type==='turret'?42:56;
+  if(codefBlocks(cx-size/2,cy-size/2,size,size)){ toast('NO ROOM'); return; }
+  for(const t of cd.turrets){ if(t.hp>0 && defRectsOverlap(cx-size/2,cy-size/2,size,size, t.x-t.w/2,t.y-t.h/2,t.w,t.h)){ toast('NO ROOM'); return; } }
+  cd.cash-=cost;
+  if(type==='turret') cd.turrets.push({x:cx,y:cy,w:size,h:size,hp:70,hpMax:70,cd:0,range:250,aim:ang});
+  else cd.walls.push({x:cx,y:cy,w:size,h:size,hp:140,hpMax:140});
+  Sound.power();
+}
+function coopBuildRequest(type){
+  if(!net||!codef) return;
+  if(net.role==='host') coopBuild(codef[codef.meKey], type);
+  else NetIO.send({t:'cbuild', bt:type});
+}
+function coopLocalInput(pl){
+  let mvx=0,mvy=0;
+  if(keys['ArrowLeft']||keys['KeyA'])mvx-=1; if(keys['ArrowRight']||keys['KeyD'])mvx+=1;
+  if(keys['ArrowUp']||keys['KeyW'])mvy-=1; if(keys['ArrowDown']||keys['KeyS'])mvy+=1;
+  if(mvx&&mvy){mvx*=0.7071;mvy*=0.7071;}
+  if(touch.mvx||touch.mvy){mvx=touch.mvx;mvy=touch.mvy;}
+  const aim=aimAngleFromInput(pl, codef);
+  const fire=!!(keys['Space']||touch.fire||touch.aimActive||tapAim.active);
+  return {mvx,mvy,aim,fire};
+}
+function coopActor(pl, inp, dt, host){
+  codefMove(pl, inp.mvx||0, inp.mvy||0, dt, pl.speed);
+  pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving) pl.walkT+=dt*11;
+  if(inp.aim!=null){ pl.aim=inp.aim; pl.aimManual=true; } else pl.aimManual=false;
+  if(pl.invuln>0)pl.invuln-=dt; if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*7;
+  pl.ammoRegen=(pl.ammoRegen||0)+dt; if(pl.ammoRegen>=2){ pl.ammoRegen-=2; pl.ammo=Math.min(99,pl.ammo+1); }
+  if(host && inp.fire && pl.cd<=0){
+    if(pl.ammo>0){ exploreFire(pl); pl.ammo--; pl.cd=0.26; } else pl.cd=0.25;
+  }
+}
+function coopTouch(z, pl){
+  const dx=(z.x+z.w/2)-(pl.x+pl.w/2), dy=(z.y+z.h/2)-(pl.y+pl.h/2), d=Math.hypot(dx,dy);
+  const minD=(pl.w+z.w)*0.45;
+  if(d<minD){ if(pl.invuln<=0){ const push=minD-(d||0.001), ux=(d>0.001?dx/d:0), uy=(d>0.001?dy/d:-1); z.x+=ux*push; z.y+=uy*push; } return true; }
+  return false;
+}
+function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turrets, bullets)
+  const cd=codef, f=cd.flag;
+  cd.spawnT-=dt; if(cd.spawnT<=0){ coopSpawn(Math.min(6, 2+Math.floor(cd.elapsed/22))); cd.spawnT=Math.max(0.5, 1.6-cd.elapsed*0.02); }
+  if(!cd.boss && cd.kills>=cd.bossMark){ coopSpawnBoss(); cd.bossMark+=20; }
+  // turrets fire
+  for(const t of cd.turrets){ if(t.hp<=0) continue; if(t.cd>0)t.cd-=dt;
+    let best=null,bd=t.range;
+    for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
+    if(cd.boss && !cd.boss.dead){ const bo=cd.boss, d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
+    if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
+      if(t.cd<=0){ const vx=Math.cos(t.aim),vy=Math.sin(t.aim),sp=760;
+        bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:7,h:7,vx:vx*sp,vy:vy*sp,col:'#7fd0ff',dmg:1,t:0,turret:true}); t.cd=0.5; } }
+  }
+  const players=[cd.p1,cd.p2];
+  for(const z of zombies){
+    if(z.dying){ tickDying(z,dt,1.05); continue; }
+    if(!z.alive) continue;
+    if(z.flash>0)z.flash-=dt;
+    const dx=f.x-(z.x+z.w/2), dy=f.y-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
+    z.face=Math.atan2(dy,dx);
+    let attacked=false;
+    if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
+    else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1), true);
+    for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
+    for(const pl of players){ if(coopTouch(z,pl) && pl.invuln<=0){ cd.lives--; pl.invuln=1.5; shake(12,.35);
+      if(cd.lives<=0){ cd.over=true; } } }
+  }
+  // boss
+  if(cd.boss && !cd.boss.dead){ const bo=cd.boss; if(bo.flash>0)bo.flash-=dt;
+    const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
+    bo.face=Math.atan2(bdy,bdx);
+    if(bd < f.r + bo.w*0.5){ f.hp-=dt*14; }
+    else codefMove(bo, bdx/bd, bdy/bd, dt, 40, true);
+    for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
+    for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
+    for(const pl of players){ if(pl.x+pl.w/2>bo.x-6 && pl.x+pl.w/2<bo.x+bo.w+6 && pl.y+pl.h/2>bo.y-6 && pl.y+pl.h/2<bo.y+bo.h+6 && pl.invuln<=0){ cd.lives--; pl.invuln=1.5; shake(14,.4); if(cd.lives<=0) cd.over=true; } }
+  }
+  // separation
+  const MINSEP=40;
+  for(let a=0;a<zombies.length;a++){ const za=zombies[a]; if(!za.alive) continue;
+    for(let bI=a+1;bI<zombies.length;bI++){ const zb=zombies[bI]; if(!zb.alive) continue;
+      let sx=(zb.x+zb.w/2)-(za.x+za.w/2), sy=(zb.y+zb.h/2)-(za.y+za.h/2); let sd=Math.hypot(sx,sy);
+      if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
+      if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
+  cd.turrets=cd.turrets.filter(t=>t.hp>0); cd.walls=cd.walls.filter(s=>s.hp>0);
+  // bullets
+  for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; if(codefBulletBlocks(b.x,b.y)) b.dead=true; }
+  for(const b of bullets){ if(b.dead) continue;
+    if(cd.boss && !cd.boss.dead){ const bo=cd.boss;
+      if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=b.dmg||1; bo.flash=0.12; Sound.zHit();
+        spawnBlood(b.x,b.y,'#7a0f1a',6,120,basicBloodMul()); if(!b.pierce)b.dead=true;
+        if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; cd.boss=null; Sound.kill(); toast('BOSS DOWN! +$45'); }
+        continue; } }
+    for(const z of zombies){ if(!z.alive) continue;
+      if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
+        spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
+        if(z.hp<=0){ killZombie(z); cd.kills++; cd.cash+=DEF_KILL_CASH; } break; } } }
+  bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
+  zombies=zombies.filter(z=> z.alive || z.dying);
+}
+function updateCoopHost(dt){
+  const cd=codef; if(!cd) return; cd.elapsed+=dt;
+  coopActor(cd.p1, (cd.meKey==='p1'?coopLocalInput(cd.p1):(net.guestInput||{mvx:0,mvy:0,aim:null,fire:false})), dt, true);
+  coopActor(cd.p2, (cd.meKey==='p2'?coopLocalInput(cd.p2):(net.guestInput||{mvx:0,mvy:0,aim:null,fire:false})), dt, true);
+  if(net.pendingBuild){ coopBuild(cd[cd.foeKey], net.pendingBuild); net.pendingBuild=null; }
+  const me=cd[cd.meKey];
+  cd.camX=clamp(me.x+me.w/2-W/2, -DEF_HALF-30, DEF_HALF-W+30);
+  cd.camY=clamp(me.y+me.h/2-H/2, -DEF_HALF-30, DEF_HALF-H+30);
+  coopSimWorld(dt);
+  net.snapT-=dt; if(net.snapT<=0){ net.snapT=1/15; NetIO.send(coopSnapshot()); }
+  if(cd.over || cd.flag.hp<=0){ try{NetIO.send({t:'cover', ki:cd.kills});}catch(e){} coopDefEnd(cd.kills); }
+}
+function updateCoopGuest(dt){
+  const cd=codef; if(!cd) return; cd.elapsed+=dt;
+  const me=cd[cd.meKey];
+  const inp=coopLocalInput(me);
+  coopActor(me, inp, dt, false);   // predict my own movement/aim; host is authoritative for the world
+  net.inT-=dt; if(net.inT<=0){ net.inT=1/30; NetIO.send({t:'cin', mvx:inp.mvx, mvy:inp.mvy, aim:inp.aim, fire:inp.fire}); }
+  cd.camX=clamp(me.x+me.w/2-W/2, -DEF_HALF-30, DEF_HALF-W+30);
+  cd.camY=clamp(me.y+me.h/2-H/2, -DEF_HALF-30, DEF_HALF-H+30);
+  if(cd._snap) coopApplySnapshot(cd._snap);
+}
+function encP(pl){ return [Math.round(pl.x),Math.round(pl.y), pl.aim==null?null:+pl.aim.toFixed(2), pl.ammo, pl.moving?1:0]; }
+function coopSnapshot(){
+  const cd=codef;
+  const zs=[]; for(const z of zombies){ if(!z.alive && !z.dying) continue; zs.push([Math.round(z.x),Math.round(z.y), z.alive?0:1, +(z.face||0).toFixed(2)]); }
+  const tu=cd.turrets.map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2)]);
+  const wl=cd.walls.map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp)]);
+  const bo=cd.boss?[Math.round(cd.boss.x),Math.round(cd.boss.y),Math.round(cd.boss.hp),Math.round(cd.boss.hpMax),+(cd.boss.face||0).toFixed(2)]:null;
+  return { t:'cst', ca:Math.floor(cd.cash), lv:cd.lives, ki:cd.kills, ov:cd.over?1:0, fh:Math.max(0,Math.round(cd.flag.hp)),
+    p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, bo };
+}
+function coopApplySnapshot(s){
+  const cd=codef;
+  zombies = s.zs.map(a=>({ x:a[0], y:a[1], w:44, h:44, alive:a[2]===0, dying:a[2]===1, deadT:a[2]===1?0.3:0,
+    face:a[3], bob:0, flash:0, atk:0, chew:0, type:'walker', hp:3, hpMax:3, spdMul:1 }));
+  cd.turrets = s.tu.map(a=>({x:a[0],y:a[1],w:42,h:42,hp:a[2],hpMax:70,cd:0,range:250,aim:a[3]}));
+  cd.walls   = s.wl.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:140}));
+  cd.boss    = s.bo ? {x:s.bo[0],y:s.bo[1],w:96,h:96,hp:s.bo[2],hpMax:s.bo[3],face:s.bo[4],flash:0,dead:false} : null;
+  cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1;
+  const sMe = (cd.meKey==='p1')?s.p1:s.p2, sFoe=(cd.foeKey==='p1')?s.p1:s.p2;
+  const me=cd[cd.meKey], foe=cd[cd.foeKey];
+  foe.x=sFoe[0]; foe.y=sFoe[1]; foe.aim=sFoe[2]; foe.ammo=sFoe[3]; foe.moving=sFoe[4]===1;
+  me.ammo=sMe[3];
+  me.x+=(sMe[0]-me.x)*0.2; me.y+=(sMe[1]-me.y)*0.2;   // gently reconcile drift
+  if(cd.over) coopDefEnd(s.ki);
+}
+function coopDefEnd(kills){
+  const k=(kills!=null)?kills:(codef?codef.kills:0);
+  try{ NetIO.cleanup(); }catch(e){}
+  net=null; codef=null; explore=null; mode='arcade'; zombies=[]; bullets=[]; boss=null;
+  toast('CO-OP OVER — '+k+' kills'); state=STATE.MENU;
+}
+function drawCoopDef(){
+  const cd=codef; if(!cd) return;
+  ctx.fillStyle='#0e130c'; ctx.fillRect(0,0,W,H);
+  ctx.save(); ctx.translate(-Math.round(cd.camX),-Math.round(cd.camY));
+  drawDefenseGround(cd); drawDefenseArena(); drawBloodPools();
+  drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd);
+  drawZombies(); drawDefenseBoss(cd); drawBullets();
+  drawPlayerObj(cd.p1, true); drawPlayerObj(cd.p2, true);
+  drawParticles();
+  ctx.restore();
+  drawCoopUI(cd);
+}
+function drawCoopUI(cd){
+  ctx.textAlign='right'; ctx.textBaseline='alphabetic';
+  // team lives as one heart + count (avoids overlapping the build buttons)
+  drawHeart(W-16, 20, 9, performance.now()/300);
+  ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
+  ctx.fillStyle='#ffd6d6'; ctx.font='bold 14px '+CF; ctx.fillText('×'+Math.max(0,cd.lives), W-30, 25);
+  const me=cd[cd.meKey];
+  ctx.font='bold 15px '+CF;
+  ctx.fillStyle=me.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt='🔫 '+me.ammo; ctx.fillText(atxt, W-14, 46); ctx.shadowBlur=0;
+  ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(cd.cash), 14, 28);
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+'  ·  shared cash', 14, 46); ctx.shadowBlur=0;
+  drawDefBuildBtn(defTurretBtn, Tsprite, TAW, TAH, 'TURRET', DEF_TCOST, cd.cash>=DEF_TCOST);
+  drawDefBuildBtn(defWallBtn,   Wsprite, WAW, WAH, 'WALL',   DEF_WCOST, cd.cash>=DEF_WCOST);
 }
 function netStartDuel(){
   mode='net'; explore=null; coop=null;
@@ -4874,11 +5140,11 @@ function drawNetLobby(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#5dff8a'; ctx.font='bold 24px '+CF; ctx.fillText('ONLINE VERSUS', W/2, 58);
+  ctx.fillStyle='#5dff8a'; ctx.font='bold 24px '+CF; ctx.fillText(net.coop?'CO-OP DEFENSE':'ONLINE VERSUS', W/2, 58);
   ctx.shadowBlur=0;
   const L=net.lobby;
   if(L==='choose'){
-    drawModeToggle();
+    if(!net.coop) drawModeToggle();
     drawVersusModeButton(netQuickBtn, '#c24a1a','#8f3210','#ff8a3d','⚡ QUICK MATCH','find any public game','auto-connect · no code needed');
     drawVersusModeButton(netHostBtn, '#2fa35a','#1c7a41','#5dff8a','HOST A GAME','create a private room','get a code to share');
     drawVersusModeButton(netJoinBtn, '#3f7ad1','#2b559e','#7fb0ff','JOIN A GAME','enter a friend’s code','connect to their room');
@@ -4900,10 +5166,10 @@ function drawNetLobby(){
       ctx.fillStyle='#ffe14b'; ctx.font='bold 16px '+CF; ctx.fillText('waiting for another player…', W/2, 210); ctx.globalAlpha=1;
       ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF; ctx.fillText('you’re now an open game — someone will drop in', W/2, 250);
       ctx.fillText('keep this open, or tap BACK to cancel', W/2, 272);
-      drawModeToggle();
+      if(!net.coop) drawModeToggle();
     }
   } else if(L==='hosting' || (L==='connected' && net.role==='host')){
-    drawModeToggle();
+    if(!net.coop) drawModeToggle();
     ctx.fillStyle='#c9e6b0'; ctx.font='bold 14px '+CF; ctx.fillText('YOUR ROOM CODE', W/2, 118);
     ctx.fillStyle='#fff'; ctx.font='bold 60px monospace';
     ctx.fillText(net.code||'····', W/2, 190);
