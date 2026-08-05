@@ -131,7 +131,7 @@ let _ctrlShown = true;
 let _aimShown = false;
 function syncControls(){   // only show the joystick/pause/fire bar during actual play
   const show = (state===STATE.PLAY || state===STATE.CHASE || state===STATE.PAUSE || state===STATE.DEATH || state===STATE.DUEL || state===STATE.COOPDEF);
-  if(show!==_ctrlShown){ _ctrlShown=show; if(controlsBar) controlsBar.style.display = show ? '' : 'none'; }
+  if(show!==_ctrlShown){ _ctrlShown=show; if(controlsBar) controlsBar.style.display = show ? '' : 'none'; fit(); }
   // Mission 3 (explore) and online duels use a twin-stick layout: swap the FIRE button for the AIM stick
   const aimMode = !!explore || state===STATE.DUEL || state===STATE.COOPDEF;
   if(aimMode!==_aimShown){
@@ -147,7 +147,8 @@ const PORT_DIMS={w:430,h:560}, LAND_DIMS={w:760,h:430};
 let _landActive=false;
 function fit(){
   const pad = 14;
-  const ctrlH = _landActive ? 0 : 150; // control bar height (portrait only; landscape overlays it)
+  // reserve the control-bar height only when it's actually shown; menus/portrait-in-landscape just pillarbox (green sides)
+  const ctrlH = _landActive ? 0 : (_ctrlShown ? 150 : 0);
   const availW = window.innerWidth - pad, availH = window.innerHeight - pad - ctrlH;
   const scale = Math.min(availW / W, availH / H, _landActive ? 2.4 : 1.5);
   const stage = document.getElementById('stage');
@@ -162,7 +163,7 @@ function applyViewport(){
   const d=_landActive?LAND_DIMS:PORT_DIMS;
   if(canvas.width!==d.w || canvas.height!==d.h){ canvas.width=d.w; canvas.height=d.h; }
   W=d.w; H=d.h;
-  if(typeof defTurretBtn!=='undefined'){ defTurretBtn.x=W/2-128; defWallBtn.x=W/2+6; }
+  if(typeof layoutBuildBar==='function'){ layoutBuildBar(); }
   document.body.classList.toggle('landscape', _landActive);
   fit();
 }
@@ -401,6 +402,7 @@ let codef=null;
   if(pauseBtn) pauseBtn.addEventListener('pointerdown', e=>{ e.preventDefault(); Sound.resume(); togglePause(); });
 })();
 function togglePause(){
+  if(state===STATE.DUEL && duel && duel.ai && !duel.over){ duel.paused=!duel.paused; Sound.hit(); return; }
   if(state===STATE.PLAY || state===STATE.CHASE){ pauseReturn=state; state=STATE.PAUSE; }
   else if(state===STATE.PAUSE){ state=pauseReturn; }
 }
@@ -412,14 +414,16 @@ function canvasPoint(e){
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
 canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
   const p=canvasPoint(e);
+  if(state===STATE.DUEL && duel && duel.paused){   // paused AI shootout: tap resumes, or hit QUIT
+    if(inRect(p, duelQuitBtn)){ duel=null; mode='arcade'; state=STATE.MENU; } else duel.paused=false;
+    return;
+  }
   if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){
     if(explore && explore.defense){   // defense build buttons take the tap before aiming
-      if(inRect(p, defTurretBtn)){ defBuild('turret'); return; }
-      if(inRect(p, defWallBtn)){ defBuild('wall'); return; }
+      for(const bb of buildBtns){ if(inRect(p, bb)){ defBuild(bb.type); return; } }
     }
     if(state===STATE.COOPDEF && codef){   // co-op build buttons
-      if(inRect(p, defTurretBtn)){ coopBuildRequest('turret'); return; }
-      if(inRect(p, defWallBtn)){ coopBuildRequest('wall'); return; }
+      for(const bb of buildBtns){ if(inRect(p, bb)){ coopBuildRequest(bb.type); return; } }
     }
     tapAim.active=true; tapAim.id=e.pointerId; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
   }
@@ -1374,7 +1378,7 @@ function update(dt){
     if(pressed['Escape']){ netQuit(); state=STATE.MENU; }
   } else if(state===STATE.DUEL){
     if(pressed['Escape']){ netQuit(); state=STATE.MENU; }
-    else if(duel && duel.ai) updateDuelAI(dt);
+    else if(duel && duel.ai){ if(!duel.paused) updateDuelAI(dt); }
     else if(net && net.role==='host') updateDuelHost(dt);
     else if(net) updateDuelGuest(dt);
   } else if(state===STATE.VERSUSPICK){
@@ -1960,12 +1964,13 @@ function setupExplore(){
 function zOnScreen(z){
   const ex=explore; if(!ex) return true;
   const cx=z.x+z.w/2, cy=z.y+z.h/2;
-  return cx>=ex.camX-10 && cx<=ex.camX+W+10 && cy>=ex.camY-10 && cy<=ex.camY+H+10;
+  const zm=ex.zoom||1;
+  return cx>=ex.camX-10 && cx<=ex.camX+W/zm+10 && cy>=ex.camY-10 && cy<=ex.camY+H/zm+10;
 }
 // manual aim from the aim stick or a screen tap (cam has camX/camY); null if neither is active
 function aimAngleFromInput(p, cam){
   if(touch.aimActive) return Math.atan2(touch.aimy, touch.aimx);
-  if(tapAim.active){ const wx=cam.camX+tapAim.x, wy=cam.camY+tapAim.y; return Math.atan2(wy-(p.y+p.h/2), wx-(p.x+p.w/2)); }
+  if(tapAim.active){ const zz=cam.zoom||1, wx=cam.camX+tapAim.x/zz, wy=cam.camY+tapAim.y/zz; return Math.atan2(wy-(p.y+p.h/2), wx-(p.x+p.w/2)); }
   return null;
 }
 function exploreFire(p){
@@ -2133,8 +2138,9 @@ function endlessMove(e,mvx,mvy,dt,spd){   // axis-separated movement blocked by 
   const ny=e.y+mvy*spd*dt; if(!endlessBlocks(e.x,ny,e.w,e.h)) e.y=ny;
 }
 function drawEndlessObstacles(ex){
-  const c0x=Math.floor((ex.camX-20)/OCELL), c1x=Math.floor((ex.camX+W+20)/OCELL);
-  const c0y=Math.floor((ex.camY-20)/OCELL), c1y=Math.floor((ex.camY+H+20)/OCELL);
+  const z=ex.zoom||1;
+  const c0x=Math.floor((ex.camX-20)/OCELL), c1x=Math.floor((ex.camX+W/z+20)/OCELL);
+  const c0y=Math.floor((ex.camY-20)/OCELL), c1y=Math.floor((ex.camY+H/z+20)/OCELL);
   for(let cx=c0x;cx<=c1x;cx++) for(let cy=c0y;cy<=c1y;cy++){ const o=endlessObs(cx,cy); if(!o) continue;
     ctx.fillStyle='#3a4a2b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
     ctx.fillStyle='#4c6138'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
@@ -2154,7 +2160,8 @@ function updateEndless(dt){
   if(touch.mvx||touch.mvy){mvx=touch.mvx;mvy=touch.mvy;}
   endlessMove(p, mvx, mvy, dt, p.speed);           // blocked by walls
   p.moving=!!(mvx||mvy); if(p.moving)p.walkT+=dt*11;
-  ex.camX=p.x+p.w/2-W/2; ex.camY=p.y+p.h/2-H/2;
+  ex.zoom=EXPLORE_ZOOM; const VW=W/ex.zoom, VH=H/ex.zoom;
+  ex.camX=p.x+p.w/2-VW/2; ex.camY=p.y+p.h/2-VH/2;
   // ammo regen
   p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
   // aim: manual stick / screen tap, else nearest on-screen
@@ -2201,23 +2208,31 @@ function updateEndless(dt){
       if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
         if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; } break; } } }
-  bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.3 && b.x>=ex.camX-30 && b.x<=ex.camX+W+30 && b.y>=ex.camY-30 && b.y<=ex.camY+H+30);
+  { const z=ex.zoom||1; bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.3 && b.x>=ex.camX-30 && b.x<=ex.camX+W/z+30 && b.y>=ex.camY-30 && b.y<=ex.camY+H/z+30); }
   // power-up pickups
   for(const pu of powerups){ pu.t=(pu.t||0)+dt; if(rectHit(pu,p)){ pu.dead=true; applyPower(pu.type); } }
   powerups=powerups.filter(pu=>!pu.dead);
 }
+// the same cold wash + vignette that gives Normal play its gloomy mood — overlaid in screen space
+function drawGloom(){
+  ctx.fillStyle='rgba(14,20,30,0.16)'; ctx.fillRect(0,0,W,H);
+  const vg=ctx.createRadialGradient(W/2,H*0.42,Math.min(W,H)*0.22, W/2,H*0.5,Math.max(W,H)*0.7);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(0.62,'rgba(0,0,0,0.18)'); vg.addColorStop(1,'rgba(4,6,10,0.55)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+}
 function drawEndless(){
   const ex=explore; if(!ex) return;
   ctx.fillStyle='#141b12'; ctx.fillRect(0,0,W,H);
-  ctx.save(); ctx.translate(-Math.round(ex.camX),-Math.round(ex.camY));
+  ctx.save(); const z=ex.zoom||1; ctx.scale(z,z); ctx.translate(-Math.round(ex.camX),-Math.round(ex.camY));
   drawEndlessGround(ex);
   drawEndlessObstacles(ex);
   drawBloodPools(); drawPowerups(); drawZombies(); drawBullets(); drawPlayer(); drawParticles();
   ctx.restore();
+  drawGloom();
   drawEndlessUI(ex);
 }
 function drawEndlessGround(ex){
-  const x0=ex.camX-10, y0=ex.camY-10, x1=ex.camX+W+10, y1=ex.camY+H+10;
+  const z=ex.zoom||1, x0=ex.camX-10, y0=ex.camY-10, x1=ex.camX+W/z+10, y1=ex.camY+H/z+10;
   for(let y=Math.floor(y0/48)*48; y<y1; y+=48) for(let x=Math.floor(x0/48)*48; x<x1; x+=48){
     ctx.fillStyle=((Math.floor(x/48)+Math.floor(y/48))&1)?'#20301a':'#1b2917'; ctx.fillRect(x,y,48,48); }
 }
@@ -2234,17 +2249,38 @@ function drawEndlessUI(ex){
   ctx.shadowBlur=0;
 }
 /* ===================== DEFENSE — protect the flag ===================== */
-const DEF_HALF=720, DEF_TCOST=50, DEF_WCOST=25, DEF_START_CASH=90, DEF_KILL_CASH=7;
+const DEF_HALF=1050, DEF_TCOST=50, DEF_WCOST=25, DEF_START_CASH=90, DEF_KILL_CASH=7;
+const EXPLORE_ZOOM=0.83;   // slight zoom-out so the player sees more of the field
 let wasDefense=false;
-const defTurretBtn = {x:W/2-128, y:8, w:122, h:42};
-const defWallBtn   = {x:W/2+6,   y:8, w:122, h:42};
+const DEF_GRID=48;   // builds snap to the floor's grass grid
+const BUILD_SPEC={
+  turret: {cost:50,  size:44, hp:70,  range:250, fireCd:0.5,  dmg:1, kind:'turret'},
+  turret2:{cost:110, size:44, hp:140, range:320, fireCd:0.30, dmg:2, kind:'turret'},
+  wall:   {cost:25,  size:48, hp:140, kind:'wall'},
+  wall2:  {cost:60,  size:48, hp:380, kind:'wall'},
+  spike:  {cost:35,  size:48, hp:240, kind:'spike'},
+};
+const BUILD_BAR=[
+  {type:'turret',  label:'TURRET'},
+  {type:'turret2', label:'HEAVY'},
+  {type:'wall',    label:'WALL'},
+  {type:'wall2',   label:'STEEL'},
+  {type:'spike',   label:'SPIKES'},
+];
+let buildBtns=[];
+function layoutBuildBar(){
+  const n=BUILD_BAR.length, gap=5, bw=Math.min(80,(W-14-gap*(n-1))/n), total=n*bw+gap*(n-1), x0=(W-total)/2, y=6, h=44;
+  buildBtns=BUILD_BAR.map((b,i)=>({type:b.type, label:b.label, cost:BUILD_SPEC[b.type].cost, x:x0+i*(bw+gap), y, w:bw, h}));
+}
+layoutBuildBar();
+function defSnap(v){ return Math.floor(v/DEF_GRID)*DEF_GRID + DEF_GRID/2; }   // to grid-cell centre
 function defRectsOverlap(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by; }
 function setupDefense(){
   mode='arcade'; wasEndless=false; wasDefense=true;
   explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2,
     cash:DEF_START_CASH,
     flag:{x:0, y:0, r:46, hp:600, hpMax:600},
-    turrets:[], walls:[], boss:null, bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], boss:null, bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=12;
   lives=3; score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
@@ -2282,8 +2318,9 @@ function defSpawn(n){
 function defSpawnBoss(){
   const ex=explore; if(!ex) return;
   ex.bossCount=(ex.bossCount||0)+1;
-  const R=DEF_HALF-46, a=Math.random()*6.28, hp=80+(ex.bossCount-1)*28;
-  ex.boss={ x:Math.cos(a)*R-48, y:Math.sin(a)*R-48, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
+  const R=DEF_HALF-120, a=Math.random()*6.28, hp=80+(ex.bossCount-1)*28;
+  const bx=clamp(Math.cos(a)*R-48, -DEF_HALF+8, DEF_HALF-104), by=clamp(Math.sin(a)*R-48, -DEF_HALF+8, DEF_HALF-104);
+  ex.boss={ x:bx, y:by, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
   toast('⚠ BOSS INCOMING!'); shake(12,.4); Sound.power();
 }
 function drawDefenseBoss(ex){
@@ -2300,19 +2337,29 @@ function drawDefenseBoss(ex){
   ctx.fillStyle=hp>0.5?'#ff5b5b':hp>0.25?'#ffd14b':'#ff2b2b'; ctx.fillRect(cx-bwid/2, bo.y-15, bwid*hp, 8);
   ctx.lineWidth=1; ctx.strokeStyle='#2a0a0a'; ctx.strokeRect(cx-bwid/2, bo.y-15, bwid, 8);
 }
-function defBuild(type){
-  const ex=explore, p=player; if(!ex||!p) return;
-  const cost = type==='turret'?DEF_TCOST:DEF_WCOST;
-  if(ex.cash<cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
-  const ang=(p.aim!=null)?p.aim:-Math.PI/2, dist=60;
-  const cx=p.x+p.w/2+Math.cos(ang)*dist, cy=p.y+p.h/2+Math.sin(ang)*dist;
-  const size=type==='turret'?42:56;
-  if(defBlocks(cx-size/2, cy-size/2, size, size)){ toast('NO ROOM'); Sound.empty(); return; }
-  for(const t of ex.turrets){ if(t.hp>0 && defRectsOverlap(cx-size/2,cy-size/2,size,size, t.x-t.w/2,t.y-t.h/2,t.w,t.h)){ toast('NO ROOM'); Sound.empty(); return; } }
-  ex.cash-=cost;
-  if(type==='turret') ex.turrets.push({x:cx, y:cy, w:size, h:size, hp:70, hpMax:70, cd:0, range:250, aim:ang});
-  else                ex.walls.push({x:cx, y:cy, w:size, h:size, hp:140, hpMax:140});
-  Sound.power(); toast(type==='turret'?'TURRET BUILT':'BARRICADE BUILT');
+function defBuild(type){ doBuild(explore, player, type, false); }
+// shared build logic for solo Defense (ctx=explore) and co-op (ctx=codef); host-authoritative for co-op
+function doBuild(ctx2, pl, type, isCoop){
+  const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
+  if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
+  const ang=(pl.aim!=null)?pl.aim:-Math.PI/2, dist=60;
+  const cx=defSnap(pl.x+pl.w/2+Math.cos(ang)*dist), cy=defSnap(pl.y+pl.h/2+Math.sin(ang)*dist);   // snap to the grass grid
+  const size=spec.size, x0=cx-size/2, y0=cy-size/2;
+  const blocks=isCoop?codefBlocks:defBlocks;
+  const hit=(o)=>o && o.hp>0 && defRectsOverlap(x0,y0,size,size, o.x-o.w/2,o.y-o.h/2,o.w,o.h);
+  if(!ctx2.spikes) ctx2.spikes=[];
+  if(spec.kind==='spike'){
+    if(cx-size/2<-DEF_HALF||cx+size/2>DEF_HALF||cy-size/2<-DEF_HALF||cy+size/2>DEF_HALF){ toast('NO ROOM'); Sound.empty(); return; }
+    if(ctx2.turrets.some(hit)||ctx2.walls.some(hit)||ctx2.spikes.some(hit)){ toast('NO ROOM'); Sound.empty(); return; }
+  } else {
+    if(blocks(x0,y0,size,size)){ toast('NO ROOM'); Sound.empty(); return; }
+    if(ctx2.turrets.some(hit)||ctx2.spikes.some(hit)){ toast('NO ROOM'); Sound.empty(); return; }
+  }
+  ctx2.cash-=spec.cost;
+  if(spec.kind==='turret') ctx2.turrets.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:0,range:spec.range,fireCd:spec.fireCd,dmg:spec.dmg,tier:(type==='turret2'?2:1),aim:ang});
+  else if(spec.kind==='wall') ctx2.walls.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,tier:(type==='wall2'?2:1)});
+  else ctx2.spikes.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp});
+  Sound.power(); toast(spec.kind==='spike'?'SPIKES SET':(spec.kind==='turret'?(type==='turret2'?'HEAVY TURRET':'TURRET'):(type==='wall2'?'STEEL WALL':'BARRICADE'))+' BUILT');
 }
 function updateDefense(dt){
   const p=player, ex=explore; if(!p||!ex) return;
@@ -2328,8 +2375,9 @@ function updateDefense(dt){
   if(touch.mvx||touch.mvy){mvx=touch.mvx;mvy=touch.mvy;}
   defMove(p, mvx,mvy, dt, p.speed);
   p.moving=!!(mvx||mvy); if(p.moving)p.walkT+=dt*11;
-  ex.camX=clamp(p.x+p.w/2-W/2, -DEF_HALF-30, DEF_HALF-W+30);
-  ex.camY=clamp(p.y+p.h/2-H/2, -DEF_HALF-30, DEF_HALF-H+30);
+  ex.zoom=EXPLORE_ZOOM; const VW=W/ex.zoom, VH=H/ex.zoom;
+  ex.camX=clamp(p.x+p.w/2-VW/2, -DEF_HALF-30, DEF_HALF-VW+30);
+  ex.camY=clamp(p.y+p.h/2-VH/2, -DEF_HALF-30, DEF_HALF-VH+30);
   // ammo regen
   p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
   // aim: stick / tap, else nearest on-screen
@@ -2355,8 +2403,8 @@ function updateDefense(dt){
     if(ex.boss && !ex.boss.dead){ const bo=ex.boss, d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim), vy=Math.sin(t.aim), sp=760;
-        bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:7,h:7, vx:vx*sp, vy:vy*sp, col:'#7fd0ff', dmg:1, t:0, turret:true});
-        t.cd=0.5; } }
+        bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:7,h:7, vx:vx*sp, vy:vy*sp, col:(t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:t.dmg||1, t:0, turret:true});
+        t.cd=t.fireCd||0.5; } }
   }
   // zombies march on the flag; attack the flag or anything blocking them
   const f=ex.flag;
@@ -2366,9 +2414,13 @@ function updateDefense(dt){
     if(z.flash>0)z.flash-=dt;
     const dx=f.x-(z.x+z.w/2), dy=f.y-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
     z.face=Math.atan2(dy,dx);
+    // spikes: damage + slow zombies standing on them (and wear the spikes down)
+    let slow=1;
+    if(ex.spikes) for(const sp of ex.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
+    if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=DEF_KILL_CASH; continue; }
     let attacked=false;
     if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
-    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1), true);
+    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow, true);
     for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
@@ -2396,6 +2448,7 @@ function updateDefense(dt){
   }
   ex.turrets=ex.turrets.filter(t=>t.hp>0);
   ex.walls=ex.walls.filter(s=>s.hp>0);
+  if(ex.spikes) ex.spikes=ex.spikes.filter(s=>s.hp>0);
   // bullets (player + turret): move, blocked by barricades/arena, hit zombies
   for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; if(defBulletBlocks(b.x,b.y)) b.dead=true; }
   for(const b of bullets){ if(b.dead) continue;
@@ -2419,19 +2472,21 @@ function updateDefense(dt){
 function drawDefense(){
   const ex=explore; if(!ex) return;
   ctx.fillStyle='#0e130c'; ctx.fillRect(0,0,W,H);
-  ctx.save(); ctx.translate(-Math.round(ex.camX),-Math.round(ex.camY));
+  ctx.save(); const z=ex.zoom||1; ctx.scale(z,z); ctx.translate(-Math.round(ex.camX),-Math.round(ex.camY));
   drawDefenseGround(ex);
   drawDefenseArena();
   drawBloodPools();
+  drawDefenseSpikes(ex);
   drawDefenseFlag(ex);
   drawDefenseWalls(ex);
   drawDefenseTurrets(ex);
   drawZombies(); drawDefenseBoss(ex); drawBullets(); drawPlayer(); drawParticles();
   ctx.restore();
+  drawGloom();
   drawDefenseUI(ex);
 }
 function drawDefenseGround(ex){
-  const x0=ex.camX-10,y0=ex.camY-10,x1=ex.camX+W+10,y1=ex.camY+H+10;
+  const z=ex.zoom||1, x0=ex.camX-10,y0=ex.camY-10,x1=ex.camX+W/z+10,y1=ex.camY+H/z+10;
   for(let y=Math.floor(y0/48)*48;y<y1;y+=48) for(let x=Math.floor(x0/48)*48;x<x1;x+=48){
     const inside = x>=-DEF_HALF && x<DEF_HALF && y>=-DEF_HALF && y<DEF_HALF;
     ctx.fillStyle = inside ? (((Math.floor(x/48)+Math.floor(y/48))&1)?'#20301a':'#1b2917') : '#0a0d07';
@@ -2462,48 +2517,63 @@ function drawDefenseFlag(ex){
   ctx.lineWidth=1; ctx.strokeStyle='#0e1a08'; ctx.strokeRect(f.x-bw/2, f.y-88, bw, 9);
 }
 function drawDefenseWalls(ex){
-  for(const s of ex.walls){ if(s.hp<=0) continue; const x=s.x-s.w/2, y=s.y-s.h/2;
-    ctx.fillStyle='#6b5436'; roundRectPath(x,y,s.w,s.h,5); ctx.fill();
-    ctx.fillStyle='#856a45'; roundRectPath(x+3,y+3,s.w-6,Math.max(4,s.h*0.38),4); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#3e3020'; roundRectPath(x,y,s.w,s.h,5); ctx.stroke();
+  for(const s of ex.walls){ if(s.hp<=0) continue; const x=s.x-s.w/2, y=s.y-s.h/2, steel=s.tier===2;
+    ctx.fillStyle=steel?'#6a7078':'#6b5436'; roundRectPath(x,y,s.w,s.h,5); ctx.fill();
+    ctx.fillStyle=steel?'#8b939c':'#856a45'; roundRectPath(x+3,y+3,s.w-6,Math.max(4,s.h*0.38),4); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=steel?'#3a4046':'#3e3020'; roundRectPath(x,y,s.w,s.h,5); ctx.stroke();
+    if(steel){ ctx.fillStyle='#b6bdc6'; for(const bl of [[x+5,y+5],[x+s.w-6,y+5],[x+5,y+s.h-6],[x+s.w-6,y+s.h-6]]){ ctx.beginPath(); ctx.arc(bl[0],bl[1],2,0,6.28); ctx.fill(); } }
     const hp=s.hp/s.hpMax; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, y-7, s.w, 4);
     ctx.fillStyle=hp>0.4?'#9fe27f':'#ff7a7a'; ctx.fillRect(x, y-7, s.w*hp, 4); }
 }
+function drawDefenseSpikes(ex){
+  if(!ex.spikes) return;
+  for(const sp of ex.spikes){ if(sp.hp<=0) continue; const x=sp.x-sp.w/2, y=sp.y-sp.h/2;
+    ctx.fillStyle='rgba(30,24,16,.72)'; roundRectPath(x,y,sp.w,sp.h,4); ctx.fill();
+    ctx.strokeStyle='#4a3c28'; ctx.lineWidth=1.5; roundRectPath(x,y,sp.w,sp.h,4); ctx.stroke();
+    ctx.fillStyle='#cfd6dd';
+    for(let r=0;r<2;r++) for(let c=0;c<3;c++){ const px=x+8+c*((sp.w-16)/2), py=y+12+r*((sp.h-16)/1);
+      ctx.beginPath(); ctx.moveTo(px-6,py+6); ctx.lineTo(px,py-8); ctx.lineTo(px+6,py+6); ctx.closePath(); ctx.fill(); }
+    const hp=sp.hp/sp.hpMax; if(hp<1){ ctx.fillStyle='rgba(0,0,0,'+(0.4*(1-hp))+')'; roundRectPath(x,y,sp.w,sp.h,4); ctx.fill(); } }
+}
 function drawDefenseTurrets(ex){
-  for(const t of ex.turrets){ if(t.hp<=0) continue;
+  for(const t of ex.turrets){ if(t.hp<=0) continue; const heavy=t.tier===2;
     ctx.save(); ctx.translate(t.x,t.y);
-    ctx.fillStyle='#3b4a5a'; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.fill();
-    ctx.strokeStyle='#8fb0d0'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.stroke();
+    ctx.fillStyle=heavy?'#5a3b3b':'#3b4a5a'; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.fill();
+    ctx.strokeStyle=heavy?'#ff9a6a':'#8fb0d0'; ctx.lineWidth=heavy?3:2; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.stroke();
     ctx.rotate(t.aim||0);
-    ctx.fillStyle='#20303f'; ctx.fillRect(0,-4, t.w*0.64, 8);
-    ctx.fillStyle='#5f7f9f'; ctx.beginPath(); ctx.arc(0,0,7,0,6.28); ctx.fill();
+    ctx.fillStyle=heavy?'#3a2020':'#20303f'; ctx.fillRect(0,-(heavy?5:4), t.w*(heavy?0.72:0.64), heavy?10:8);
+    ctx.fillStyle=heavy?'#c08060':'#5f7f9f'; ctx.beginPath(); ctx.arc(0,0,heavy?8:7,0,6.28); ctx.fill();
     ctx.restore();
     const hp=t.hp/t.hpMax, x=t.x-t.w/2; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, t.y-t.h/2-7, t.w, 4);
-    ctx.fillStyle=hp>0.4?'#7fd0ff':'#ff7a7a'; ctx.fillRect(x, t.y-t.h/2-7, t.w*hp, 4); }
+    ctx.fillStyle=hp>0.4?(heavy?'#ff9a6a':'#7fd0ff'):'#ff7a7a'; ctx.fillRect(x, t.y-t.h/2-7, t.w*hp, 4); }
 }
 function drawDefenseUI(ex){
   ctx.textAlign='right'; ctx.textBaseline='alphabetic';
   for(let i=0;i<lives;i++) drawHeart(W-22-i*24,20,9, performance.now()/300+i*0.5);
   ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3; ctx.font='bold 15px '+CF;
-  ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 46);
-  drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 41); ctx.shadowBlur=0;
+  ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 66);
+  drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 61); ctx.shadowBlur=0;
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 28);
-  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills, 14, 46); ctx.shadowBlur=0;
-  drawDefBuildBtn(defTurretBtn, Tsprite, TAW, TAH, 'TURRET', DEF_TCOST, ex.cash>=DEF_TCOST);
-  drawDefBuildBtn(defWallBtn,   Wsprite, WAW, WAH, 'WALL',   DEF_WCOST, ex.cash>=DEF_WCOST);
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 66);
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills, 14, 82); ctx.shadowBlur=0;
+  for(const bb of buildBtns) drawBuildTile(bb, ex.cash);
 }
-function drawDefBuildBtn(b, icon, iaw, iah, label, cost, afford){
+function drawBuildTile(bb, cash){
+  const afford=cash>=bb.cost, spec=BUILD_SPEC[bb.type];
   ctx.save();
-  ctx.fillStyle= afford?'rgba(28,50,26,.92)':'rgba(40,40,40,.85)';
-  roundRectPath(b.x,b.y,b.w,b.h,9); ctx.fill();
-  ctx.lineWidth=2; ctx.strokeStyle= afford?'#7ee06a':'#666'; roundRectPath(b.x,b.y,b.w,b.h,9); ctx.stroke();
-  // icon (uploaded turret/wall art) on the left
-  if(icon){ const ih=30, iw=ih*(iaw/iah); ctx.globalAlpha=afford?1:0.45;
-    ctx.drawImage(icon, b.x+9, b.y+b.h/2-ih/2, iw, ih); ctx.globalAlpha=1; }
-  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
-  ctx.fillStyle= afford?'#eafff0':'#999'; ctx.font='bold 14px '+CF; ctx.fillText(label, b.x+46, b.y+19);
-  ctx.fillStyle= afford?'#ffe14b':'#888'; ctx.font='bold 12px '+CF; ctx.fillText('$'+cost, b.x+46, b.y+34);
+  ctx.fillStyle=afford?'rgba(24,44,24,.94)':'rgba(38,38,38,.86)';
+  roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle=afford?(spec.kind==='turret'?(bb.type==='turret2'?'#ff9a6a':'#7fd0ff'):spec.kind==='spike'?'#d0d6dd':(bb.type==='wall2'?'#aeb6bf':'#9fe27f')):'#666';
+  roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.stroke();
+  ctx.globalAlpha=afford?1:0.5;
+  const icx=bb.x+bb.w/2, icy=bb.y+13;
+  if(spec.kind==='turret' && Tsprite){ const ih=(bb.type==='turret2')?23:20, iw=ih*(TAW/TAH); ctx.drawImage(Tsprite, icx-iw/2, icy-ih/2, iw, ih); }
+  else if(spec.kind==='wall' && Wsprite){ const ih=20, iw=20; ctx.drawImage(Wsprite, icx-iw/2, icy-ih/2, iw, ih); if(bb.type==='wall2'){ ctx.fillStyle='rgba(150,165,180,.5)'; roundRectPath(icx-iw/2,icy-ih/2,iw,ih,3); ctx.fill(); } }
+  else if(spec.kind==='spike'){ ctx.fillStyle='#cfd6dd'; for(let i=0;i<3;i++){ const sx=icx-9+i*9; ctx.beginPath(); ctx.moveTo(sx-3,icy+7); ctx.lineTo(sx,icy-8); ctx.lineTo(sx+3,icy+7); ctx.closePath(); ctx.fill(); } }
+  ctx.globalAlpha=1;
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle=afford?'#eafff0':'#999'; ctx.font='bold 9px '+CF; ctx.fillText(bb.label, icx, bb.y+31);
+  ctx.fillStyle=afford?'#ffe14b':'#888'; ctx.font='bold 11px '+CF; ctx.fillText('$'+bb.cost, icx, bb.y+42);
   ctx.restore();
 }
 function drawExplore(){
@@ -2520,6 +2590,7 @@ function drawExplore(){
   drawPlayer();
   drawParticles();
   ctx.restore();
+  drawGloom();
   drawExploreUI(ex);
 }
 function drawExploreGround(ex){
@@ -4498,7 +4569,7 @@ function netLobbyTap(p){
     if(!net.coop && inRect(p, netAdvBtn)) net.adv=!net.adv;
   } else if(net.lobby==='connected'){
     if(net.role==='host'){
-      if(inRect(p, netStartBtn)){ NetIO.send({t:'begin', adv:net.adv, gtype:net.gtype}); netBeginMatch(net.adv, net.gtype); }
+      if(inRect(p, netStartBtn)){ const mi=Math.floor(Math.random()*DUEL_MAPS.length); NetIO.send({t:'begin', adv:net.adv, gtype:net.gtype, map:mi}); netBeginMatch(net.adv, net.gtype, mi); }
       else if(!net.coop && inRect(p, netModeBtn)) netToggleMode();
       else if(!net.coop && inRect(p, netAdvBtn)) net.adv=!net.adv;
     }
@@ -4507,7 +4578,7 @@ function netLobbyTap(p){
 
 function netOnMessage(d){ if(!net||!d||!d.t) return;
   switch(d.t){
-    case 'begin': netBeginMatch(!!d.adv, d.gtype||'horde'); break;
+    case 'begin': netBeginMatch(!!d.adv, d.gtype||'horde', d.map||0); break;
     case 'spawn': if(net.iAmDefender) netSpawnFromAttacker(d); break;
     case 'st': if(!net.iAmDefender){ net.snapshot=d; netApplySnapshot(d); } break;
     case 'roundEnd': netOnOpponentRoundEnd(d); break;
@@ -4525,7 +4596,7 @@ function netOnDisconnect(){ if(!net) return;
   else { toast('opponent disconnected'); netQuit(); state=STATE.MENU; }
 }
 
-function netBeginMatch(adv, gtype){ if(!net) return; net.adv=adv; net.gtype=gtype||'horde'; net.round=0; net.myResult=null; net.oppResult=null;
+function netBeginMatch(adv, gtype, map){ if(!net) return; net.adv=adv; net.gtype=gtype||'horde'; net.mapIdx=map||0; net.round=0; net.myResult=null; net.oppResult=null;
   if(net.gtype==='coop'){ netStartCoopDefense(); return; }
   if(net.gtype==='duel'){ netStartDuel(); return; }
   netStartRound(0);
@@ -4604,6 +4675,7 @@ function netShowResults(){ if(!net) return; net.ended=true; state=STATE.NETRESUL
 /* ===================== ONLINE SHOOTOUT (1v1 duel, large map) ===================== */
 let duel=null;
 const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.22, DUEL_BSPD=640, DUEL_PS=44;
+const DUEL_ZOOM=0.85;   // slight zoom-out for a wider view
 const DUEL_MAG=7, DUEL_RELOAD=1.6;   // pistol: 7 shots per magazine, then a reload
 const DUEL_OBS=[   // walls & crates — block both movement AND bullets; spawns & pickup spots kept clear
   {x:120,y:150,w:220,h:44},  {x:520,y:120,w:44,h:240},
@@ -4618,13 +4690,38 @@ const DUEL_OBS=[   // walls & crates — block both movement AND bullets; spawns
   {x:1450,y:1380,w:240,h:44},{x:640,y:1480,w:240,h:44},
   {x:980,y:1520,w:44,h:200}, {x:1250,y:1560,w:220,h:44}
 ];
+// extra arenas — pickup spots (300,900)/(1500,900) and top/bottom spawns kept clear
+const DUEL_MAPS=[ DUEL_OBS,
+  [ // cross & corners
+    {x:820,y:300,w:44,h:400}, {x:820,y:1100,w:44,h:400},
+    {x:360,y:880,w:360,h:44}, {x:1080,y:880,w:360,h:44},
+    {x:820,y:820,w:160,h:160},
+    {x:220,y:220,w:220,h:44}, {x:1360,y:220,w:220,h:44},
+    {x:220,y:1540,w:220,h:44}, {x:1360,y:1540,w:220,h:44},
+    {x:520,y:480,w:44,h:220}, {x:1236,y:480,w:44,h:220},
+    {x:520,y:1100,w:44,h:220}, {x:1236,y:1100,w:44,h:220}
+  ],
+  [ // pillars
+    {x:250,y:250,w:74,h:74},{x:620,y:210,w:74,h:74},{x:980,y:290,w:74,h:74},{x:1330,y:230,w:74,h:74},{x:1560,y:320,w:74,h:74},
+    {x:210,y:620,w:74,h:74},{x:560,y:560,w:74,h:74},{x:900,y:660,w:74,h:74},{x:1250,y:600,w:74,h:74},{x:1560,y:660,w:74,h:74},
+    {x:320,y:1000,w:74,h:74},{x:720,y:1040,w:74,h:74},{x:1080,y:1000,w:74,h:74},{x:1420,y:1040,w:74,h:74},
+    {x:240,y:1360,w:74,h:74},{x:620,y:1410,w:74,h:74},{x:1000,y:1370,w:74,h:74},{x:1360,y:1430,w:74,h:74},{x:1560,y:1360,w:74,h:74}
+  ],
+  [ // corridors / lanes
+    {x:360,y:280,w:44,h:520}, {x:640,y:520,w:44,h:760}, {x:940,y:280,w:44,h:520},
+    {x:1240,y:520,w:44,h:760}, {x:1520,y:280,w:44,h:520},
+    {x:404,y:1240,w:280,h:44}, {x:984,y:1240,w:280,h:44}, {x:1284,y:440,w:280,h:44},
+    {x:404,y:1040,w:236,h:44}, {x:984,y:1040,w:236,h:44}
+  ]
+];
 const DUEL_PICKS=[   // weapon pickups: fixed spots, respawn after being grabbed
   {type:'shotgun', x:300,  y:900},
   {type:'rifle',   x:1500, y:900}
 ];
 function duelBlocks(x,y,w,h){
   if(x<4||y<4||x+w>DUEL_W-4||y+h>DUEL_H-4) return true;
-  for(const o of DUEL_OBS){ if(x<o.x+o.w && x+w>o.x && y<o.y+o.h && y+h>o.y) return true; }
+  const obs=(duel&&duel.obs)||DUEL_OBS;
+  for(const o of obs){ if(x<o.x+o.w && x+w>o.x && y<o.y+o.h && y+h>o.y) return true; }
   return false;
 }
 /* ===================== ONLINE CO-OP DEFENSE ===================== */
@@ -4636,7 +4733,7 @@ function netStartCoopDefense(){
   codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
     cash:DEF_START_CASH+50, lives:6, over:false, _snap:null,
     flag:{x:0,y:0,r:46,hp:700,hpMax:700},
-    turrets:[], walls:[], boss:null, bossMark:20, bossCount:0, p1, p2 };
+    turrets:[], walls:[], spikes:[], boss:null, bossMark:20, bossCount:0, p1, p2 };
   codef.meKey =(net.role==='host')?'p1':'p2';
   codef.foeKey=(net.role==='host')?'p2':'p1';
   player=codef[codef.meKey];   // globals that helpers reference point at the local player
@@ -4666,23 +4763,12 @@ function coopSpawn(n){ const cd=codef; if(!cd) return;
       spdMul:rand(0.7,1.12), aggro:true, face:Math.PI/2 }); }
 }
 function coopSpawnBoss(){ const cd=codef; cd.bossCount=(cd.bossCount||0)+1;
-  const R=DEF_HALF-46, a=Math.random()*6.28, hp=80+(cd.bossCount-1)*28;
-  cd.boss={ x:Math.cos(a)*R-48, y:Math.sin(a)*R-48, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
+  const R=DEF_HALF-120, a=Math.random()*6.28, hp=80+(cd.bossCount-1)*28;
+  const bx=clamp(Math.cos(a)*R-48, -DEF_HALF+8, DEF_HALF-104), by=clamp(Math.sin(a)*R-48, -DEF_HALF+8, DEF_HALF-104);
+  cd.boss={ x:bx, y:by, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
   toast('⚠ BOSS INCOMING!'); shake(10,.3); Sound.power();
 }
-function coopBuild(pl,type){ const cd=codef; if(!cd) return;
-  const cost=type==='turret'?DEF_TCOST:DEF_WCOST;
-  if(cd.cash<cost){ toast('NOT ENOUGH $'); return; }
-  const ang=(pl.aim!=null)?pl.aim:-Math.PI/2, dist=60;
-  const cx=pl.x+pl.w/2+Math.cos(ang)*dist, cy=pl.y+pl.h/2+Math.sin(ang)*dist;
-  const size=type==='turret'?42:56;
-  if(codefBlocks(cx-size/2,cy-size/2,size,size)){ toast('NO ROOM'); return; }
-  for(const t of cd.turrets){ if(t.hp>0 && defRectsOverlap(cx-size/2,cy-size/2,size,size, t.x-t.w/2,t.y-t.h/2,t.w,t.h)){ toast('NO ROOM'); return; } }
-  cd.cash-=cost;
-  if(type==='turret') cd.turrets.push({x:cx,y:cy,w:size,h:size,hp:70,hpMax:70,cd:0,range:250,aim:ang});
-  else cd.walls.push({x:cx,y:cy,w:size,h:size,hp:140,hpMax:140});
-  Sound.power();
-}
+function coopBuild(pl,type){ if(codef) doBuild(codef, pl, type, true); }
 function coopBuildRequest(type){
   if(!net||!codef) return;
   if(net.role==='host') coopBuild(codef[codef.meKey], type);
@@ -4725,7 +4811,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     if(cd.boss && !cd.boss.dead){ const bo=cd.boss, d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim),vy=Math.sin(t.aim),sp=760;
-        bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:7,h:7,vx:vx*sp,vy:vy*sp,col:'#7fd0ff',dmg:1,t:0,turret:true}); t.cd=0.5; } }
+        bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:7,h:7,vx:vx*sp,vy:vy*sp,col:(t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true}); t.cd=t.fireCd||0.5; } }
   }
   const players=[cd.p1,cd.p2];
   for(const z of zombies){
@@ -4734,9 +4820,12 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     if(z.flash>0)z.flash-=dt;
     const dx=f.x-(z.x+z.w/2), dy=f.y-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
     z.face=Math.atan2(dy,dx);
+    let slow=1;
+    if(cd.spikes) for(const sp of cd.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
+    if(z.hp<=0){ killZombie(z); cd.kills++; cd.cash+=DEF_KILL_CASH; continue; }
     let attacked=false;
     if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
-    else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1), true);
+    else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow, true);
     for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
@@ -4760,7 +4849,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
       let sx=(zb.x+zb.w/2)-(za.x+za.w/2), sy=(zb.y+zb.h/2)-(za.y+za.h/2); let sd=Math.hypot(sx,sy);
       if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
-  cd.turrets=cd.turrets.filter(t=>t.hp>0); cd.walls=cd.walls.filter(s=>s.hp>0);
+  cd.turrets=cd.turrets.filter(t=>t.hp>0); cd.walls=cd.walls.filter(s=>s.hp>0); if(cd.spikes) cd.spikes=cd.spikes.filter(s=>s.hp>0);
   // bullets
   for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; if(codefBulletBlocks(b.x,b.y)) b.dead=true; }
   for(const b of bullets){ if(b.dead) continue;
@@ -4782,8 +4871,9 @@ function updateCoopHost(dt){
   coopActor(cd.p2, (cd.meKey==='p2'?coopLocalInput(cd.p2):(net.guestInput||{mvx:0,mvy:0,aim:null,fire:false})), dt, true);
   if(net.pendingBuild){ coopBuild(cd[cd.foeKey], net.pendingBuild); net.pendingBuild=null; }
   const me=cd[cd.meKey];
-  cd.camX=clamp(me.x+me.w/2-W/2, -DEF_HALF-30, DEF_HALF-W+30);
-  cd.camY=clamp(me.y+me.h/2-H/2, -DEF_HALF-30, DEF_HALF-H+30);
+  cd.zoom=EXPLORE_ZOOM; const VW=W/cd.zoom, VH=H/cd.zoom;
+  cd.camX=clamp(me.x+me.w/2-VW/2, -DEF_HALF-30, DEF_HALF-VW+30);
+  cd.camY=clamp(me.y+me.h/2-VH/2, -DEF_HALF-30, DEF_HALF-VH+30);
   coopSimWorld(dt);
   net.snapT-=dt; if(net.snapT<=0){ net.snapT=1/15; NetIO.send(coopSnapshot()); }
   if(cd.over || cd.flag.hp<=0){ try{NetIO.send({t:'cover', ki:cd.kills});}catch(e){} coopDefEnd(cd.kills); }
@@ -4794,26 +4884,29 @@ function updateCoopGuest(dt){
   const inp=coopLocalInput(me);
   coopActor(me, inp, dt, false);   // predict my own movement/aim; host is authoritative for the world
   net.inT-=dt; if(net.inT<=0){ net.inT=1/30; NetIO.send({t:'cin', mvx:inp.mvx, mvy:inp.mvy, aim:inp.aim, fire:inp.fire}); }
-  cd.camX=clamp(me.x+me.w/2-W/2, -DEF_HALF-30, DEF_HALF-W+30);
-  cd.camY=clamp(me.y+me.h/2-H/2, -DEF_HALF-30, DEF_HALF-H+30);
+  cd.zoom=EXPLORE_ZOOM; const VW=W/cd.zoom, VH=H/cd.zoom;
+  cd.camX=clamp(me.x+me.w/2-VW/2, -DEF_HALF-30, DEF_HALF-VW+30);
+  cd.camY=clamp(me.y+me.h/2-VH/2, -DEF_HALF-30, DEF_HALF-VH+30);
   if(cd._snap) coopApplySnapshot(cd._snap);
 }
 function encP(pl){ return [Math.round(pl.x),Math.round(pl.y), pl.aim==null?null:+pl.aim.toFixed(2), pl.ammo, pl.moving?1:0]; }
 function coopSnapshot(){
   const cd=codef;
   const zs=[]; for(const z of zombies){ if(!z.alive && !z.dying) continue; zs.push([Math.round(z.x),Math.round(z.y), z.alive?0:1, +(z.face||0).toFixed(2)]); }
-  const tu=cd.turrets.map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2)]);
-  const wl=cd.walls.map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp)]);
+  const tu=cd.turrets.map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2),t.tier||1,Math.round(t.hpMax)]);
+  const wl=cd.walls.map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),s.tier||1,Math.round(s.hpMax)]);
+  const sk=(cd.spikes||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),Math.round(s.hpMax)]);
   const bo=cd.boss?[Math.round(cd.boss.x),Math.round(cd.boss.y),Math.round(cd.boss.hp),Math.round(cd.boss.hpMax),+(cd.boss.face||0).toFixed(2)]:null;
   return { t:'cst', ca:Math.floor(cd.cash), lv:cd.lives, ki:cd.kills, ov:cd.over?1:0, fh:Math.max(0,Math.round(cd.flag.hp)),
-    p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, bo };
+    p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, sk, bo };
 }
 function coopApplySnapshot(s){
   const cd=codef;
   zombies = s.zs.map(a=>({ x:a[0], y:a[1], w:44, h:44, alive:a[2]===0, dying:a[2]===1, deadT:a[2]===1?0.3:0,
     face:a[3], bob:0, flash:0, atk:0, chew:0, type:'walker', hp:3, hpMax:3, spdMul:1 }));
-  cd.turrets = s.tu.map(a=>({x:a[0],y:a[1],w:42,h:42,hp:a[2],hpMax:70,cd:0,range:250,aim:a[3]}));
-  cd.walls   = s.wl.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:140}));
+  cd.turrets = s.tu.map(a=>({x:a[0],y:a[1],w:44,h:44,hp:a[2],hpMax:a[5]||70,cd:0,range:250,aim:a[3],tier:a[4]||1}));
+  cd.walls   = s.wl.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[6]||140,tier:a[5]||1}));
+  cd.spikes  = (s.sk||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[5]||240}));
   cd.boss    = s.bo ? {x:s.bo[0],y:s.bo[1],w:96,h:96,hp:s.bo[2],hpMax:s.bo[3],face:s.bo[4],flash:0,dead:false} : null;
   cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1;
   const sMe = (cd.meKey==='p1')?s.p1:s.p2, sFoe=(cd.foeKey==='p1')?s.p1:s.p2;
@@ -4832,29 +4925,29 @@ function coopDefEnd(kills){
 function drawCoopDef(){
   const cd=codef; if(!cd) return;
   ctx.fillStyle='#0e130c'; ctx.fillRect(0,0,W,H);
-  ctx.save(); ctx.translate(-Math.round(cd.camX),-Math.round(cd.camY));
+  ctx.save(); const z=cd.zoom||1; ctx.scale(z,z); ctx.translate(-Math.round(cd.camX),-Math.round(cd.camY));
   drawDefenseGround(cd); drawDefenseArena(); drawBloodPools();
-  drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd);
+  drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd);
   drawZombies(); drawDefenseBoss(cd); drawBullets();
   drawPlayerObj(cd.p1, true); drawPlayerObj(cd.p2, true);
   drawParticles();
   ctx.restore();
+  drawGloom();
   drawCoopUI(cd);
 }
 function drawCoopUI(cd){
   ctx.textAlign='right'; ctx.textBaseline='alphabetic';
   // team lives as one heart + count (avoids overlapping the build buttons)
-  drawHeart(W-16, 20, 9, performance.now()/300);
+  drawHeart(W-16, 60, 9, performance.now()/300);
   ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
-  ctx.fillStyle='#ffd6d6'; ctx.font='bold 14px '+CF; ctx.fillText('×'+Math.max(0,cd.lives), W-30, 25);
+  ctx.fillStyle='#ffd6d6'; ctx.font='bold 14px '+CF; ctx.fillText('×'+Math.max(0,cd.lives), W-30, 65);
   const me=cd[cd.meKey];
   ctx.font='bold 15px '+CF;
-  ctx.fillStyle=me.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt='🔫 '+me.ammo; ctx.fillText(atxt, W-14, 46); ctx.shadowBlur=0;
+  ctx.fillStyle=me.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt='🔫 '+me.ammo; ctx.fillText(atxt, W-14, 84); ctx.shadowBlur=0;
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(cd.cash), 14, 28);
-  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+'  ·  shared cash', 14, 46); ctx.shadowBlur=0;
-  drawDefBuildBtn(defTurretBtn, Tsprite, TAW, TAH, 'TURRET', DEF_TCOST, cd.cash>=DEF_TCOST);
-  drawDefBuildBtn(defWallBtn,   Wsprite, WAW, WAH, 'WALL',   DEF_WCOST, cd.cash>=DEF_WCOST);
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(cd.cash), 14, 66);
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+'  ·  shared cash', 14, 82); ctx.shadowBlur=0;
+  for(const bb of buildBtns) drawBuildTile(bb, cd.cash);
 }
 function netStartDuel(){
   mode='net'; explore=null; coop=null;
@@ -4862,7 +4955,8 @@ function netStartDuel(){
   duel={ W:DUEL_W, H:DUEL_H, camX:0, camY:0, bullets:[], over:false, winner:0, t:0, _snap:null,
     p1:mkP(DUEL_W/2-22, DUEL_H-110, -Math.PI/2),
     p2:mkP(DUEL_W/2-22, 70, Math.PI/2),
-    pickups:DUEL_PICKS.map(k=>({type:k.type, x:k.x, y:k.y, taken:false, respawnT:0})) };
+    pickups:DUEL_PICKS.map(k=>({type:k.type, x:k.x, y:k.y, taken:false, respawnT:0})),
+    obs:DUEL_MAPS[(net&&net.mapIdx)||0] };
   duel.meKey =(net.role==='host')?'p1':'p2';
   duel.foeKey=(net.role==='host')?'p2':'p1';
   net.guestInput={mvx:0,mvy:0,aim:null,fire:false}; net.snapT=0; net.inT=0;
@@ -4875,6 +4969,7 @@ function startAIDuel(){
     p1:mkP(DUEL_W/2-22, DUEL_H-110, -Math.PI/2),
     p2:mkP(DUEL_W/2-22, 70, Math.PI/2),
     pickups:DUEL_PICKS.map(k=>({type:k.type, x:k.x, y:k.y, taken:false, respawnT:0})),
+    obs:DUEL_MAPS[Math.floor(Math.random()*DUEL_MAPS.length)],
     aiWander:0, aiStrafe:1, aiStrafeT:0 };
   duel.meKey='p1'; duel.foeKey='p2';   // you are p1, the bot is p2
   state=STATE.DUEL; toast('SHOOTOUT vs AI — hunt it down!');
@@ -4935,8 +5030,8 @@ function duelLocalInput(){
   if(touch.mvx||touch.mvy){mvx=touch.mvx;mvy=touch.mvy;}
   let aim=null, fire=false;
   if(touch.aimActive){ aim=Math.atan2(touch.aimy,touch.aimx); fire=true; }   // aim stick aims + fires
-  else if(tapAim.active && duel){ const me=duel[duel.meKey];                  // tap the screen to aim + fire there
-    aim=Math.atan2((duel.camY+tapAim.y)-(me.y+DUEL_PS/2), (duel.camX+tapAim.x)-(me.x+DUEL_PS/2)); fire=true; }
+  else if(tapAim.active && duel){ const me=duel[duel.meKey], z=duel.zoom||1;    // tap the screen to aim + fire there
+    aim=Math.atan2((duel.camY+tapAim.y/z)-(me.y+DUEL_PS/2), (duel.camX+tapAim.x/z)-(me.x+DUEL_PS/2)); fire=true; }
   if(keys['Space']) fire=true;
   return {mvx,mvy,aim,fire};
 }
@@ -4974,9 +5069,9 @@ function duelPickups(dt){   // host only: hand a pickup to whoever steps on it, 
     }
   }
 }
-function duelCam(){ const me=duel[duel.meKey];
-  duel.camX=clamp(me.x+DUEL_PS/2-W/2,0,Math.max(0,DUEL_W-W));
-  duel.camY=clamp(me.y+DUEL_PS/2-H/2,0,Math.max(0,DUEL_H-H)); }
+function duelCam(){ const me=duel[duel.meKey]; duel.zoom=DUEL_ZOOM; const VW=W/DUEL_ZOOM, VH=H/DUEL_ZOOM;
+  duel.camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,DUEL_W-VW));
+  duel.camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,DUEL_H-VH)); }
 function updateDuelHost(dt){
   if(!duel) return; duel.t+=dt;
   if(!duel.over){
@@ -5025,16 +5120,16 @@ function duelSetActor(p,a){ p.x=a[0]; p.y=a[1]; p.aim=a[2]; p.hp=a[3]; p.recoil=
 
 function drawDuel(){
   if(!duel) return;
-  const cx=Math.round(duel.camX), cy=Math.round(duel.camY);
+  const cx=Math.round(duel.camX), cy=Math.round(duel.camY), z=duel.zoom||1;
   ctx.fillStyle='#12161f'; ctx.fillRect(0,0,W,H);
-  ctx.save(); ctx.translate(-cx,-cy);
+  ctx.save(); ctx.scale(z,z); ctx.translate(-cx,-cy);
   // ground grid
-  const x0=cx-10, y0=cy-10, x1=cx+W+10, y1=cy+H+10;
+  const x0=cx-10, y0=cy-10, x1=cx+W/z+10, y1=cy+H/z+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
     ctx.fillStyle=((x/64+y/64)&1)?'#182131':'#141c29'; ctx.fillRect(x,y,64,64); }
   ctx.strokeStyle='#3a4a63'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
   // obstacles
-  for(const o of DUEL_OBS){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
+  for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
     ctx.fillStyle='#43526b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
     ctx.fillStyle='#5a6c88'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle='#2b3a52'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
@@ -5046,11 +5141,26 @@ function drawDuel(){
   drawDuelSoldier(duel.p1, '#6ad06a', duel.meKey==='p1');
   drawDuelSoldier(duel.p2, '#ff6b6b', duel.meKey==='p2');
   ctx.restore();
+  drawGloom();
   drawDuelHUD();
   if(duel.over) drawDuelOver();
+  if(duel.paused) drawDuelPause();
+}
+const duelQuitBtn={x:W/2-90, y:0, w:180, h:52};   // y set in drawDuelPause
+function drawDuelPause(){
+  ctx.save(); ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 34px '+CF; ctx.fillText('PAUSED', W/2, H/2-40);
+  ctx.fillStyle='#e6f2df'; ctx.font='bold 15px '+CF; ctx.fillText('tap anywhere to resume', W/2, H/2-8);
+  duelQuitBtn.x=W/2-90; duelQuitBtn.y=H/2+24;
+  const b=duelQuitBtn;
+  ctx.fillStyle='#8f3210'; roundRectPath(b.x,b.y,b.w,b.h,12); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#ff8a3d'; roundRectPath(b.x,b.y,b.w,b.h,12); ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.font='bold 18px '+CF; ctx.textBaseline='middle'; ctx.fillText('QUIT TO MENU', W/2, b.y+b.h/2); ctx.textBaseline='alphabetic';
+  ctx.restore();
 }
 function drawDuelSoldier(pl, ring, isMe){
-  if(pl.x<duel.camX-70||pl.x>duel.camX+W+70||pl.y<duel.camY-70||pl.y>duel.camY+H+70) return;
+  const _z=duel.zoom||1; if(pl.x<duel.camX-70||pl.x>duel.camX+W/_z+70||pl.y<duel.camY-70||pl.y>duel.camY+H/_z+70) return;
   const img=Pgun||Psprite, aw=Pgun?PgunAW:56, ah=Pgun?PgunAH:74;
   const w=46, h=w*ah/aw, cx=pl.x+DUEL_PS/2, cy=pl.y+DUEL_PS/2;
   softShadow(cx, pl.y+DUEL_PS-2, 18, 6, 0.3);
