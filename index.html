@@ -424,11 +424,11 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, playNormalBtn)) startGame();
     else if(inRect(p, playOpenBtn)) setupEndless();
+    else if(inRect(p, playAIBtn)) startAIDuel();
   } else if(state===STATE.VERSUSPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, vpLocalBtn)) state=STATE.VERSUSMODE;
     else if(inRect(p, vpOnlineBtn)){ netEnterLobby(); }
-    else if(inRect(p, vpAIBtn)) startAIDuel();
   } else if(state===STATE.VERSUSMODE){
     if(inRect(p, backBtn)) state=STATE.VERSUSPICK;
     else if(inRect(p, vBasicBtn)) startCoop(false);
@@ -4027,8 +4027,9 @@ function drawOver(){
 const vpLocalBtn  = {x:W/2-150, y:126, w:300, h:88};
 const vpOnlineBtn = {x:W/2-150, y:226, w:300, h:88};
 const vpAIBtn     = {x:W/2-150, y:326, w:300, h:88};
-const playNormalBtn = {x:W/2-150, y:170, w:300, h:104};
-const playOpenBtn   = {x:W/2-150, y:296, w:300, h:104};
+const playNormalBtn = {x:W/2-150, y:150, w:300, h:96};
+const playOpenBtn   = {x:W/2-150, y:258, w:300, h:96};
+const playAIBtn     = {x:W/2-150, y:366, w:300, h:96};
 const netQuickBtn = {x:W/2-150, y:126, w:300, h:70};
 const netHostBtn  = {x:W/2-150, y:210, w:300, h:70};
 const netJoinBtn  = {x:W/2-150, y:294, w:300, h:70};
@@ -4543,6 +4544,8 @@ function drawPlayPick(){
     'wave survival at the gate', 'wire, power-ups & bosses');
   drawVersusModeButton(playOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD',
     'endless twin-stick survival', 'roam free · zombies never stop');
+  drawVersusModeButton(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','⚔ SHOOTOUT vs AI',
+    'solo 1v1 duel against a bot', 'no internet needed');
 }
 function drawVersusPick(){
   panelBg(); drawBackBtn();
@@ -4555,8 +4558,6 @@ function drawVersusPick(){
     'pass & play on one device', 'attack once, defend once');
   drawVersusModeButton(vpOnlineBtn, '#2fa35a','#1c7a41','#5dff8a','ONLINE',
     'live match over the internet', 'horde defense or shootout');
-  drawVersusModeButton(vpAIBtn, '#c24a1a','#8f3210','#ff8a3d','⚔ SHOOTOUT vs AI',
-    'solo 1v1 duel against a bot', 'no internet needed');
 }
 // draw the currently-equipped zombie's sprite as a small icon centred at (cx,cy)
 function drawZombieIcon(cx, cy, size){
