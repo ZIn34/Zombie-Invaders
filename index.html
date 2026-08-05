@@ -452,6 +452,7 @@ function canvasTap(p, pid){
              return; } }
   } else if(state===STATE.SETTINGS){
     if(inRect(p, setMusicBtn)){ settings.music=!settings.music; saveSettings(); Music.refresh(); Music.start(); Sound.hit(); }
+    else if(inRect(p, setPadAimBtn)){ settings.padAimLeft=(settings.padAimLeft===false); saveSettings(); Sound.hit(); }
     else if(inRect(p, setShakeBasicBtn)){ settings.shakeBasic=!settings.shakeBasic; saveSettings(); Sound.hit(); }
     else if(inRect(p, setShakeBossBtn)){ settings.shakeBoss=!settings.shakeBoss; saveSettings(); Sound.hit(); }
     else if(inRect(p, setBBasicOff)){ settings.bloodBasic=0; saveSettings(); Sound.hit(); }
@@ -566,10 +567,12 @@ function padPoll(){
   if(inGame){
     const aimMode = isAimState();   // open-world / defense / co-op / duel = twin-stick
     if(aimMode){
-      // LEFT stick = aim (no auto-fire); RIGHT stick = move; RIGHT TRIGGER = shoot
-      if(Math.hypot(lx,ly)>0.4){ touch.gaim=Math.atan2(ly,lx); touch.gaimActive=true; Pad._ga=true; }
+      // aim stick (Settings-selectable) = aim, no auto-fire; other stick = move; RIGHT TRIGGER = shoot
+      const aimLeft = settings.padAimLeft!==false;
+      const ax0 = aimLeft?lx:rx, ay0 = aimLeft?ly:ry, mx0 = aimLeft?rx:lx, my0 = aimLeft?ry:ly;
+      if(Math.hypot(ax0,ay0)>0.4){ touch.gaim=Math.atan2(ay0,ax0); touch.gaimActive=true; Pad._ga=true; }
       else if(Pad._ga){ touch.gaimActive=false; Pad._ga=false; }
-      if(rx||ry){ touch.mvx=rx; touch.mvy=ry; Pad._pm=true; } else if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
+      if(mx0||my0){ touch.mvx=mx0; touch.mvy=my0; Pad._pm=true; } else if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
     } else {
       // normal play: left stick moves
       if(lx||ly){ touch.mvx=lx; touch.mvy=ly; Pad._pm=true; } else if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
@@ -624,10 +627,11 @@ function rectHit(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h &&
 const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28};
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
-let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true};
+let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true};
 function saveSettings(){ try{ localStorage.setItem('zi_settings', JSON.stringify(Object.assign({}, settings, {difficulty}))); }catch(e){} }
 function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settings')); if(s){
   if(typeof s.difficulty==='number') difficulty=Math.max(0,Math.min(2,s.difficulty));
+  if(typeof s.padAimLeft==='boolean') settings.padAimLeft=s.padAimLeft;
   if(typeof s.shakeBasic==='boolean') settings.shakeBasic=s.shakeBasic;
   if(typeof s.shakeBoss==='boolean')  settings.shakeBoss=s.shakeBoss;
   if(typeof s.bloodBasic==='number')  settings.bloodBasic=s.bloodBasic;
@@ -3462,7 +3466,8 @@ const setBBasicMore={x:262, y:360, w:82, h:40};
 const setBBossOff ={x:86,  y:430, w:82, h:40};
 const setBBossNorm={x:174, y:430, w:82, h:40};
 const setBBossMore={x:262, y:430, w:82, h:40};
-const setMusicBtn={x:W/2+6, y:262, w:104, h:34};
+const setMusicBtn={x:322, y:262, w:96, h:34};
+const setPadAimBtn={x:16, y:262, w:150, h:34};   // controller: which stick aims
 const setBackBtn={x:W/2-70, y:492, w:140, h:46};
 const cutSkipBtn={x:W-90, y:14, w:76, h:30};
 const vBasicBtn={x:W/2-125, y:238, w:250, h:86};
@@ -3693,6 +3698,13 @@ function drawSettings(){
   ctx.fillStyle='#7fd0ff'; ctx.font='bold 17px '+CF; ctx.textAlign='right'; ctx.textBaseline='middle';
   ctx.fillText('♪ MUSIC', setMusicBtn.x-12, setMusicBtn.y+setMusicBtn.h/2+1); ctx.textBaseline='alphabetic';
   drawToggle(setMusicBtn, settings.music);
+
+  // ---- CONTROLLER (which stick aims) ----
+  { const b=setPadAimBtn, right=(settings.padAimLeft===false);
+    ctx.fillStyle='rgba(120,170,255,.12)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
+    ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🎮 AIM: '+(right?'RIGHT':'LEFT')+' STICK', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; ctx.textAlign='center'; }
 
   // ---- BLOOD ----
   ctx.fillStyle='#ff6b6b'; ctx.font='bold 17px '+CF; ctx.textAlign='center';
