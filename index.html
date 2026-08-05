@@ -64,6 +64,12 @@
   #tpause:active{background:rgba(255,225,75,.3);}
   #tpause .bars{display:flex;gap:5px;}
   #tpause .bars i{display:block;width:6px;height:20px;background:#ffe14b;border-radius:2px;}
+  /* landscape (sideways) twin-stick layout: controls overlay the wide play field at the corners */
+  body.landscape #controls{position:absolute;inset:0;height:auto;background:transparent;border:none;pointer-events:none;z-index:40;}
+  body.landscape #controls>*{pointer-events:auto;}
+  body.landscape #joy{left:26px;top:auto;bottom:24px;transform:none;}
+  body.landscape #tfire,body.landscape #aimjoy{right:26px;top:auto;bottom:24px;transform:none;}
+  body.landscape #tpause{left:50%;right:auto;top:auto;bottom:20px;transform:translateX(-50%);}
 </style>
 </head>
 <body>
@@ -119,7 +125,7 @@ const SFX_HIT="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2Lj
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
+let W = canvas.width, H = canvas.height;
 const controlsBar = document.getElementById('controls');
 let _ctrlShown = true;
 let _aimShown = false;
@@ -137,18 +143,34 @@ function syncControls(){   // only show the joystick/pause/fire bar during actua
 }
 
 /* ---------- Fit stage to viewport while keeping aspect ratio ---------- */
+const PORT_DIMS={w:430,h:560}, LAND_DIMS={w:760,h:430};
+let _landActive=false;
 function fit(){
-  const pad = 14, ctrlH = 150; // control bar height (real px), below the canvas
+  const pad = 14;
+  const ctrlH = _landActive ? 0 : 150; // control bar height (portrait only; landscape overlays it)
   const availW = window.innerWidth - pad, availH = window.innerHeight - pad - ctrlH;
-  const scale = Math.min(availW / W, availH / H, 1.5);
+  const scale = Math.min(availW / W, availH / H, _landActive ? 2.4 : 1.5);
   const stage = document.getElementById('stage');
   const controls = document.getElementById('controls');
   canvas.style.width = (W*scale)+'px';
   canvas.style.height = (H*scale)+'px';
-  if(controls) controls.style.height = ctrlH+'px';
+  if(controls) controls.style.height = _landActive ? '' : (ctrlH+'px');
   stage.style.width = (W*scale)+'px';
 }
-window.addEventListener('resize', fit); fit();
+// switch to a wide landscape canvas when the phone is sideways during twin-stick play
+function applyViewport(){
+  const d=_landActive?LAND_DIMS:PORT_DIMS;
+  if(canvas.width!==d.w || canvas.height!==d.h){ canvas.width=d.w; canvas.height=d.h; }
+  W=d.w; H=d.h;
+  if(typeof defTurretBtn!=='undefined'){ defTurretBtn.x=W/2-128; defWallBtn.x=W/2+6; }
+  document.body.classList.toggle('landscape', _landActive);
+  fit();
+}
+function syncViewport(){
+  const want = isAimState() && (window.innerWidth > window.innerHeight);
+  if(want!==_landActive){ _landActive=want; applyViewport(); }
+}
+window.addEventListener('resize', ()=>{ syncViewport(); fit(); }); fit();
 
 /* ============================ AUDIO ==================================== */
 const Sound = (() => {
@@ -1329,6 +1351,7 @@ function loop(now){
   let dt=(now-last)/1000; last=now;
   if(dt>0.05) dt=0.05; // clamp big gaps
   update(dt);
+  syncViewport();
   render();
   syncControls();
   requestAnimationFrame(loop);
