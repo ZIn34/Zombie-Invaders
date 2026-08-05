@@ -363,6 +363,13 @@ const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false};
 const tapAim = {active:false, id:null, x:0, y:0};
 function isAimState(){ return (state===STATE.PLAY && explore) || state===STATE.DUEL || state===STATE.COOPDEF; }
 let codef=null;
+// difficulty: 0=easy, 1=normal, 2=hard — scales zombie toughness/speed, spawns, and Defense economy
+let difficulty=1;
+const DIFF=[
+  {name:'EASY',   zHp:0.75, zSpd:0.85, bossHp:0.75, cash:1.30, flagHp:1.30, spawn:0.8},
+  {name:'NORMAL', zHp:1.00, zSpd:1.00, bossHp:1.00, cash:1.00, flagHp:1.00, spawn:1.0},
+  {name:'HARD',   zHp:1.50, zSpd:1.20, bossHp:1.60, cash:0.85, flagHp:0.80, spawn:1.3},
+];
 (function(){
   const joy=document.getElementById('joy'), thumb=document.getElementById('joyThumb'), fireBtn=document.getElementById('tfire');
   const aimJoy=document.getElementById('aimjoy'), aimThumb=document.getElementById('aimThumb');
@@ -465,6 +472,7 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
     else if(inRect(p, playOpenBtn)) setupEndless();
     else if(inRect(p, playDefenseBtn)) setupDefense();
     else if(inRect(p, playAIBtn)) startAIDuel();
+    else { for(const db of diffBtns){ if(inRect(p, db)){ difficulty=db.d; saveSettings(); Sound.hit(); break; } } }
   } else if(state===STATE.ONLINEPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, opVersusBtn)) state=STATE.VERSUSPICK;
@@ -533,8 +541,9 @@ const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
 let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true};
-function saveSettings(){ try{ localStorage.setItem('zi_settings', JSON.stringify(settings)); }catch(e){} }
+function saveSettings(){ try{ localStorage.setItem('zi_settings', JSON.stringify(Object.assign({}, settings, {difficulty}))); }catch(e){} }
 function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settings')); if(s){
+  if(typeof s.difficulty==='number') difficulty=Math.max(0,Math.min(2,s.difficulty));
   if(typeof s.shakeBasic==='boolean') settings.shakeBasic=s.shakeBasic;
   if(typeof s.shakeBoss==='boolean')  settings.shakeBoss=s.shakeBoss;
   if(typeof s.bloodBasic==='number')  settings.bloodBasic=s.bloodBasic;
@@ -2101,10 +2110,10 @@ function setupEndless(){
 }
 function endlessSpawn(n){
   if(zombies.filter(z=>z.alive).length > 68) return;
-  const p=player, R=Math.hypot(W,H)/2 + 60;
+  const p=player, R=Math.hypot(W,H)/2 + 60, zh=Math.max(1,Math.round(2*DIFF[difficulty].zHp));
   for(let i=0;i<n;i++){ const a=Math.random()*6.28, r=R+Math.random()*90;
     zombies.push({ type:'walker', x:p.x+p.w/2+Math.cos(a)*r-22, y:p.y+p.h/2+Math.sin(a)*r-22,
-      w:44, h:44, hp:2, hpMax:2, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
+      w:44, h:44, hp:zh, hpMax:zh, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
       spdMul:rand(0.78,1.2), aggro:true, face:Math.PI/2 }); }
 }
 function endlessDropPower(){
@@ -2185,7 +2194,7 @@ function updateEndless(dt){
     if(!z.alive) continue;
     z.bob+=dt*4; if(z.flash>0)z.flash-=dt;
     const dx=(p.x+p.w/2)-(z.x+z.w/2), dy=(p.y+p.h/2)-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
-    const zs=64*(z.spdMul||1);
+    const zs=64*(z.spdMul||1)*DIFF[difficulty].zSpd;
     endlessMove(z, dx/d, dy/d, dt, zs); z.face=Math.atan2(dy,dx);   // chase, blocked by walls; face the player
     z.atk=clamp((z.atk||0)+(d<54?dt*5:-dt*4),0,1);
     if(zombieTouchesPlayer(z) && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(12,.35);
@@ -2279,8 +2288,8 @@ function setupDefense(){
   mode='arcade'; wasEndless=false; wasDefense=true;
   explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2,
     cash:DEF_START_CASH,
-    flag:{x:0, y:0, r:46, hp:600, hpMax:600},
-    turrets:[], walls:[], spikes:[], boss:null, bossMark:20, bossCount:0 };
+    flag:(function(){ const fh=Math.round(600*DIFF[difficulty].flagHp); return {x:0, y:0, r:46, hp:fh, hpMax:fh}; })(),
+    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=12;
   lives=3; score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
@@ -2309,22 +2318,25 @@ function defMove(e,mvx,mvy,dt,spd,forZombie){
 function defSpawn(n){
   const ex=explore; if(!ex) return;
   if(zombies.filter(z=>z.alive).length>58) return;
-  const R=DEF_HALF-34;
+  const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp));
   for(let i=0;i<n;i++){ const a=Math.random()*6.28;
     zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
-      hp:3, hpMax:3, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
+      hp:zh, hpMax:zh, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
       spdMul:rand(0.7,1.12), aggro:true, face:Math.PI/2 }); }
+}
+function makeBoss(bossCount){
+  const R=DEF_HALF-120, a=Math.random()*6.28, hp=(80+(bossCount-1)*28)*DIFF[difficulty].bossHp;
+  const bx=clamp(Math.cos(a)*R-48, -DEF_HALF+8, DEF_HALF-104), by=clamp(Math.sin(a)*R-48, -DEF_HALF+8, DEF_HALF-104);
+  return { x:bx, y:by, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
 }
 function defSpawnBoss(){
   const ex=explore; if(!ex) return;
   ex.bossCount=(ex.bossCount||0)+1;
-  const R=DEF_HALF-120, a=Math.random()*6.28, hp=80+(ex.bossCount-1)*28;
-  const bx=clamp(Math.cos(a)*R-48, -DEF_HALF+8, DEF_HALF-104), by=clamp(Math.sin(a)*R-48, -DEF_HALF+8, DEF_HALF-104);
-  ex.boss={ x:bx, y:by, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
+  ex.bosses.push(makeBoss(ex.bossCount));
   toast('⚠ BOSS INCOMING!'); shake(12,.4); Sound.power();
 }
-function drawDefenseBoss(ex){
-  const bo=ex.boss; if(!bo||bo.dead) return;
+function drawOneBoss(bo){
+  if(!bo||bo.dead) return;
   const bw=bo.w*1.8, bh=bw*BAH/BAW, cx=bo.x+bo.w/2, cy=bo.y+bo.h/2;
   softShadow(cx, bo.y+bo.h-2, bo.w*0.62, 11, 0.32);
   ctx.save();
@@ -2337,6 +2349,7 @@ function drawDefenseBoss(ex){
   ctx.fillStyle=hp>0.5?'#ff5b5b':hp>0.25?'#ffd14b':'#ff2b2b'; ctx.fillRect(cx-bwid/2, bo.y-15, bwid*hp, 8);
   ctx.lineWidth=1; ctx.strokeStyle='#2a0a0a'; ctx.strokeRect(cx-bwid/2, bo.y-15, bwid, 8);
 }
+function drawDefenseBoss(ex){ if(!ex.bosses) return; for(const bo of ex.bosses) drawOneBoss(bo); }
 function defBuild(type){ doBuild(explore, player, type, false); }
 // shared build logic for solo Defense (ctx=explore) and co-op (ctx=codef); host-authoritative for co-op
 function doBuild(ctx2, pl, type, isCoop){
@@ -2392,15 +2405,16 @@ function updateDefense(dt){
   if(wantFire && p.cd<=0){ if(p.ammo>0){ exploreFire(p); p.ammo--; p.cd=(p.weapon==='spread')?fireRate*2.9:fireRate; } else { Sound.empty(); p.cd=0.25; } }
   // ramping spawns from all sides
   ex.spawnT-=dt;
-  if(ex.spawnT<=0){ defSpawn(Math.min(5, 1+Math.floor(ex.elapsed/24))); ex.spawnT=Math.max(0.6, 1.7-ex.elapsed*0.02); }
-  // a boss marches in every 20 kills
-  if(!ex.boss && ex.kills>=ex.bossMark){ defSpawnBoss(); ex.bossMark+=20; }
-  // turrets auto-fire at nearest zombie (or the boss) in range
+  if(ex.spawnT<=0){ defSpawn(Math.min(6, Math.round((1+Math.floor(ex.elapsed/24))*DIFF[difficulty].spawn))); ex.spawnT=Math.max(0.6, 1.7-ex.elapsed*0.02)/DIFF[difficulty].spawn; }
+  // a boss marches in every 20 kills — up to 3 at once past 1000 kills
+  const maxBosses = ex.kills>=1000 ? 3 : 1;
+  if(ex.bosses.length<maxBosses && ex.kills>=ex.bossMark){ defSpawnBoss(); ex.bossMark+=20; }
+  // turrets auto-fire at nearest zombie (or a boss) in range
   for(const t of ex.turrets){ if(t.hp<=0) continue;
     if(t.cd>0)t.cd-=dt;
     let best=null,bd=t.range;
     for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
-    if(ex.boss && !ex.boss.dead){ const bo=ex.boss, d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
+    for(const bo of ex.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim), vy=Math.sin(t.aim), sp=760;
         bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:7,h:7, vx:vx*sp, vy:vy*sp, col:(t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:t.dmg||1, t:0, turret:true});
@@ -2417,10 +2431,10 @@ function updateDefense(dt){
     // spikes: damage + slow zombies standing on them (and wear the spikes down)
     let slow=1;
     if(ex.spikes) for(const sp of ex.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
-    if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=DEF_KILL_CASH; continue; }
+    if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); continue; }
     let attacked=false;
     if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
-    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow, true);
+    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true);
     for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
@@ -2434,12 +2448,12 @@ function updateDefense(dt){
       let sx=(zb.x+zb.w/2)-(za.x+za.w/2), sy=(zb.y+zb.h/2)-(za.y+za.h/2); let sd=Math.hypot(sx,sy);
       if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
-  // BOSS: slow, tanky, marches on the flag and smashes anything in the way
-  if(ex.boss && !ex.boss.dead){ const bo=ex.boss; if(bo.flash>0)bo.flash-=dt;
+  // BOSSES: slow, tanky, march on the flag and smash anything in the way
+  for(const bo of ex.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face = Math.atan2(bdy,bdx);   // angle toward the flag (sprite head points that way)
     if(bd < f.r + bo.w*0.5){ f.hp-=dt*14; }
-    else defMove(bo, bdx/bd, bdy/bd, dt, 40, true);
+    else defMove(bo, bdx/bd, bdy/bd, dt, 40*DIFF[difficulty].zSpd, true);
     for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     const px=p.x+p.w/2, py=p.y+p.h/2;
@@ -2452,16 +2466,19 @@ function updateDefense(dt){
   // bullets (player + turret): move, blocked by barricades/arena, hit zombies
   for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; if(defBulletBlocks(b.x,b.y)) b.dead=true; }
   for(const b of bullets){ if(b.dead) continue;
-    if(ex.boss && !ex.boss.dead){ const bo=ex.boss;
+    let hitBoss=false;
+    for(const bo of ex.bosses){ if(bo.dead) continue;
       if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=b.dmg||1; bo.flash=0.12; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',6,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); ex.cash+=45; score+=100; ex.kills++; ex.boss=null; Sound.kill(); shake(10,.3); toast('BOSS DOWN! +$45'); }
-        continue; } }
+        if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); ex.cash+=45; score+=100; ex.kills++; Sound.kill(); shake(10,.3); toast('BOSS DOWN! +$45'); }
+        hitBoss=true; break; } }
+    if(hitBoss) continue;
     for(const z of zombies){ if(!z.alive) continue;
       if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=DEF_KILL_CASH; } break; } } }
+        if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); } break; } } }
   bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
+  ex.bosses=ex.bosses.filter(bo=>!bo.dead);
   // power-up pickups still work if any exist
   for(const pu of powerups){ pu.t=(pu.t||0)+dt; if(rectHit(pu,p)){ pu.dead=true; applyPower(pu.type); } }
   powerups=powerups.filter(pu=>!pu.dead);
@@ -4732,8 +4749,8 @@ function netStartCoopDefense(){
   p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14;
   codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
     cash:DEF_START_CASH+50, lives:6, over:false, _snap:null,
-    flag:{x:0,y:0,r:46,hp:700,hpMax:700},
-    turrets:[], walls:[], spikes:[], boss:null, bossMark:20, bossCount:0, p1, p2 };
+    flag:(function(){ const fh=Math.round(700*DIFF[difficulty].flagHp); return {x:0,y:0,r:46,hp:fh,hpMax:fh}; })(),
+    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
   codef.meKey =(net.role==='host')?'p1':'p2';
   codef.foeKey=(net.role==='host')?'p2':'p1';
   player=codef[codef.meKey];   // globals that helpers reference point at the local player
@@ -4756,16 +4773,14 @@ function codefMove(e,mvx,mvy,dt,spd,forZombie){
 }
 function coopSpawn(n){ const cd=codef; if(!cd) return;
   if(zombies.filter(z=>z.alive).length>62) return;
-  const R=DEF_HALF-34;
+  const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp));
   for(let i=0;i<n;i++){ const a=Math.random()*6.28;
     zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
-      hp:3, hpMax:3, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
+      hp:zh, hpMax:zh, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
       spdMul:rand(0.7,1.12), aggro:true, face:Math.PI/2 }); }
 }
 function coopSpawnBoss(){ const cd=codef; cd.bossCount=(cd.bossCount||0)+1;
-  const R=DEF_HALF-120, a=Math.random()*6.28, hp=80+(cd.bossCount-1)*28;
-  const bx=clamp(Math.cos(a)*R-48, -DEF_HALF+8, DEF_HALF-104), by=clamp(Math.sin(a)*R-48, -DEF_HALF+8, DEF_HALF-104);
-  cd.boss={ x:bx, y:by, w:96, h:96, hp:hp, hpMax:hp, flash:0, dead:false, face:Math.atan2(-Math.sin(a),-Math.cos(a)) };
+  cd.bosses.push(makeBoss(cd.bossCount));
   toast('⚠ BOSS INCOMING!'); shake(10,.3); Sound.power();
 }
 function coopBuild(pl,type){ if(codef) doBuild(codef, pl, type, true); }
@@ -4802,13 +4817,14 @@ function coopTouch(z, pl){
 }
 function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turrets, bullets)
   const cd=codef, f=cd.flag;
-  cd.spawnT-=dt; if(cd.spawnT<=0){ coopSpawn(Math.min(6, 2+Math.floor(cd.elapsed/22))); cd.spawnT=Math.max(0.5, 1.6-cd.elapsed*0.02); }
-  if(!cd.boss && cd.kills>=cd.bossMark){ coopSpawnBoss(); cd.bossMark+=20; }
+  cd.spawnT-=dt; if(cd.spawnT<=0){ coopSpawn(Math.min(6, Math.round((2+Math.floor(cd.elapsed/22))*DIFF[difficulty].spawn))); cd.spawnT=Math.max(0.5, 1.6-cd.elapsed*0.02)/DIFF[difficulty].spawn; }
+  const maxBosses = cd.kills>=1000 ? 3 : 1;
+  if(cd.bosses.length<maxBosses && cd.kills>=cd.bossMark){ coopSpawnBoss(); cd.bossMark+=20; }
   // turrets fire
   for(const t of cd.turrets){ if(t.hp<=0) continue; if(t.cd>0)t.cd-=dt;
     let best=null,bd=t.range;
     for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
-    if(cd.boss && !cd.boss.dead){ const bo=cd.boss, d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
+    for(const bo of cd.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim),vy=Math.sin(t.aim),sp=760;
         bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:7,h:7,vx:vx*sp,vy:vy*sp,col:(t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true}); t.cd=t.fireCd||0.5; } }
@@ -4822,22 +4838,22 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     z.face=Math.atan2(dy,dx);
     let slow=1;
     if(cd.spikes) for(const sp of cd.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
-    if(z.hp<=0){ killZombie(z); cd.kills++; cd.cash+=DEF_KILL_CASH; continue; }
+    if(z.hp<=0){ killZombie(z); cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); continue; }
     let attacked=false;
     if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
-    else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow, true);
+    else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true);
     for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     for(const pl of players){ if(coopTouch(z,pl) && pl.invuln<=0){ cd.lives--; pl.invuln=1.5; shake(12,.35);
       if(cd.lives<=0){ cd.over=true; } } }
   }
-  // boss
-  if(cd.boss && !cd.boss.dead){ const bo=cd.boss; if(bo.flash>0)bo.flash-=dt;
+  // bosses
+  for(const bo of cd.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face=Math.atan2(bdy,bdx);
     if(bd < f.r + bo.w*0.5){ f.hp-=dt*14; }
-    else codefMove(bo, bdx/bd, bdy/bd, dt, 40, true);
+    else codefMove(bo, bdx/bd, bdy/bd, dt, 40*DIFF[difficulty].zSpd, true);
     for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     for(const pl of players){ if(pl.x+pl.w/2>bo.x-6 && pl.x+pl.w/2<bo.x+bo.w+6 && pl.y+pl.h/2>bo.y-6 && pl.y+pl.h/2<bo.y+bo.h+6 && pl.invuln<=0){ cd.lives--; pl.invuln=1.5; shake(14,.4); if(cd.lives<=0) cd.over=true; } }
@@ -4853,16 +4869,19 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
   // bullets
   for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; if(codefBulletBlocks(b.x,b.y)) b.dead=true; }
   for(const b of bullets){ if(b.dead) continue;
-    if(cd.boss && !cd.boss.dead){ const bo=cd.boss;
+    let hitBoss=false;
+    for(const bo of cd.bosses){ if(bo.dead) continue;
       if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=b.dmg||1; bo.flash=0.12; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',6,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; cd.boss=null; Sound.kill(); toast('BOSS DOWN! +$45'); }
-        continue; } }
+        if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; Sound.kill(); toast('BOSS DOWN! +$45'); }
+        hitBoss=true; break; } }
+    if(hitBoss) continue;
     for(const z of zombies){ if(!z.alive) continue;
       if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(z.hp<=0){ killZombie(z); cd.kills++; cd.cash+=DEF_KILL_CASH; } break; } } }
+        if(z.hp<=0){ killZombie(z); cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); } break; } } }
   bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
+  cd.bosses=cd.bosses.filter(bo=>!bo.dead);
   zombies=zombies.filter(z=> z.alive || z.dying);
 }
 function updateCoopHost(dt){
@@ -4896,9 +4915,9 @@ function coopSnapshot(){
   const tu=cd.turrets.map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2),t.tier||1,Math.round(t.hpMax)]);
   const wl=cd.walls.map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),s.tier||1,Math.round(s.hpMax)]);
   const sk=(cd.spikes||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),Math.round(s.hpMax)]);
-  const bo=cd.boss?[Math.round(cd.boss.x),Math.round(cd.boss.y),Math.round(cd.boss.hp),Math.round(cd.boss.hpMax),+(cd.boss.face||0).toFixed(2)]:null;
+  const bs=cd.bosses.filter(b=>!b.dead).map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.hp),Math.round(b.hpMax),+(b.face||0).toFixed(2)]);
   return { t:'cst', ca:Math.floor(cd.cash), lv:cd.lives, ki:cd.kills, ov:cd.over?1:0, fh:Math.max(0,Math.round(cd.flag.hp)),
-    p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, sk, bo };
+    p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, sk, bs };
 }
 function coopApplySnapshot(s){
   const cd=codef;
@@ -4907,7 +4926,7 @@ function coopApplySnapshot(s){
   cd.turrets = s.tu.map(a=>({x:a[0],y:a[1],w:44,h:44,hp:a[2],hpMax:a[5]||70,cd:0,range:250,aim:a[3],tier:a[4]||1}));
   cd.walls   = s.wl.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[6]||140,tier:a[5]||1}));
   cd.spikes  = (s.sk||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[5]||240}));
-  cd.boss    = s.bo ? {x:s.bo[0],y:s.bo[1],w:96,h:96,hp:s.bo[2],hpMax:s.bo[3],face:s.bo[4],flash:0,dead:false} : null;
+  cd.bosses  = (s.bs||[]).map(a=>({x:a[0],y:a[1],w:96,h:96,hp:a[2],hpMax:a[3],face:a[4],flash:0,dead:false}));
   cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1;
   const sMe = (cd.meKey==='p1')?s.p1:s.p2, sFoe=(cd.foeKey==='p1')?s.p1:s.p2;
   const me=cd[cd.meKey], foe=cd[cd.foeKey];
@@ -5220,13 +5239,26 @@ function drawDuelOver(){
 }
 
 /* -------------------------------- UI -------------------------------- */
+const diffBtns=[
+  {x:50,  y:500, w:106, h:40, d:0, label:'EASY'},
+  {x:162, y:500, w:106, h:40, d:1, label:'NORMAL'},
+  {x:274, y:500, w:106, h:40, d:2, label:'HARD'},
+];
+function drawDiffSelector(){
+  ctx.textAlign='center'; ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('DIFFICULTY', W/2, 490);
+  for(const db of diffBtns){ const sel=difficulty===db.d;
+    ctx.fillStyle=sel?(db.d===0?'#2a7d46':db.d===1?'#8f6f10':'#8f3210'):'rgba(255,255,255,.06)';
+    roundRectPath(db.x,db.y,db.w,db.h,10); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=sel?(db.d===0?'#5dff8a':db.d===1?'#ffd14b':'#ff8a3d'):'rgba(255,255,255,.22)'; roundRectPath(db.x,db.y,db.w,db.h,10); ctx.stroke();
+    ctx.fillStyle=sel?'#fff':'#9fb0a0'; ctx.font='bold 15px '+CF; ctx.textBaseline='middle'; ctx.fillText(db.label, db.x+db.w/2, db.y+db.h/2+1); ctx.textBaseline='alphabetic'; }
+}
 function drawPlayPick(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#7ee06a'; ctx.font='bold 28px '+CF; ctx.fillText('PLAY', W/2, 68);
+  ctx.fillStyle='#7ee06a'; ctx.font='bold 28px '+CF; ctx.fillText('PLAY', W/2, 62);
   ctx.shadowBlur=0;
-  ctx.fillStyle='#c9e6b0'; ctx.font='bold 13px '+CF; ctx.fillText('pick how you survive', W/2, 96);
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('pick how you survive', W/2, 88);
   drawVersusModeButton(playNormalBtn, '#3ea22f','#2a7d24','#7ee06a','NORMAL',
     'wave survival at the gate', 'wire, power-ups & bosses');
   drawVersusModeButton(playOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD',
@@ -5235,6 +5267,7 @@ function drawPlayPick(){
     'buy turrets & barricades', 'protect the flag from all sides');
   drawVersusModeButton(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','⚔ SHOOTOUT vs AI',
     'solo 1v1 duel against a bot', 'no internet needed');
+  drawDiffSelector();
 }
 function drawVersusPick(){
   panelBg(); drawBackBtn();
