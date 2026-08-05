@@ -387,7 +387,7 @@ function canvasPoint(e){
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
 canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
   const p=canvasPoint(e);
-  if(isAimState()){ tapAim.active=true; tapAim.id=e.pointerId; tapAim.x=p.x; tapAim.y=p.y; return; }  // tap-to-aim during gameplay
+  if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){ tapAim.active=true; tapAim.id=e.pointerId; tapAim.x=p.x; tapAim.y=p.y; return; }  // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
   if(state===STATE.MENU){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
     else if(inRect(p, tutBtn)){ tutPage=0; state=STATE.TUTORIAL; }   // how-to-play
