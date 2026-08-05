@@ -358,7 +358,7 @@ window.addEventListener('keydown', e=>{
 window.addEventListener('keyup', e=>{ keys[e.code]=false; });
 
 // Touch controls: analog joystick (move) + fire button
-const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false};
+const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false, gaim:0, gaimActive:false};
 // tap/click anywhere on the play field to aim there (open world, duel, mission 3)
 const tapAim = {active:false, id:null, x:0, y:0};
 function isAimState(){ return (state===STATE.PLAY && explore) || state===STATE.DUEL || state===STATE.COOPDEF; }
@@ -532,7 +532,7 @@ window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===tapAim.id) tapA
 /* ---------- gamepad / controller support ---------- */
 /* left stick = move, right stick = aim+fire (twin-stick modes), A/RT/RB = fire, Start = pause,
    on menus: D-pad / left stick move the highlight, A selects, B goes back. Feeds the same touch.* the on-screen sticks use. */
-const Pad = { connected:false, focus:0, prev:{}, _pm:false, _pa:false, _pf:false, _sy:0, _lastState:-1 };
+const Pad = { connected:false, focus:0, prev:{}, _pm:false, _ga:false, _pf:false, _sy:0, _lastState:-1, buildSel:0 };
 window.addEventListener('gamepadconnected', ()=>{ Pad.connected=true; toast('🎮 CONTROLLER CONNECTED'); });
 function firstGamepad(){ const gs=navigator.getGamepads?navigator.getGamepads():[]; for(const g of gs){ if(g) return g; } return null; }
 function padTargets(){
@@ -564,16 +564,30 @@ function padPoll(){
   const inGame=(state===STATE.PLAY||state===STATE.CHASE||state===STATE.DUEL||state===STATE.COOPDEF);
   if(state!==Pad._lastState){ Pad.focus=0; Pad._lastState=state; }
   if(inGame){
-    if(lx||ly){ touch.mvx=lx; touch.mvy=ly; Pad._pm=true; } else if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
-    const rm=Math.hypot(rx,ry);
-    if(rm>0.4){ touch.aimx=rx; touch.aimy=ry; touch.aimActive=true; Pad._pa=true; } else if(Pad._pa){ touch.aimx=0; touch.aimy=0; touch.aimActive=false; Pad._pa=false; }
-    const pf=bd(0)||bd(7)||bd(5);
+    const aimMode = isAimState();   // open-world / defense / co-op / duel = twin-stick
+    if(aimMode){
+      // LEFT stick = aim (no auto-fire); RIGHT stick = move; RIGHT TRIGGER = shoot
+      if(Math.hypot(lx,ly)>0.4){ touch.gaim=Math.atan2(ly,lx); touch.gaimActive=true; Pad._ga=true; }
+      else if(Pad._ga){ touch.gaimActive=false; Pad._ga=false; }
+      if(rx||ry){ touch.mvx=rx; touch.mvy=ry; Pad._pm=true; } else if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
+    } else {
+      // normal play: left stick moves
+      if(lx||ly){ touch.mvx=lx; touch.mvy=ly; Pad._pm=true; } else if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
+    }
+    const pf=bd(0)||bd(7)||bd(5);   // A / RT / RB = fire
     if(pf){ touch.fire=true; Pad._pf=true; } else if(Pad._pf){ touch.fire=false; Pad._pf=false; }
     if(edge(9)||edge(8)) togglePause();
+    // build with the pad in Defense / Co-op: D-pad ◀ ▶ picks, X/Y places
+    const inBuild = (state===STATE.COOPDEF) || (explore && explore.defense);
+    if(inBuild){
+      if(edge(15)) Pad.buildSel=(Pad.buildSel+1)%BUILD_BAR.length;
+      else if(edge(14)) Pad.buildSel=(Pad.buildSel-1+BUILD_BAR.length)%BUILD_BAR.length;
+      if(edge(3)||edge(2)){ const t=BUILD_BAR[Pad.buildSel].type; if(state===STATE.COOPDEF) coopBuildRequest(t); else defBuild(t); }
+    }
     if(state===STATE.DUEL && duel && duel.over && (edge(0)||edge(1))) canvasTap({x:W/2,y:H/2+30}, -1);
   } else {
     if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
-    if(Pad._pa){ touch.aimx=0; touch.aimy=0; touch.aimActive=false; Pad._pa=false; }
+    if(Pad._ga){ touch.gaimActive=false; Pad._ga=false; }
     if(Pad._pf){ touch.fire=false; Pad._pf=false; }
     const tg=padTargets();
     if(tg && tg.length){
@@ -2049,6 +2063,7 @@ function zOnScreen(z){
 }
 // manual aim from the aim stick or a screen tap (cam has camX/camY); null if neither is active
 function aimAngleFromInput(p, cam){
+  if(touch.gaimActive) return touch.gaim;   // gamepad left stick aims
   if(touch.aimActive) return Math.atan2(touch.aimy, touch.aimx);
   if(tapAim.active){ const zz=cam.zoom||1, wx=cam.camX+tapAim.x/zz, wy=cam.camY+tapAim.y/zz; return Math.atan2(wy-(p.y+p.h/2), wx-(p.x+p.w/2)); }
   return null;
@@ -2644,13 +2659,14 @@ function drawDefenseUI(ex){
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
   ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 66);
   ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills, 14, 82); ctx.shadowBlur=0;
-  for(const bb of buildBtns) drawBuildTile(bb, ex.cash);
+  buildBtns.forEach((bb,i)=>drawBuildTile(bb, ex.cash, Pad.connected && i===Pad.buildSel));
 }
-function drawBuildTile(bb, cash){
+function drawBuildTile(bb, cash, sel){
   const afford=cash>=bb.cost, spec=BUILD_SPEC[bb.type];
   ctx.save();
   ctx.fillStyle=afford?'rgba(24,44,24,.94)':'rgba(38,38,38,.86)';
   roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
+  if(sel){ ctx.save(); ctx.strokeStyle='#ffe14b'; ctx.lineWidth=3; ctx.setLineDash([7,4]); ctx.lineDashOffset=-(performance.now()/60)%11; roundRectPath(bb.x-3,bb.y-3,bb.w+6,bb.h+6,10); ctx.stroke(); ctx.restore(); }
   ctx.lineWidth=2; ctx.strokeStyle=afford?(spec.kind==='turret'?(bb.type==='turret2'?'#ff9a6a':'#7fd0ff'):spec.kind==='spike'?'#d0d6dd':(bb.type==='wall2'?'#aeb6bf':'#9fe27f')):'#666';
   roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.stroke();
   ctx.globalAlpha=afford?1:0.5;
@@ -5038,7 +5054,7 @@ function drawCoopUI(cd){
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
   ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(cd.cash), 14, 66);
   ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+'  ·  shared cash', 14, 82); ctx.shadowBlur=0;
-  for(const bb of buildBtns) drawBuildTile(bb, cd.cash);
+  buildBtns.forEach((bb,i)=>drawBuildTile(bb, cd.cash, Pad.connected && i===Pad.buildSel));
 }
 function netStartDuel(){
   mode='net'; explore=null; coop=null;
@@ -5124,10 +5140,11 @@ function duelLocalInput(){
   if(mvx&&mvy){mvx*=0.7071;mvy*=0.7071;}
   if(touch.mvx||touch.mvy){mvx=touch.mvx;mvy=touch.mvy;}
   let aim=null, fire=false;
-  if(touch.aimActive){ aim=Math.atan2(touch.aimy,touch.aimx); fire=true; }   // aim stick aims + fires
+  if(touch.gaimActive){ aim=touch.gaim; }   // gamepad: left stick aims, right trigger fires
+  else if(touch.aimActive){ aim=Math.atan2(touch.aimy,touch.aimx); fire=true; }   // aim stick aims + fires
   else if(tapAim.active && duel){ const me=duel[duel.meKey], z=duel.zoom||1;    // tap the screen to aim + fire there
     aim=Math.atan2((duel.camY+tapAim.y/z)-(me.y+DUEL_PS/2), (duel.camX+tapAim.x/z)-(me.x+DUEL_PS/2)); fire=true; }
-  if(keys['Space']) fire=true;
+  if(keys['Space']||touch.fire) fire=true;
   return {mvx,mvy,aim,fire};
 }
 function duelActor(pl, inp, dt, spawn){
