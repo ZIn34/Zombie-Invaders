@@ -419,8 +419,8 @@ function canvasPoint(e){
   return { x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height) };
 }
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
-canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
-  const p=canvasPoint(e);
+canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start(); canvasTap(canvasPoint(e), e.pointerId); });
+function canvasTap(p, pid){
   if(state===STATE.DUEL && duel && duel.paused){   // paused AI shootout: tap resumes, or hit QUIT
     if(inRect(p, duelQuitBtn)){ duel=null; mode='arcade'; state=STATE.MENU; } else duel.paused=false;
     return;
@@ -432,7 +432,7 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
     if(state===STATE.COOPDEF && codef){   // co-op build buttons
       for(const bb of buildBtns){ if(inRect(p, bb)){ coopBuildRequest(bb.type); return; } }
     }
-    tapAim.active=true; tapAim.id=e.pointerId; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
+    tapAim.active=true; tapAim.id=pid; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
   }
   if(state===STATE.MENU){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
@@ -523,11 +523,81 @@ canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
     if(inRect(p, overHomeBtn)){ chase=null; coop=null; state=STATE.MENU; }
     else if(inRect(p, overRetryBtn)){ if(mode==='campaign') startMission(campaignMission); else if(wasDefense) setupDefense(); else if(wasEndless) setupEndless(); else startGame(); }
   }
-});
+}
 // drag to keep aiming; release to stop
 canvas.addEventListener('pointermove', (e)=>{ if(tapAim.active && e.pointerId===tapAim.id){ const p=canvasPoint(e); tapAim.x=p.x; tapAim.y=p.y; } });
 window.addEventListener('pointerup', (e)=>{ if(e.pointerId===tapAim.id) tapAim.active=false; });
 window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===tapAim.id) tapAim.active=false; });
+
+/* ---------- gamepad / controller support ---------- */
+/* left stick = move, right stick = aim+fire (twin-stick modes), A/RT/RB = fire, Start = pause,
+   on menus: D-pad / left stick move the highlight, A selects, B goes back. Feeds the same touch.* the on-screen sticks use. */
+const Pad = { connected:false, focus:0, prev:{}, _pm:false, _pa:false, _pf:false, _sy:0, _lastState:-1 };
+window.addEventListener('gamepadconnected', ()=>{ Pad.connected=true; toast('🎮 CONTROLLER CONNECTED'); });
+function firstGamepad(){ const gs=navigator.getGamepads?navigator.getGamepads():[]; for(const g of gs){ if(g) return g; } return null; }
+function padTargets(){
+  switch(state){
+    case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, gearBtn];
+    case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, diffBtns[0], diffBtns[1], diffBtns[2]];
+    case STATE.ONLINEPICK: return [opVersusBtn, opCoopBtn];
+    case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn];
+    case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn];
+    case STATE.OVER: case STATE.WIN: return [overRetryBtn, overHomeBtn];
+    case STATE.NETLOBBY: return (net&&net.lobby==='choose')?[netQuickBtn, netHostBtn, netJoinBtn]:null;
+    default: return null;
+  }
+}
+function padBackRect(){
+  switch(state){
+    case STATE.PLAYPICK: case STATE.ONLINEPICK: case STATE.VERSUSPICK: case STATE.VERSUSMODE:
+    case STATE.STORE: case STATE.SETTINGS: case STATE.NETLOBBY: case STATE.TUTORIAL: return backBtn;
+    default: return null;
+  }
+}
+function padPoll(){
+  const gp=firstGamepad(); Pad.connected=!!gp; if(!gp) return;
+  const ax=gp.axes||[], btn=gp.buttons||[];
+  const bd=i=>!!(btn[i]&&btn[i].pressed);
+  const edge=i=>{ const n=bd(i), w=Pad.prev['b'+i]; Pad.prev['b'+i]=n; return n&&!w; };
+  const dz=v=>Math.abs(v)>0.28?v:0;
+  const lx=dz(ax[0]||0), ly=dz(ax[1]||0), rx=dz(ax[2]||0), ry=dz(ax[3]||0);
+  const inGame=(state===STATE.PLAY||state===STATE.CHASE||state===STATE.DUEL||state===STATE.COOPDEF);
+  if(state!==Pad._lastState){ Pad.focus=0; Pad._lastState=state; }
+  if(inGame){
+    if(lx||ly){ touch.mvx=lx; touch.mvy=ly; Pad._pm=true; } else if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
+    const rm=Math.hypot(rx,ry);
+    if(rm>0.4){ touch.aimx=rx; touch.aimy=ry; touch.aimActive=true; Pad._pa=true; } else if(Pad._pa){ touch.aimx=0; touch.aimy=0; touch.aimActive=false; Pad._pa=false; }
+    const pf=bd(0)||bd(7)||bd(5);
+    if(pf){ touch.fire=true; Pad._pf=true; } else if(Pad._pf){ touch.fire=false; Pad._pf=false; }
+    if(edge(9)||edge(8)) togglePause();
+    if(state===STATE.DUEL && duel && duel.over && (edge(0)||edge(1))) canvasTap({x:W/2,y:H/2+30}, -1);
+  } else {
+    if(Pad._pm){ touch.mvx=0; touch.mvy=0; Pad._pm=false; }
+    if(Pad._pa){ touch.aimx=0; touch.aimy=0; touch.aimActive=false; Pad._pa=false; }
+    if(Pad._pf){ touch.fire=false; Pad._pf=false; }
+    const tg=padTargets();
+    if(tg && tg.length){
+      let d=0;
+      if(edge(13)||edge(15)) d=1; else if(edge(12)||edge(14)) d=-1;
+      if((ly>0.5||lx>0.5) && !Pad._sy){ d=d||1; Pad._sy=1; } else if((ly<-0.5||lx<-0.5) && !Pad._sy){ d=d||-1; Pad._sy=1; } else if(Math.abs(ly)<0.3&&Math.abs(lx)<0.3){ Pad._sy=0; }
+      if(d){ Pad.focus=(Pad.focus+d+tg.length)%tg.length; Sound.hit(); }
+      if(Pad.focus>=tg.length) Pad.focus=0;
+      if(edge(0)||edge(9)){ const r=tg[Pad.focus]; Sound.resume(); Music.start(); canvasTap({x:r.x+r.w/2, y:r.y+r.h/2}, -1); Pad.focus=0; }
+    } else if((state===STATE.TUTORIAL||state===STATE.STORY||state===STATE.CUTSCENE||state===STATE.MISSIONDONE) && (edge(0)||edge(9))){
+      canvasTap({x:W/2,y:H/2}, -1);
+    }
+    if(edge(1)){ const br=padBackRect(); if(br){ Sound.resume(); canvasTap({x:br.x+br.w/2, y:br.y+br.h/2}, -1); Pad.focus=0; } }
+  }
+}
+function drawPadFocus(){
+  if(!Pad.connected) return;
+  const tg=padTargets(); if(!tg||!tg.length) return;
+  if(Pad.focus>=tg.length) Pad.focus=0;
+  const r=tg[Pad.focus]; if(!r) return;
+  ctx.save(); ctx.strokeStyle='#ffe14b'; ctx.lineWidth=3; ctx.setLineDash([9,5]);
+  ctx.lineDashOffset=-(performance.now()/60)%14;
+  roundRectPath(r.x-5, r.y-5, r.w+10, r.h+10, 12); ctx.stroke(); ctx.restore();
+}
 
 /* ============================ HELPERS ================================= */
 const rand=(a,b)=>a+Math.random()*(b-a);
@@ -1363,6 +1433,7 @@ let last=performance.now();
 function loop(now){
   let dt=(now-last)/1000; last=now;
   if(dt>0.05) dt=0.05; // clamp big gaps
+  padPoll();
   update(dt);
   syncViewport();
   render();
@@ -3342,6 +3413,7 @@ function drawHUD(){
 }
 
 function drawToast(){
+  drawPadFocus();
   if(toastT<=0) return;
   const a=clamp(toastT/0.5,0,1);
   ctx.globalAlpha=a;
@@ -5002,9 +5074,13 @@ function aiLineBlocked(a,b){
 function aiDuelInput(dt){
   const me=duel.p2, foe=duel.p1;
   const dx=foe.x-me.x, dy=foe.y-me.y, dist=Math.hypot(dx,dy)||1, ux=dx/dist, uy=dy/dist;
+  // difficulty tunes the bot's aim, aggression and reflexes
+  const wanderMax = difficulty===0?0.6 : difficulty===2?0.14 : 0.32;   // easy=sloppy aim, hard=sharp
+  const fireDist  = difficulty===0?480 : difficulty===2?820 : 640;
+  const strafeSk  = difficulty===0?0.5 : difficulty===2?0.9 : 0.75;
   // aim at the player with a little wander so it isn't a perfect shot
-  duel.aiWander = clamp((duel.aiWander||0)+(Math.random()-0.5)*0.5, -0.35, 0.35);
-  const aim = Math.atan2(dy,dx) + duel.aiWander*0.35;
+  duel.aiWander = clamp((duel.aiWander||0)+(Math.random()-0.5)*0.5, -wanderMax, wanderMax);
+  const aim = Math.atan2(dy,dx) + duel.aiWander;
   // grab a nearby weapon pickup if it's on a plain pistol
   let goX=null,goY=null;
   if(me.weapon==='pistol'){ for(const k of duel.pickups){ if(!k.taken){ const pd=Math.hypot(k.x-(me.x+DUEL_PS/2),k.y-(me.y+DUEL_PS/2)); if(pd<340){ goX=k.x; goY=k.y; break; } } } }
@@ -5014,11 +5090,11 @@ function aiDuelInput(dt){
     const want=240; mvx=0; mvy=0;
     if(dist>want+70){ mvx=ux; mvy=uy; } else if(dist<want-70){ mvx=-ux; mvy=-uy; }
     duel.aiStrafeT-=dt; if(duel.aiStrafeT<=0){ duel.aiStrafe=(Math.random()<0.5?1:-1); duel.aiStrafeT=0.7+Math.random()*0.9; }
-    mvx += -uy*0.75*duel.aiStrafe; mvy += ux*0.75*duel.aiStrafe;
+    mvx += -uy*strafeSk*duel.aiStrafe; mvy += ux*strafeSk*duel.aiStrafe;
     const m=Math.hypot(mvx,mvy)||1; mvx/=m; mvy/=m;
   }
   // fire when it has a clear shot and the player is within a sensible range
-  const fire = dist<640 && !aiLineBlocked(me,foe);
+  const fire = dist<fireDist && !aiLineBlocked(me,foe);
   return {mvx,mvy,aim,fire};
 }
 function updateDuelAI(dt){
