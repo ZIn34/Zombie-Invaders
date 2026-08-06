@@ -562,6 +562,23 @@ function padTargets(){
     default: return null;
   }
 }
+// pick the nearest focusable button in a screen direction (spatial navigation)
+function padNavMove(tg, dir){
+  const cur=tg[Pad.focus]; if(!cur) return Pad.focus;
+  const cx=cur.x+cur.w/2, cy=cur.y+cur.h/2;
+  let best=-1, bestScore=1e18;
+  for(let i=0;i<tg.length;i++){ if(i===Pad.focus) continue; const r=tg[i], rx=r.x+r.w/2, ry=r.y+r.h/2, dx=rx-cx, dy=ry-cy;
+    let ok, primary, secondary;
+    if(dir==='down'){ ok=dy>4; primary=dy; secondary=Math.abs(dx); }
+    else if(dir==='up'){ ok=dy<-4; primary=-dy; secondary=Math.abs(dx); }
+    else if(dir==='right'){ ok=dx>4; primary=dx; secondary=Math.abs(dy); }
+    else { ok=dx<-4; primary=-dx; secondary=Math.abs(dy); }
+    if(!ok) continue;
+    const score=primary + secondary*2.2;   // strongly prefer buttons aligned with the pressed direction
+    if(score<bestScore){ bestScore=score; best=i; }
+  }
+  return best>=0?best:Pad.focus;
+}
 // states advanced by a single button press (no button list to move through)
 function padAdvanceState(){ return (state===STATE.TUTORIAL||state===STATE.STORY||state===STATE.CUTSCENE||state===STATE.MISSIONDONE||state===STATE.HANDOFF||state===STATE.COOPRESULT||state===STATE.COOP||state===STATE.DEATH); }
 function padBackRect(){
@@ -613,11 +630,15 @@ function padPoll(){
     if(Pad._pf){ touch.fire=false; Pad._pf=false; }
     const tg=padTargets();
     if(tg && tg.length){
-      let d=0;
-      if(edge(13)||edge(15)) d=1; else if(edge(12)||edge(14)) d=-1;
-      if((ly>0.5||lx>0.5) && !Pad._sy){ d=d||1; Pad._sy=1; } else if((ly<-0.5||lx<-0.5) && !Pad._sy){ d=d||-1; Pad._sy=1; } else if(Math.abs(ly)<0.3&&Math.abs(lx)<0.3){ Pad._sy=0; }
-      if(d){ Pad.focus=(Pad.focus+d+tg.length)%tg.length; Sound.hit(); }
       if(Pad.focus>=tg.length) Pad.focus=0;
+      let dir=null;
+      if(edge(13)) dir='down'; else if(edge(12)) dir='up'; else if(edge(15)) dir='right'; else if(edge(14)) dir='left';
+      if(!dir && !Pad._sy){   // left-stick flick (re-armed once it returns near centre)
+        if(ly>0.5) dir='down'; else if(ly<-0.5) dir='up'; else if(lx>0.5) dir='right'; else if(lx<-0.5) dir='left';
+        if(dir) Pad._sy=1;
+      }
+      if(Math.abs(ly)<0.3 && Math.abs(lx)<0.3) Pad._sy=0;
+      if(dir){ const nf=padNavMove(tg, dir); if(nf!==Pad.focus){ Pad.focus=nf; Sound.hit(); } }
       if(edge(0)||edge(9)){ const r=tg[Pad.focus]; Sound.resume(); Music.start(); canvasTap({x:r.x+r.w/2, y:r.y+r.h/2}, -1); Pad.focus=0; }
     } else if(padAdvanceState() && (edge(0)||edge(9))){
       Sound.resume(); Music.start(); canvasTap({x:W/2,y:H/2}, -1);
