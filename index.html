@@ -424,7 +424,19 @@ function canvasPoint(e){
   return { x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height) };
 }
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
-canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start(); canvasTap(canvasPoint(e), e.pointerId); });
+canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
+  const p=canvasPoint(e);
+  if(state===STATE.LEADER){ lbDragY=p.y; lbDragScroll=lbScroll; lbDragged=false; return; }   // defer to pointerup so we can tell a tap from a scroll-drag
+  canvasTap(p, e.pointerId);
+});
+canvas.addEventListener('pointermove', (e)=>{
+  if(state===STATE.LEADER && lbDragY!=null){ const p=canvasPoint(e), dy=p.y-lbDragY; if(Math.abs(dy)>4) lbDragged=true; lbScroll=clamp(lbDragScroll-dy, 0, lbMaxScroll); }
+});
+canvas.addEventListener('pointerup', (e)=>{
+  if(state===STATE.LEADER && lbDragY!=null){ const p=canvasPoint(e); if(!lbDragged) canvasTap(p, e.pointerId); lbDragY=null; }
+});
+canvas.addEventListener('pointercancel', ()=>{ lbDragY=null; });
+canvas.addEventListener('wheel', (e)=>{ if(state===STATE.LEADER && lbMaxScroll>0){ lbScroll=clamp(lbScroll+(e.deltaY>0?42:-42), 0, lbMaxScroll); e.preventDefault(); } }, {passive:false});
 // belt-and-suspenders: any tap/touch/click anywhere on the page unlocks audio (covers pad-only sessions where one screen tap enables sound)
 ['pointerdown','touchstart','mousedown'].forEach(ev=>document.addEventListener(ev, ()=>{ Sound.resume(); Music.start(); }, {passive:true}));
 function canvasTap(p, pid){
@@ -717,10 +729,11 @@ const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL
 const LB_URL='https://zombie-invaders-9222c-default-rtdb.firebaseio.com';
 const LB_MODES=[{key:'defense',label:'DEFENSE'},{key:'coopdef',label:'CO-OP DEFENSE'}];
 let lbView='defense', lbData={defense:null,coopdef:null}, lbErr={defense:'',coopdef:''};
+let lbScroll=0, lbMaxScroll=0, lbDragY=null, lbDragScroll=0, lbDragged=false;
 function lbName(){ try{ return localStorage.getItem('zi_pname')||''; }catch(e){ return ''; } }
 function lbSetName(){ try{ const cur=lbName(); const n=(window.prompt('Enter your leaderboard name (up to 12 letters):', cur)||'').trim().slice(0,12); if(n){ localStorage.setItem('zi_pname', n); } }catch(e){} }
 function lbLocalGet(mode){ try{ return JSON.parse(localStorage.getItem('zi_lb_'+mode)||'[]'); }catch(e){ return []; } }
-function lbLocalAdd(mode, entry){ try{ const a=lbLocalGet(mode); a.push(entry); a.sort((x,y)=>y.s-x.s); localStorage.setItem('zi_lb_'+mode, JSON.stringify(a.slice(0,25))); }catch(e){} }
+function lbLocalAdd(mode, entry){ try{ const a=lbLocalGet(mode); a.push(entry); a.sort((x,y)=>y.s-x.s); localStorage.setItem('zi_lb_'+mode, JSON.stringify(a.slice(0,50))); }catch(e){} }
 function lbSubmit(mode, score){
   score=Math.round(score||0); if(score<=0) return;
   const entry={ n:(lbName()||'ANON').slice(0,12), s:score, t:Date.now() };
@@ -728,13 +741,16 @@ function lbSubmit(mode, score){
   if(LB_URL){ try{ fetch(LB_URL.replace(/\/+$/,'')+'/lb/'+mode+'.json', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(entry) }).catch(()=>{}); }catch(e){} }
 }
 function lbLoad(mode){
-  lbErr[mode]='';
-  if(!LB_URL){ lbData[mode]=lbLocalGet(mode).slice(0,15); return; }
+  lbErr[mode]=''; lbScroll=0;
+  if(!LB_URL){ lbData[mode]=lbLocalGet(mode).slice(0,50); return; }
   lbData[mode]=null;   // loading…
-  fetch(LB_URL.replace(/\/+$/,'')+'/lb/'+mode+'.json').then(r=>r.json()).then(d=>{
-    const arr = d ? Object.keys(d).map(k=>d[k]).filter(e=>e&&typeof e.s==='number') : [];
-    arr.sort((a,b)=>b.s-a.s); lbData[mode]=arr.slice(0,15);
-  }).catch(()=>{ lbData[mode]=lbLocalGet(mode).slice(0,15); lbErr[mode]='(offline — showing this device)'; });
+  const base=LB_URL.replace(/\/+$/,'');
+  fetch(base+'/lb/'+mode+'.json').then(r=>r.json()).then(d=>{
+    const entries = d ? Object.keys(d).map(k=>({k,e:d[k]})).filter(x=>x.e&&typeof x.e.s==='number') : [];
+    entries.sort((a,b)=>b.e.s-a.e.s);
+    lbData[mode]=entries.slice(0,50).map(x=>x.e);           // show the top 50
+    if(entries.length>60){ for(const x of entries.slice(50)) fetch(base+'/lb/'+mode+'/'+x.k+'.json',{method:'DELETE'}).catch(()=>{}); }  // keep the DB trimmed to ~50
+  }).catch(()=>{ lbData[mode]=lbLocalGet(mode).slice(0,50); lbErr[mode]='(offline — showing this device)'; });
 }
 function enterLeader(m, back){ lbView=m||'defense'; if(back!=null) lbBackState=back; state=STATE.LEADER; lbLoad('defense'); lbLoad('coopdef'); }
 let defKillLimit=0;      // 0 = endless; otherwise win the defense when kills reach this
@@ -6440,17 +6456,31 @@ function drawLeader(){
   drawLbTab(lbTabDef,  'DEFENSE', lbView==='defense');
   drawLbTab(lbTabCoop, 'CO-OP',   lbView==='coopdef');
   const mode=lbView, data=lbData[mode];
-  const x0=44, y0=186, rowH=25;
-  ctx.fillStyle='#9fe27f'; ctx.font='bold 11px '+CF; ctx.textAlign='left'; ctx.fillText('RANK  NAME', x0, y0-16);
-  ctx.textAlign='right'; ctx.fillText('KILLS', W-44, y0-16);
-  if(data==null){ ctx.textAlign='center'; ctx.fillStyle='#9fb0c9'; ctx.font='bold 15px '+CF; ctx.fillText('loading…', W/2, y0+50); }
-  else if(!data.length){ ctx.textAlign='center'; ctx.fillStyle='#9fb0c9'; ctx.font='15px '+CF; ctx.fillText('No scores yet — be the first!', W/2, y0+50); }
-  else { for(let i=0;i<data.length && i<12;i++){ const e=data[i], y=y0+i*rowH;
-      if(i%2===0){ ctx.fillStyle='rgba(255,255,255,.04)'; roundRectPath(x0-8,y-15,W-2*(x0-8),rowH-3,5); ctx.fill(); }
+  const x0=44, rowH=25, listTop=178, listBottom=H-72, listH=listBottom-listTop;
+  ctx.fillStyle='#9fe27f'; ctx.font='bold 11px '+CF; ctx.textAlign='left'; ctx.fillText('RANK  NAME', x0, listTop-8);
+  ctx.textAlign='right'; ctx.fillText('KILLS', W-44, listTop-8);
+  if(data==null){ ctx.textAlign='center'; ctx.fillStyle='#9fb0c9'; ctx.font='bold 15px '+CF; ctx.fillText('loading…', W/2, listTop+60); lbMaxScroll=0; }
+  else if(!data.length){ ctx.textAlign='center'; ctx.fillStyle='#9fb0c9'; ctx.font='15px '+CF; ctx.fillText('No scores yet — be the first!', W/2, listTop+60); lbMaxScroll=0; }
+  else {
+    const total=data.length*rowH;
+    lbMaxScroll=Math.max(0, total-listH); lbScroll=clamp(lbScroll,0,lbMaxScroll);
+    ctx.save(); ctx.beginPath(); ctx.rect(0,listTop,W,listH); ctx.clip();
+    for(let i=0;i<data.length;i++){ const e=data[i], y=listTop+14+i*rowH-lbScroll;
+      if(y<listTop-rowH || y>listBottom+rowH) continue;   // cull off-screen rows
+      if(i%2===0){ ctx.fillStyle='rgba(255,255,255,.05)'; roundRectPath(x0-10,y-15,W-2*(x0-10),rowH-3,5); ctx.fill(); }
       ctx.textAlign='left'; ctx.fillStyle=i===0?'#ffd24a':i===1?'#cfd6dd':i===2?'#e0a06a':'#c9e6b0'; ctx.font='bold 14px '+CF; ctx.fillText('#'+(i+1), x0, y);
-      ctx.fillStyle='#eafff0'; ctx.fillText((e.n||'ANON').slice(0,12), x0+40, y);
+      ctx.fillStyle='#eafff0'; ctx.fillText((e.n||'ANON').slice(0,12), x0+42, y);
       ctx.textAlign='right'; ctx.fillStyle='#ffe14b'; ctx.fillText(''+(e.s||0), W-44, y);
-  } }
+    }
+    ctx.restore();
+    // scrollbar
+    if(lbMaxScroll>0){ const trackH=listH, thumbH=Math.max(24, trackH*listH/total), thumbY=listTop+(trackH-thumbH)*(lbScroll/lbMaxScroll);
+      ctx.fillStyle='rgba(255,255,255,.08)'; roundRectPath(W-12, listTop, 5, trackH, 2.5); ctx.fill();
+      ctx.fillStyle='rgba(180,220,150,.55)'; roundRectPath(W-12, thumbY, 5, thumbH, 2.5); ctx.fill();
+      // fade hints at edges when there's more to see
+      if(lbScroll<lbMaxScroll-1){ ctx.fillStyle='#9fe27f'; ctx.font='bold 10px '+CF; ctx.textAlign='center'; ctx.fillText('▼ scroll for more', W/2, listBottom+2); }
+    }
+  }
   ctx.textAlign='center';
   if(lbErr[mode]){ ctx.fillStyle='#ff9a9a'; ctx.font='11px '+CF; ctx.fillText(lbErr[mode], W/2, H-70); }
   else if(!LB_URL){ ctx.fillStyle='rgba(200,210,225,.5)'; ctx.font='10px '+CF; ctx.fillText('this device only — online board not configured yet', W/2, H-70); }
