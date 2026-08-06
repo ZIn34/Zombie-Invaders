@@ -2114,10 +2114,16 @@ function aimAngleFromInput(p, cam){
 }
 function exploreFire(p){
   p.recoil=1;
-  const cx=p.x+p.w/2, cy=p.y+p.h*0.35;
+  const ccx=p.x+p.w/2, ccy=p.y+p.h/2;
+  let cx=ccx, cy=p.y+p.h*0.35;
   let vx=0,vy=-1;
   // always shoot exactly where the player is aiming — no auto-targeting
-  if(p.aim!=null){ vx=Math.cos(p.aim); vy=Math.sin(p.aim); }
+  if(p.aim!=null){ vx=Math.cos(p.aim); vy=Math.sin(p.aim);
+    // spawn from the gun muzzle, which rotates with the soldier's aim (same point the flash uses)
+    const m=playerMuzzle(p), a=p.aim+Math.PI/2, ca=Math.cos(a), sa=Math.sin(a);
+    const lox=m.tipX-ccx, loy=m.tipY-ccy;
+    cx=ccx+lox*ca-loy*sa; cy=ccy+lox*sa+loy*ca;
+  }
   const sp=740;
   if(p.weapon==='spread'){ Sound.spread(); for(const a of [-0.2,0,0.2]){ const c=Math.cos(a),s=Math.sin(a); bullets.push({x:cx,y:cy,w:8,h:8,vx:(vx*c-vy*s)*sp,vy:(vx*s+vy*c)*sp,col:'#ffe14b',dmg:1,t:0}); } }
   else { (p.rapidT>0?Sound.rifle():Sound.shoot()); bullets.push({x:cx,y:cy,w:8,h:8,vx:vx*sp,vy:vy*sp,col:'#ffe14b',dmg:1,t:0}); }
@@ -2454,12 +2460,15 @@ function defSpawnBoss(){
 }
 function drawOneBoss(bo){
   if(!bo||bo.dead) return;
-  const bw=bo.w*1.8, bh=bw*BAH/BAW, cx=bo.x+bo.w/2, cy=bo.y+bo.h/2;
+  const useSkin = equippedBossSkin!=='classic' && BossSkin1;   // equipped boss skin overrides the default
+  const bimg = useSkin?BossSkin1:Bsprite, bwhite = useSkin?(BossSkin1white||Bwhite):Bwhite;
+  const AW = useSkin?BossSkin1AW:BAW, AH = useSkin?BossSkin1AH:BAH;
+  const bw=bo.w*1.8, bh=bw*AH/AW, cx=bo.x+bo.w/2, cy=bo.y+bo.h/2;
   softShadow(cx, bo.y+bo.h-2, bo.w*0.62, 11, 0.32);
   ctx.save();
   ctx.translate(cx, cy); ctx.rotate((bo.face!=null?bo.face:Math.PI/2) - Math.PI/2);   // head points toward the flag
-  if(Bsprite) ctx.drawImage(Bsprite, -bw/2, -bh/2, bw, bh);
-  if(bo.flash>0 && Bwhite){ ctx.globalAlpha=Math.min(1,bo.flash*9); ctx.drawImage(Bwhite, -bw/2, -bh/2, bw, bh); ctx.globalAlpha=1; }
+  if(bimg) ctx.drawImage(bimg, -bw/2, -bh/2, bw, bh);
+  if(bo.flash>0 && bwhite){ ctx.globalAlpha=Math.min(1,bo.flash*9); ctx.drawImage(bwhite, -bw/2, -bh/2, bw, bh); ctx.globalAlpha=1; }
   ctx.restore();
   const bwid=94, hp=Math.max(0,bo.hp/bo.hpMax);
   ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(cx-bwid/2, bo.y-15, bwid, 8);
