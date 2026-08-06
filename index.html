@@ -714,7 +714,7 @@ const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL
    Paste your Firebase Realtime Database URL below to make the board shared across ALL players.
    e.g. const LB_URL='https://zombie-invaders-default-rtdb.firebaseio.com';
    Leave it '' and the board falls back to this device's own high scores.            */
-const LB_URL='';
+const LB_URL='https://zombie-invaders-9222c-default-rtdb.firebaseio.com';
 const LB_MODES=[{key:'defense',label:'DEFENSE'},{key:'coopdef',label:'CO-OP DEFENSE'}];
 let lbView='defense', lbData={defense:null,coopdef:null}, lbErr={defense:'',coopdef:''};
 function lbName(){ try{ return localStorage.getItem('zi_pname')||''; }catch(e){ return ''; } }
