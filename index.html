@@ -473,6 +473,7 @@ function canvasTap(p, pid){
     else if(inRect(p, playOpenBtn)) setupEndless();
     else if(inRect(p, playDefenseBtn)) setupDefense();
     else if(inRect(p, playAIBtn)) startAIDuel();
+    else if(inRect(p, playSplitBtn)) startLocalCoop();
     else { for(const db of diffBtns){ if(inRect(p, db)){ difficulty=db.d; saveSettings(); Sound.hit(); break; } } }
   } else if(state===STATE.ONLINEPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
@@ -539,7 +540,7 @@ function firstGamepad(){ const gs=navigator.getGamepads?navigator.getGamepads():
 function netPadTargets(){
   if(!net) return [backBtn];
   const L=net.lobby;
-  if(L==='choose'){ const a=[]; if(!net.coop) a.push(netModeBtn); a.push(netQuickBtn, netHostBtn, netJoinBtn); if(net.coop) a.push(coopSplitBtn); a.push(backBtn); return a; }
+  if(L==='choose'){ const a=[]; if(!net.coop) a.push(netModeBtn); a.push(netQuickBtn, netHostBtn, netJoinBtn, backBtn); return a; }
   if(L==='joining'){ return [netConnectBtn, backBtn]; }
   if((L==='hosting'||L==='connected') && net.role==='host'){ const a=[netStartBtn]; if(!net.coop) a.push(netModeBtn, netAdvBtn); a.push(backBtn); return a; }
   return [backBtn];
@@ -547,7 +548,7 @@ function netPadTargets(){
 function padTargets(){
   switch(state){
     case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, gearBtn];
-    case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
+    case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
     case STATE.ONLINEPICK: return [opVersusBtn, opCoopBtn, backBtn];
     case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn, backBtn];
     case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn, backBtn];
@@ -4597,14 +4598,14 @@ function drawOnlinePick(){
   drawVersusModeButton(opCoopBtn, '#2fa35a','#1c7a41','#5dff8a','🤝 CO-OP',
     'team up online — shared cash', 'defend the flag together');
 }
-const playNormalBtn  = {x:W/2-150, y:110, w:300, h:82};
-const playOpenBtn    = {x:W/2-150, y:202, w:300, h:82};
-const playDefenseBtn = {x:W/2-150, y:294, w:300, h:82};
-const playAIBtn      = {x:W/2-150, y:386, w:300, h:82};
+const playNormalBtn  = {x:W/2-150, y:100, w:300, h:66};
+const playOpenBtn    = {x:W/2-150, y:172, w:300, h:66};
+const playDefenseBtn = {x:W/2-150, y:244, w:300, h:66};
+const playAIBtn      = {x:W/2-150, y:316, w:300, h:66};
+const playSplitBtn   = {x:W/2-150, y:388, w:300, h:66};   // 2 controllers, split screen, one device
 const netQuickBtn = {x:W/2-150, y:126, w:300, h:70};
 const netHostBtn  = {x:W/2-150, y:210, w:300, h:70};
 const netJoinBtn  = {x:W/2-150, y:294, w:300, h:70};
-const coopSplitBtn = {x:W/2-150, y:374, w:300, h:66};   // co-op: 2 controllers on one device, split screen
 const PUB_PREFIX='zinvv1-pub-', PUB_SLOTS=24;
 const netAdvBtn   = {x:W/2-150, y:H-92, w:300, h:44};
 const netStartBtn = {x:W/2-130, y:H-160, w:260, h:56};
@@ -4718,7 +4719,6 @@ function netLobbyTap(p){
   if(inRect(p, backBtn)){ const coop=net&&net.coop; netQuit(); state=coop?STATE.ONLINEPICK:STATE.VERSUSPICK; return; }
   if(net.lobby==='choose'){
     if(!net.coop && inRect(p, netModeBtn)){ netToggleMode(); return; }   // pick HORDE or SHOOTOUT before you host/quick-match
-    if(net.coop && inRect(p, coopSplitBtn)){ startLocalCoop(); return; }
     if(inRect(p, netQuickBtn)) NetIO.quickMatch();
     else if(inRect(p, netHostBtn)) NetIO.host();
     else if(inRect(p, netJoinBtn)){ net.lobby='joining'; net.status=''; netShowCodeInput(true); }
@@ -5534,33 +5534,43 @@ function drawDuelOver(){
 
 /* -------------------------------- UI -------------------------------- */
 const diffBtns=[
-  {x:50,  y:500, w:106, h:40, d:0, label:'EASY'},
-  {x:162, y:500, w:106, h:40, d:1, label:'NORMAL'},
-  {x:274, y:500, w:106, h:40, d:2, label:'HARD'},
+  {x:50,  y:504, w:106, h:38, d:0, label:'EASY'},
+  {x:162, y:504, w:106, h:38, d:1, label:'NORMAL'},
+  {x:274, y:504, w:106, h:38, d:2, label:'HARD'},
 ];
 function drawDiffSelector(){
-  ctx.textAlign='center'; ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('DIFFICULTY', W/2, 490);
+  ctx.textAlign='center'; ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('DIFFICULTY', W/2, 496);
   for(const db of diffBtns){ const sel=difficulty===db.d;
     ctx.fillStyle=sel?(db.d===0?'#2a7d46':db.d===1?'#8f6f10':'#8f3210'):'rgba(255,255,255,.06)';
     roundRectPath(db.x,db.y,db.w,db.h,10); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle=sel?(db.d===0?'#5dff8a':db.d===1?'#ffd14b':'#ff8a3d'):'rgba(255,255,255,.22)'; roundRectPath(db.x,db.y,db.w,db.h,10); ctx.stroke();
     ctx.fillStyle=sel?'#fff':'#9fb0a0'; ctx.font='bold 15px '+CF; ctx.textBaseline='middle'; ctx.fillText(db.label, db.x+db.w/2, db.y+db.h/2+1); ctx.textBaseline='alphabetic'; }
 }
+function drawPlayBtn(b, c1, c2, edge, title, sub){
+  const g=ctx.createLinearGradient(0,b.y,0,b.y+b.h); g.addColorStop(0,c1); g.addColorStop(1,c2);
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=9; ctx.shadowOffsetY=3;
+  ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,14); ctx.fill();
+  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.lineWidth=2.5; ctx.strokeStyle=edge; roundRectPath(b.x,b.y,b.w,b.h,14); ctx.stroke();
+  ctx.textAlign='center'; ctx.fillStyle='#fff';
+  ctx.font='bold 22px '+CF; ctx.fillText(title, b.x+b.w/2, b.y+30);
+  ctx.font='12px '+CF; ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.fillText(sub, b.x+b.w/2, b.y+50);
+  ctx.restore();
+}
 function drawPlayPick(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#7ee06a'; ctx.font='bold 28px '+CF; ctx.fillText('PLAY', W/2, 62);
+  ctx.fillStyle='#7ee06a'; ctx.font='bold 26px '+CF; ctx.fillText('PLAY', W/2, 58);
   ctx.shadowBlur=0;
-  ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('pick how you survive', W/2, 88);
-  drawVersusModeButton(playNormalBtn, '#3ea22f','#2a7d24','#7ee06a','NORMAL',
-    'wave survival at the gate', 'wire, power-ups & bosses');
-  drawVersusModeButton(playOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD',
-    'endless twin-stick survival', 'roam free · zombies never stop');
-  drawVersusModeButton(playDefenseBtn, '#2f7ad1','#1c559e','#7fb0ff','DEFENSE',
-    'buy turrets & barricades', 'protect the flag from all sides');
-  drawVersusModeButton(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','⚔ SHOOTOUT vs AI',
-    'solo 1v1 duel against a bot', 'no internet needed');
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('pick how you survive', W/2, 82);
+  drawPlayBtn(playNormalBtn, '#3ea22f','#2a7d24','#7ee06a','NORMAL', 'wave survival · wire, power-ups & bosses');
+  drawPlayBtn(playOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD', 'endless twin-stick · roam free');
+  drawPlayBtn(playDefenseBtn, '#2f7ad1','#1c559e','#7fb0ff','DEFENSE', 'buy turrets & walls · protect the flag');
+  drawPlayBtn(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','⚔ SHOOTOUT vs AI', 'solo 1v1 duel against a bot');
+  drawPlayBtn(playSplitBtn, '#7a4bd6','#4f2f9e','#b48bff','🎮 2-PLAYER SPLIT', 'co-op defense · 2 controllers, 1 screen');
   drawDiffSelector();
 }
 function drawVersusPick(){
@@ -5608,14 +5618,8 @@ function drawNetLobby(){
     drawVersusModeButton(netQuickBtn, '#c24a1a','#8f3210','#ff8a3d','⚡ QUICK MATCH','find any public game','auto-connect · no code needed');
     drawVersusModeButton(netHostBtn, '#2fa35a','#1c7a41','#5dff8a','HOST A GAME','create a private room','get a code to share');
     drawVersusModeButton(netJoinBtn, '#3f7ad1','#2b559e','#7fb0ff','JOIN A GAME','enter a friend’s code','connect to their room');
-    if(net.coop){
-      drawVersusModeButton(coopSplitBtn, '#7a4bd6','#4f2f9e','#b48bff','🎮 2 CONTROLLERS','same phone · split screen','no internet needed');
-      ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF;
-      ctx.fillText('Plug in 2 controllers and share one screen.', W/2, H-24);
-    } else {
-      ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF;
-      ctx.fillText('Joining? You’ll play the host’s chosen mode.', W/2, H-40);
-    }
+    ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF;
+    ctx.fillText('Joining? You’ll play the host’s chosen mode.', W/2, H-40);
   } else if(L==='searching'){
     ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('⚡ QUICK MATCH', W/2, 150);
     ctx.globalAlpha=0.5+0.5*Math.abs(Math.sin(performance.now()/350));
