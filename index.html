@@ -326,7 +326,12 @@ const Sound = (() => {
     win(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,.16,'square',.16),i*110)); },
     toggle(){ muted=!muted; return muted; },
     isMuted(){ return muted; },
-    resume(){ const a=ctxNow(); if(a&&a.state==='suspended') a.resume(); }
+    ready(){ return !!ac && ac.state==='running'; },
+    resume(){ const a=ctxNow(); if(!a) return;
+      if(a.state!=='running'){ try{ a.resume(); }catch(e){}
+        // silent one-sample kick — helps some mobile browsers actually flip to 'running'
+        try{ const b=a.createBuffer(1,1,a.sampleRate||22050), s=a.createBufferSource(); s.buffer=b; s.connect(a.destination); s.start(0); }catch(e){} }
+    }
   };
 })();
 
@@ -420,6 +425,8 @@ function canvasPoint(e){
 }
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
 canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start(); canvasTap(canvasPoint(e), e.pointerId); });
+// belt-and-suspenders: any tap/touch/click anywhere on the page unlocks audio (covers pad-only sessions where one screen tap enables sound)
+['pointerdown','touchstart','mousedown'].forEach(ev=>document.addEventListener(ev, ()=>{ Sound.resume(); Music.start(); }, {passive:true}));
 function canvasTap(p, pid){
   if(state===STATE.DUEL && duel && duel.paused){   // paused AI shootout: tap resumes, or hit QUIT
     if(inRect(p, duelQuitBtn)){ duel=null; mode='arcade'; state=STATE.MENU; } else duel.paused=false;
@@ -599,9 +606,11 @@ function padBackRect(){
 }
 function padPoll(){
   const gp=firstGamepad(); Pad.connected=!!gp;
-  if(gp){   // unlock audio on ANY controller press — otherwise a pad-only session never gets a gesture to start sound
-    const bl=gp.buttons||[];
-    for(let i=0;i<bl.length;i++){ if(bl[i]&&bl[i].pressed){ Sound.resume(); Music.start(); break; } }
+  if(gp && !Sound.ready()){   // unlock audio on ANY controller input — a pad-only session never gets a touch/key gesture
+    const bl=gp.buttons||[], axs=gp.axes||[]; let act=false;
+    for(let i=0;i<bl.length;i++){ if(bl[i]&&bl[i].pressed){ act=true; break; } }
+    if(!act){ for(let i=0;i<axs.length;i++){ if(Math.abs(axs[i]||0)>0.5){ act=true; break; } } }
+    if(act){ Sound.resume(); Music.start(); }
   }
   if((state===STATE.COOPDEF && codef && codef.local) || (state===STATE.DUEL && duel && duel.local)) return;   // local split-screen reads both pads itself
   if(!gp) return;
@@ -5229,6 +5238,7 @@ function drawCoopDefLocal(){
   ctx.stroke();
   ctx.strokeStyle='rgba(120,180,90,0.55)'; ctx.lineWidth=1.5; ctx.stroke();
   drawLocalSharedHUD(cd);
+  drawAudioHint();
   if(cd.paused) drawLocalPause();
 }
 function drawLocalHalfHUD(hv){
@@ -5265,6 +5275,17 @@ function drawLocalSharedHUD(cd){
   roundRectPath(fx,fy,Math.max(2,fw*fr),fbh,4); ctx.fill();
   ctx.textAlign='center'; ctx.fillStyle='#c9e6b0'; ctx.font='9px '+CF;
   ctx.fillText('FLAG · kills '+cd.kills, W/2, by+bh+9);
+}
+function drawAudioHint(){
+  if(Sound.ready() || Sound.isMuted()) return;   // only when the audio context hasn't unlocked yet
+  const bw=232, bx=W/2-bw/2, by=H-30, bh=22;
+  ctx.save();
+  ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/500));
+  ctx.fillStyle='rgba(20,26,16,.85)'; roundRectPath(bx,by,bw,bh,7); ctx.fill();
+  ctx.strokeStyle='rgba(255,225,75,.6)'; ctx.lineWidth=1.5; roundRectPath(bx,by,bw,bh,7); ctx.stroke();
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('🔊 tap the screen once for sound', W/2, by+bh/2+1);
+  ctx.textBaseline='alphabetic'; ctx.restore();
 }
 function drawLocalPause(){
   ctx.fillStyle='rgba(0,0,0,.62)'; ctx.fillRect(0,0,W,H);
@@ -5371,6 +5392,7 @@ function drawDuelLocal(){
   ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.lineWidth=4; ctx.beginPath();
   if(land){ ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); } else { ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); }
   ctx.stroke(); ctx.strokeStyle='rgba(120,150,200,0.55)'; ctx.lineWidth=1.5; ctx.stroke();
+  if(!duel.over && !duel.paused) drawAudioHint();
   if(duel.over) drawDuelLocalOver();
   else if(duel.paused) drawLocalPause();
 }
