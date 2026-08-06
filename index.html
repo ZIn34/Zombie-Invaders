@@ -536,22 +536,41 @@ window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===tapAim.id) tapA
 const Pad = { connected:false, focus:0, prev:{}, _pm:false, _ga:false, _pf:false, _sy:0, _lastState:-1, buildSel:0 };
 window.addEventListener('gamepadconnected', ()=>{ Pad.connected=true; toast('🎮 CONTROLLER CONNECTED'); });
 function firstGamepad(){ const gs=navigator.getGamepads?navigator.getGamepads():[]; for(const g of gs){ if(g) return g; } return null; }
+function netPadTargets(){
+  if(!net) return [backBtn];
+  const L=net.lobby;
+  if(L==='choose'){ const a=[]; if(!net.coop) a.push(netModeBtn); a.push(netQuickBtn, netHostBtn, netJoinBtn, backBtn); return a; }
+  if(L==='joining'){ return [netConnectBtn, backBtn]; }
+  if((L==='hosting'||L==='connected') && net.role==='host'){ const a=[netStartBtn]; if(!net.coop) a.push(netModeBtn, netAdvBtn); a.push(backBtn); return a; }
+  return [backBtn];
+}
 function padTargets(){
   switch(state){
     case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, gearBtn];
-    case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, diffBtns[0], diffBtns[1], diffBtns[2]];
-    case STATE.ONLINEPICK: return [opVersusBtn, opCoopBtn];
-    case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn];
-    case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn];
+    case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
+    case STATE.ONLINEPICK: return [opVersusBtn, opCoopBtn, backBtn];
+    case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn, backBtn];
+    case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn, backBtn];
+    case STATE.STORE: return coinPackBtns.concat(skinActBtns, [backBtn]);
+    case STATE.SETTINGS: return [setShakeBasicBtn, setShakeBossBtn, setMusicBtn, setPadAimBtn, setBBasicOff, setBBasicNorm, setBBasicMore, setBBossOff, setBBossNorm, setBBossMore, setBackBtn];
+    case STATE.PAUSE: return [resumeBtn, homeBtn];
     case STATE.OVER: case STATE.WIN: return [overRetryBtn, overHomeBtn];
-    case STATE.NETLOBBY: return (net&&net.lobby==='choose')?[netQuickBtn, netHostBtn, netJoinBtn]:null;
+    case STATE.NETRESULT: return [overHomeBtn];
+    case STATE.CAMPAIGN: { const a=[]; for(let i=0;i<MISSIONS.length && i<campaignUnlocked;i++) a.push(missionRowRect(i)); a.push(campShopBtn, backBtn); return a; }
+    case STATE.SHOP: { const a=[]; for(let i=0;i<CAMPAIGN_UPGRADES.length;i++) a.push(shopRowRect(i)); a.push(shopContinueBtn, backBtn); return a; }
+    case STATE.NETLOBBY: return netPadTargets();
     default: return null;
   }
 }
+// states advanced by a single button press (no button list to move through)
+function padAdvanceState(){ return (state===STATE.TUTORIAL||state===STATE.STORY||state===STATE.CUTSCENE||state===STATE.MISSIONDONE||state===STATE.HANDOFF||state===STATE.COOPRESULT||state===STATE.COOP||state===STATE.DEATH); }
 function padBackRect(){
   switch(state){
+    case STATE.SETTINGS: return setBackBtn;
+    case STATE.CUTSCENE: return cutSkipBtn;
     case STATE.PLAYPICK: case STATE.ONLINEPICK: case STATE.VERSUSPICK: case STATE.VERSUSMODE:
-    case STATE.STORE: case STATE.SETTINGS: case STATE.NETLOBBY: case STATE.TUTORIAL: return backBtn;
+    case STATE.STORE: case STATE.NETLOBBY:
+    case STATE.CAMPAIGN: case STATE.SHOP: case STATE.STORY: case STATE.COOP: case STATE.NETRESULT: return backBtn;
     default: return null;
   }
 }
@@ -600,8 +619,8 @@ function padPoll(){
       if(d){ Pad.focus=(Pad.focus+d+tg.length)%tg.length; Sound.hit(); }
       if(Pad.focus>=tg.length) Pad.focus=0;
       if(edge(0)||edge(9)){ const r=tg[Pad.focus]; Sound.resume(); Music.start(); canvasTap({x:r.x+r.w/2, y:r.y+r.h/2}, -1); Pad.focus=0; }
-    } else if((state===STATE.TUTORIAL||state===STATE.STORY||state===STATE.CUTSCENE||state===STATE.MISSIONDONE) && (edge(0)||edge(9))){
-      canvasTap({x:W/2,y:H/2}, -1);
+    } else if(padAdvanceState() && (edge(0)||edge(9))){
+      Sound.resume(); Music.start(); canvasTap({x:W/2,y:H/2}, -1);
     }
     if(edge(1)){ const br=padBackRect(); if(br){ Sound.resume(); canvasTap({x:br.x+br.w/2, y:br.y+br.h/2}, -1); Pad.focus=0; } }
   }
@@ -2076,14 +2095,8 @@ function exploreFire(p){
   p.recoil=1;
   const cx=p.x+p.w/2, cy=p.y+p.h*0.35;
   let vx=0,vy=-1;
-  if(p.aimManual && p.aim!=null){
-    // manual aim stick: shoot exactly where the player is pointing
-    vx=Math.cos(p.aim); vy=Math.sin(p.aim);
-  } else {
-    let best=null,bd=1e9;
-    for(const z of zombies){ if(!z.alive||!zOnScreen(z)) continue; const d=Math.hypot((z.x+z.w/2)-cx,(z.y+z.h/2)-cy); if(d<bd){bd=d;best=z;} }
-    if(best){ const dx=(best.x+best.w/2)-cx, dy=(best.y+best.h/2)-cy, d=Math.hypot(dx,dy)||1; vx=dx/d; vy=dy/d; }
-  }
+  // always shoot exactly where the player is aiming — no auto-targeting
+  if(p.aim!=null){ vx=Math.cos(p.aim); vy=Math.sin(p.aim); }
   const sp=740;
   if(p.weapon==='spread'){ Sound.spread(); for(const a of [-0.2,0,0.2]){ const c=Math.cos(a),s=Math.sin(a); bullets.push({x:cx,y:cy,w:8,h:8,vx:(vx*c-vy*s)*sp,vy:(vx*s+vy*c)*sp,col:'#ffe14b',dmg:1,t:0}); } }
   else { (p.rapidT>0?Sound.rifle():Sound.shoot()); bullets.push({x:cx,y:cy,w:8,h:8,vx:vx*sp,vy:vy*sp,col:'#ffe14b',dmg:1,t:0}); }
@@ -2121,12 +2134,7 @@ function updateExplore(dt){
   if(ex.reached){
     const manual=aimAngleFromInput(p, ex);
     if(manual!=null){ p.aim=manual; p.aimManual=true; }
-    else {
-      p.aimManual=false;
-      let best=null,bd=1e9;
-      for(const z of zombies){ if(!z.alive||!zOnScreen(z)) continue; const d=Math.hypot((z.x+z.w/2)-(p.x+p.w/2),(z.y+z.h/2)-(p.y+p.h/2)); if(d<bd){bd=d;best=z;} }
-      p.aim = best ? Math.atan2((best.y+best.h/2)-(p.y+p.h/2), (best.x+best.w/2)-(p.x+p.w/2)) : null;
-    }
+    else { p.aimManual=false; }   // no auto-aim — keep the last aim direction
   } else { p.aim=null; p.aimManual=false; }
   // firing only after the marker is reached — and costs ammo (aim stick/tap auto-fire; FIRE/Space still work)
   const wantFire=keys['Space']||touch.fire||touch.aimActive||tapAim.active;
@@ -2263,12 +2271,10 @@ function updateEndless(dt){
   ex.camX=p.x+p.w/2-VW/2; ex.camY=p.y+p.h/2-VH/2;
   // ammo regen
   p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
-  // aim: manual stick / screen tap, else nearest on-screen
+  // aim: manual stick / screen tap only — no auto-targeting (keep last aim when idle)
   { const manual=aimAngleFromInput(p, ex);
     if(manual!=null){ p.aim=manual; p.aimManual=true; }
-    else { p.aimManual=false; let best=null,bd=1e9;
-      for(const z of zombies){ if(!z.alive||!zOnScreen(z)) continue; const d=Math.hypot((z.x+z.w/2)-(p.x+p.w/2),(z.y+z.h/2)-(p.y+p.h/2)); if(d<bd){bd=d;best=z;} }
-      p.aim=best?Math.atan2((best.y+best.h/2)-(p.y+p.h/2),(best.x+best.w/2)-(p.x+p.w/2)):null; } }
+    else { p.aimManual=false; } }
   // fire
   const wantFire=keys['Space']||touch.fire||touch.aimActive||tapAim.active;
   const fireRate=Math.max(0.08,((p.rapidT>0||p.permRapid)?0.11:0.28)-(p.fireCut||0));
@@ -2847,6 +2853,7 @@ function render(){
   if(state===STATE.DEATH) drawDeath();
   if(state===STATE.PAUSE) drawPause();
   if(state===STATE.OVER) drawOver();
+  drawPadFocus();   // controller highlight sits on top of pause/over panels
 }
 
 function softShadow(cx,cy,rx,ry,alpha){
