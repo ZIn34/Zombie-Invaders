@@ -443,6 +443,7 @@ function canvasTap(p, pid){
   }
   if(state===STATE.MENU){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
+    else if(inRect(p, menuLeaderBtn)) enterLeader('defense', STATE.MENU);   // leaderboard
     else if(inRect(p, tutBtn)){ tutPage=0; state=STATE.TUTORIAL; }   // how-to-play
     else if(inRect(p, campBtn)) enterCampaign(); // story mode — jump straight into the cutscene
     else if(inRect(p, coopBtn)) state=STATE.ONLINEPICK;  // choose Versus or Co-op
@@ -575,7 +576,7 @@ function netPadTargets(){
 }
 function padTargets(){
   switch(state){
-    case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, gearBtn];
+    case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, menuLeaderBtn, gearBtn];
     case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
     case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, splitOpenBtn, backBtn];
     case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, backBtn];
@@ -3873,6 +3874,7 @@ const skinCards    = STORE_SKINS.map((s,i)=>{ const c=i%3, r=(i/3|0); return {x:
 const skinActBtns  = STORE_SKINS.map((s,i)=>{ const c=i%3, r=(i/3|0); return {x:14+c*136+14, y:294+r*104+96-21, w:128-28, h:18}; });
 const backBtn={x:12, y:12, w:74, h:32};
 const gearBtn={x:W-58, y:H-58, w:44, h:44};                 // settings gear, bottom-right of the menu
+const menuLeaderBtn={x:14, y:H-58, w:44, h:44};             // leaderboard, bottom-left of the menu
 // SCREEN SHAKE — separate toggles for basic zombies and the boss
 const setShakeBasicBtn={x:75,  y:206, w:120, h:44};
 const setShakeBossBtn ={x:235, y:206, w:120, h:44};
@@ -3979,6 +3981,26 @@ function drawMenu(){
     ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
     ctx.fillText('BEST: '+String(hi).padStart(6,'0'), W/2, 548); ctx.shadowBlur=0; }
   drawGearButton();
+  drawMenuLeaderButton();
+}
+// a trophy button, bottom-left → opens the leaderboard
+function drawMenuLeaderButton(){
+  const b=menuLeaderBtn, cx=b.x+b.w/2, cy=b.y+b.h/2;
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=8; ctx.shadowOffsetY=3;
+  ctx.fillStyle='rgba(20,26,20,.85)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.fill();
+  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.lineWidth=2.5; ctx.strokeStyle='#5c4410'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
+  ctx.translate(cx,cy-1);
+  ctx.fillStyle='#ffd24a'; ctx.strokeStyle='#8a6a10'; ctx.lineWidth=1.5;
+  // cup
+  ctx.beginPath(); ctx.moveTo(-8,-9); ctx.lineTo(8,-9); ctx.lineTo(6,1); ctx.quadraticCurveTo(0,7,-6,1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // handles
+  ctx.beginPath(); ctx.arc(-8,-6,4,Math.PI*0.4,Math.PI*1.5); ctx.stroke();
+  ctx.beginPath(); ctx.arc(8,-6,4,Math.PI*1.5,Math.PI*0.6,true); ctx.stroke();
+  // stem + base
+  ctx.fillRect(-1.6,3,3.2,5); ctx.fillRect(-6,8,12,3);
+  ctx.restore();
 }
 // a settings gear icon, bottom-right
 function drawGearButton(){
