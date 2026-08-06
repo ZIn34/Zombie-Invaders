@@ -130,7 +130,7 @@ const controlsBar = document.getElementById('controls');
 let _ctrlShown = true;
 let _aimShown = false;
 function syncControls(){   // only show the joystick/pause/fire bar during actual play
-  const show = (state===STATE.PLAY || state===STATE.CHASE || state===STATE.PAUSE || state===STATE.DEATH || state===STATE.DUEL || state===STATE.COOPDEF);
+  const show = (state===STATE.PLAY || state===STATE.CHASE || state===STATE.PAUSE || state===STATE.DEATH || state===STATE.DUEL || (state===STATE.COOPDEF && !(codef&&codef.local)));
   if(show!==_ctrlShown){ _ctrlShown=show; if(controlsBar) controlsBar.style.display = show ? '' : 'none'; fit(); }
   // Mission 3 (explore) and online duels use a twin-stick layout: swap the FIRE button for the AIM stick
   const aimMode = !!explore || state===STATE.DUEL || state===STATE.COOPDEF;
@@ -539,7 +539,7 @@ function firstGamepad(){ const gs=navigator.getGamepads?navigator.getGamepads():
 function netPadTargets(){
   if(!net) return [backBtn];
   const L=net.lobby;
-  if(L==='choose'){ const a=[]; if(!net.coop) a.push(netModeBtn); a.push(netQuickBtn, netHostBtn, netJoinBtn, backBtn); return a; }
+  if(L==='choose'){ const a=[]; if(!net.coop) a.push(netModeBtn); a.push(netQuickBtn, netHostBtn, netJoinBtn); if(net.coop) a.push(coopSplitBtn); a.push(backBtn); return a; }
   if(L==='joining'){ return [netConnectBtn, backBtn]; }
   if((L==='hosting'||L==='connected') && net.role==='host'){ const a=[netStartBtn]; if(!net.coop) a.push(netModeBtn, netAdvBtn); a.push(backBtn); return a; }
   return [backBtn];
@@ -592,7 +592,9 @@ function padBackRect(){
   }
 }
 function padPoll(){
-  const gp=firstGamepad(); Pad.connected=!!gp; if(!gp) return;
+  const gp=firstGamepad(); Pad.connected=!!gp;
+  if(state===STATE.COOPDEF && codef && codef.local) return;   // local split-screen reads both pads itself
+  if(!gp) return;
   const ax=gp.axes||[], btn=gp.buttons||[];
   const bd=i=>!!(btn[i]&&btn[i].pressed);
   const edge=i=>{ const n=bd(i), w=Pad.prev['b'+i]; Pad.prev['b'+i]=n; return n&&!w; };
@@ -1526,7 +1528,11 @@ function update(dt){
   } else if(state===STATE.ONLINEPICK){
     if(pressed['Escape']) state=STATE.MENU;
   } else if(state===STATE.COOPDEF){
-    if(pressed['Escape']){ if(net&&net.role==='host'){ try{NetIO.send({t:'cover',ki:codef?codef.kills:0});}catch(e){} } coopDefEnd(codef?codef.kills:0); }
+    if(codef && codef.local){
+      if(pressed['Escape']) coopDefEnd(codef?codef.kills:0);
+      else updateCoopLocal(dt);
+    }
+    else if(pressed['Escape']){ if(net&&net.role==='host'){ try{NetIO.send({t:'cover',ki:codef?codef.kills:0});}catch(e){} } coopDefEnd(codef?codef.kills:0); }
     else if(net && net.role==='host') updateCoopHost(dt);
     else if(net) updateCoopGuest(dt);
   } else if(state===STATE.NETLOBBY){
@@ -2829,7 +2835,7 @@ function render(){
   if(state===STATE.CUTSCENE){ ctx.restore(); drawCutscene(); drawToast(); return; }
   if(state===STATE.PLAYPICK){ ctx.restore(); drawPlayPick(); drawToast(); return; }
   if(state===STATE.ONLINEPICK){ ctx.restore(); drawOnlinePick(); drawToast(); return; }
-  if(state===STATE.COOPDEF){ ctx.restore(); drawCoopDef(); drawToast(); return; }
+  if(state===STATE.COOPDEF){ ctx.restore(); if(codef&&codef.local) drawCoopDefLocal(); else drawCoopDef(); drawToast(); return; }
   if(state===STATE.VERSUSPICK){ ctx.restore(); drawVersusPick(); drawToast(); return; }
   if(state===STATE.NETLOBBY){ ctx.restore(); drawNetLobby(); drawToast(); return; }
   if(state===STATE.NETRESULT){ ctx.restore(); drawNetResult(); drawToast(); return; }
@@ -4598,6 +4604,7 @@ const playAIBtn      = {x:W/2-150, y:386, w:300, h:82};
 const netQuickBtn = {x:W/2-150, y:126, w:300, h:70};
 const netHostBtn  = {x:W/2-150, y:210, w:300, h:70};
 const netJoinBtn  = {x:W/2-150, y:294, w:300, h:70};
+const coopSplitBtn = {x:W/2-150, y:374, w:300, h:66};   // co-op: 2 controllers on one device, split screen
 const PUB_PREFIX='zinvv1-pub-', PUB_SLOTS=24;
 const netAdvBtn   = {x:W/2-150, y:H-92, w:300, h:44};
 const netStartBtn = {x:W/2-130, y:H-160, w:260, h:56};
@@ -4711,6 +4718,7 @@ function netLobbyTap(p){
   if(inRect(p, backBtn)){ const coop=net&&net.coop; netQuit(); state=coop?STATE.ONLINEPICK:STATE.VERSUSPICK; return; }
   if(net.lobby==='choose'){
     if(!net.coop && inRect(p, netModeBtn)){ netToggleMode(); return; }   // pick HORDE or SHOOTOUT before you host/quick-match
+    if(net.coop && inRect(p, coopSplitBtn)){ startLocalCoop(); return; }
     if(inRect(p, netQuickBtn)) NetIO.quickMatch();
     else if(inRect(p, netHostBtn)) NetIO.host();
     else if(inRect(p, netJoinBtn)){ net.lobby='joining'; net.status=''; netShowCodeInput(true); }
@@ -5103,6 +5111,152 @@ function drawCoopUI(cd){
   ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+'  ·  shared cash', 14, 82); ctx.shadowBlur=0;
   buildBtns.forEach((bb,i)=>drawBuildTile(bb, cd.cash, Pad.connected && i===Pad.buildSel));
 }
+
+/* ============= LOCAL SPLIT-SCREEN CO-OP (2 controllers, 1 device) ============= */
+let padPrev=[{},{}];
+function startLocalCoop(){
+  try{ NetIO.cleanup(); }catch(e){}
+  net=null; coop=null; duel=null; mode='arcade'; netShowCodeInput(false);
+  const p1=makePlayer(), p2=makePlayer();
+  p1.x=-70; p1.y=110; p1.aim=null; p1.ammo=14; p1.buildSel=0;
+  p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14; p2.buildSel=0;
+  const fh=Math.round(700*DIFF[difficulty].flagHp);
+  codef={ defense2:true, local:true, paused:false, camX:0, camY:0, zoom:EXPLORE_ZOOM, elapsed:0, kills:0, spawnT:1.0,
+    cash:DEF_START_CASH+50, lives:6, over:false, _snap:null,
+    flag:{x:0,y:0,r:46,hp:fh,hpMax:fh},
+    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
+  player=codef.p1; explore=codef;
+  zombies=[]; bullets=[]; ebullets=[]; particles=[]; bloodPools=[]; boss=null;
+  padPrev=[{},{}];
+  coopSpawn(5);
+  state=STATE.COOPDEF; toast('SPLIT-SCREEN CO-OP — protect the flag together!');
+}
+// read the idx-th CONNECTED controller with its own edge-detection state
+function readController(idx){
+  const gs=navigator.getGamepads?navigator.getGamepads():[];
+  let n=-1, gp=null;
+  for(const g of gs){ if(g){ n++; if(n===idx){ gp=g; break; } } }
+  const pv=padPrev[idx]||(padPrev[idx]={});
+  if(!gp) return {connected:false,lx:0,ly:0,rx:0,ry:0,fire:false,start:false,back:false,dR:false,dL:false,place:false};
+  const ax=gp.axes||[], btn=gp.buttons||[];
+  const bd=i=>!!(btn[i]&&btn[i].pressed);
+  const edge=i=>{ const c=bd(i), w=pv['b'+i]; pv['b'+i]=c; return c&&!w; };
+  const dz=v=>Math.abs(v)>0.28?v:0;
+  return { connected:true,
+    lx:dz(ax[0]||0), ly:dz(ax[1]||0), rx:dz(ax[2]||0), ry:dz(ax[3]||0),
+    fire: bd(0)||bd(7)||bd(5),
+    start: edge(9)||edge(8),
+    back: edge(1),
+    dR: edge(15), dL: edge(14),
+    place: edge(3)||edge(2) };
+}
+function ctrlToInput(c){
+  const aimLeft = settings.padAimLeft!==false;
+  const axv = aimLeft?c.lx:c.rx, ayv = aimLeft?c.ly:c.ry;
+  const mxv = aimLeft?c.rx:c.lx, myv = aimLeft?c.ry:c.ly;
+  let aim=null;
+  if(Math.hypot(axv,ayv)>0.4) aim=Math.atan2(ayv,axv);
+  return { mvx:mxv, mvy:myv, aim, fire:!!c.fire };
+}
+function localBuild(pl, c){
+  if(c.dR) pl.buildSel=((pl.buildSel||0)+1)%BUILD_BAR.length;
+  else if(c.dL) pl.buildSel=((pl.buildSel||0)-1+BUILD_BAR.length)%BUILD_BAR.length;
+  if(c.place){ const t=BUILD_BAR[pl.buildSel||0].type; doBuild(codef, pl, t, true); }
+}
+function updateCoopLocal(dt){
+  const cd=codef; if(!cd) return;
+  const c1=readController(0), c2=readController(1);
+  if(c1.start||c2.start) cd.paused=!cd.paused;
+  if(cd.paused){ if(c1.back||c2.back) coopDefEnd(cd.kills); return; }
+  cd.elapsed+=dt;
+  coopActor(cd.p1, ctrlToInput(c1), dt, true);
+  coopActor(cd.p2, ctrlToInput(c2), dt, true);
+  localBuild(cd.p1, c1); localBuild(cd.p2, c2);
+  coopSimWorld(dt);
+  if(cd.over || cd.flag.hp<=0) coopDefEnd(cd.kills);
+}
+function localGloom(rx,ry,rw,rh){
+  ctx.save(); ctx.beginPath(); ctx.rect(rx,ry,rw,rh); ctx.clip();
+  ctx.fillStyle='rgba(14,20,30,0.16)'; ctx.fillRect(rx,ry,rw,rh);
+  const vg=ctx.createRadialGradient(rx+rw/2,ry+rh*0.42,Math.min(rw,rh)*0.22, rx+rw/2,ry+rh*0.5,Math.max(rw,rh)*0.7);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(0.62,'rgba(0,0,0,0.18)'); vg.addColorStop(1,'rgba(4,6,10,0.55)');
+  ctx.fillStyle=vg; ctx.fillRect(rx,ry,rw,rh); ctx.restore();
+}
+function drawCoopDefLocal(){
+  const cd=codef; if(!cd) return;
+  ctx.fillStyle='#0e130c'; ctx.fillRect(0,0,W,H);
+  const land=_landActive;
+  const z = land?0.72:0.82;
+  const halves = land
+    ? [{rx:0,ry:0,rw:W/2,rh:H,pl:cd.p1,tag:'P1'},{rx:W/2,ry:0,rw:W/2,rh:H,pl:cd.p2,tag:'P2'}]
+    : [{rx:0,ry:0,rw:W,rh:H/2,pl:cd.p1,tag:'P1'},{rx:0,ry:H/2,rw:W,rh:H/2,pl:cd.p2,tag:'P2'}];
+  for(const hv of halves){
+    const VW=hv.rw/z, VH=hv.rh/z;
+    const pcx=hv.pl.x+hv.pl.w/2, pcy=hv.pl.y+hv.pl.h/2;
+    const camX=clamp(pcx-VW/2, -DEF_HALF-30, DEF_HALF-VW+30);
+    const camY=clamp(pcy-VH/2, -DEF_HALF-30, DEF_HALF-VH+30);
+    cd.camX=camX; cd.camY=camY; cd.zoom=z;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(hv.rx,hv.ry,hv.rw,hv.rh); ctx.clip();
+    ctx.translate(hv.rx,hv.ry); ctx.scale(z,z); ctx.translate(-Math.round(camX),-Math.round(camY));
+    drawDefenseGround(cd); drawDefenseArena(); drawBloodPools();
+    drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd);
+    drawZombies(); drawDefenseBoss(cd); drawBullets();
+    drawPlayerObj(cd.p1, true); drawPlayerObj(cd.p2, true);
+    drawParticles();
+    ctx.restore();
+    localGloom(hv.rx,hv.ry,hv.rw,hv.rh);
+    drawLocalHalfHUD(hv);
+  }
+  // divider between the two views
+  ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.lineWidth=4; ctx.beginPath();
+  if(land){ ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); } else { ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); }
+  ctx.stroke();
+  ctx.strokeStyle='rgba(120,180,90,0.55)'; ctx.lineWidth=1.5; ctx.stroke();
+  drawLocalSharedHUD(cd);
+  if(cd.paused) drawLocalPause();
+}
+function drawLocalHalfHUD(hv){
+  const cd=codef, pl=hv.pl;
+  const bx=hv.rx+10, by=hv.ry+hv.rh-12;
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.shadowColor='rgba(0,0,0,.85)'; ctx.shadowBlur=3;
+  ctx.fillStyle = hv.tag==='P1' ? '#7fe0ff' : '#ffd06a';
+  ctx.font='bold 13px '+CF; ctx.fillText(hv.tag, bx, by);
+  ctx.fillStyle=pl.ammo<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF;
+  ctx.fillText('🔫'+pl.ammo, bx+28, by);
+  const b=BUILD_BAR[pl.buildSel||0], cost=BUILD_SPEC[b.type].cost;
+  ctx.fillStyle = cd.cash>=cost ? '#9fe27f' : '#ff9a9a';
+  ctx.fillText('▸'+b.label+' $'+cost, bx+76, by);
+  ctx.fillStyle='rgba(200,220,190,.5)'; ctx.font='10px '+CF;
+  ctx.fillText('◀▶ pick · Y build', bx, by-15);
+  ctx.shadowBlur=0;
+}
+function drawLocalSharedHUD(cd){
+  ctx.textBaseline='alphabetic';
+  const bw=200, bx=W/2-bw/2, by=5, bh=42;
+  ctx.fillStyle='rgba(8,12,6,.74)'; roundRectPath(bx,by,bw,bh,9); ctx.fill();
+  ctx.strokeStyle='rgba(120,180,90,.35)'; ctx.lineWidth=1; roundRectPath(bx,by,bw,bh,9); ctx.stroke();
+  ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
+  ctx.textAlign='left'; ctx.fillStyle='#ffe14b'; ctx.font='bold 16px '+CF;
+  ctx.fillText('$'+Math.floor(cd.cash), bx+10, by+19);
+  ctx.textAlign='right'; ctx.fillStyle='#ffd6d6';
+  ctx.fillText('♥×'+Math.max(0,cd.lives), bx+bw-10, by+19);
+  ctx.shadowBlur=0;
+  const f=cd.flag, fx=bx+10, fy=by+25, fw=bw-20, fbh=8;
+  ctx.fillStyle='rgba(0,0,0,.5)'; roundRectPath(fx,fy,fw,fbh,4); ctx.fill();
+  const fr=clamp(f.hp/f.hpMax,0,1);
+  ctx.fillStyle= fr>0.5?'#5dff8a':fr>0.25?'#ffd23f':'#ff5b5b';
+  roundRectPath(fx,fy,Math.max(2,fw*fr),fbh,4); ctx.fill();
+  ctx.textAlign='center'; ctx.fillStyle='#c9e6b0'; ctx.font='9px '+CF;
+  ctx.fillText('FLAG · kills '+cd.kills, W/2, by+bh+9);
+}
+function drawLocalPause(){
+  ctx.fillStyle='rgba(0,0,0,.62)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#fff'; ctx.font='bold 30px '+CF; ctx.fillText('PAUSED', W/2, H/2-12);
+  ctx.fillStyle='#c9e6b0'; ctx.font='15px '+CF; ctx.fillText('START to resume · B to quit', W/2, H/2+20);
+}
 function netStartDuel(){
   mode='net'; explore=null; coop=null;
   const mkP=(x,y,aim)=>({x,y,aim,hp:DUEL_HP,cd:0,recoil:0,flash:0,walkT:0,moving:false,weapon:'pistol',mag:DUEL_MAG,wammo:0,reloadT:0});
@@ -5454,8 +5608,14 @@ function drawNetLobby(){
     drawVersusModeButton(netQuickBtn, '#c24a1a','#8f3210','#ff8a3d','⚡ QUICK MATCH','find any public game','auto-connect · no code needed');
     drawVersusModeButton(netHostBtn, '#2fa35a','#1c7a41','#5dff8a','HOST A GAME','create a private room','get a code to share');
     drawVersusModeButton(netJoinBtn, '#3f7ad1','#2b559e','#7fb0ff','JOIN A GAME','enter a friend’s code','connect to their room');
-    ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF;
-    ctx.fillText('Joining? You’ll play the host’s chosen mode.', W/2, H-40);
+    if(net.coop){
+      drawVersusModeButton(coopSplitBtn, '#7a4bd6','#4f2f9e','#b48bff','🎮 2 CONTROLLERS','same phone · split screen','no internet needed');
+      ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF;
+      ctx.fillText('Plug in 2 controllers and share one screen.', W/2, H-24);
+    } else {
+      ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF;
+      ctx.fillText('Joining? You’ll play the host’s chosen mode.', W/2, H-40);
+    }
   } else if(L==='searching'){
     ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('⚡ QUICK MATCH', W/2, 150);
     ctx.globalAlpha=0.5+0.5*Math.abs(Math.sin(performance.now()/350));
