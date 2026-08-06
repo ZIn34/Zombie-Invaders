@@ -478,7 +478,7 @@ function canvasTap(p, pid){
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, playNormalBtn)) startGame();
     else if(inRect(p, playOpenBtn)) setupEndless();
-    else if(inRect(p, playDefenseBtn)) setupDefense();
+    else if(inRect(p, playDefenseBtn)){ defPendingCoop=false; state=STATE.DEFSETUP; }
     else if(inRect(p, playAIBtn)) state=STATE.SHOOTPICK;
     else if(inRect(p, playSplitBtn)) state=STATE.SPLITPICK;
     else { for(const db of diffBtns){ if(inRect(p, db)){ difficulty=db.d; saveSettings(); Sound.hit(); break; } } }
@@ -488,9 +488,14 @@ function canvasTap(p, pid){
     else if(inRect(p, shoot2v2Btn)) startTeamShootoutSolo();
   } else if(state===STATE.SPLITPICK){
     if(inRect(p, backBtn)) state=STATE.PLAYPICK;
-    else if(inRect(p, splitCoopBtn)) startLocalCoop();
+    else if(inRect(p, splitCoopBtn)){ defPendingCoop=true; state=STATE.DEFSETUP; }
     else if(inRect(p, splitDuelBtn)) startLocalDuel();
     else if(inRect(p, splitShootCoopBtn)) startTeamShootoutCoop();
+  } else if(state===STATE.DEFSETUP){
+    if(inRect(p, backBtn)) state=defPendingCoop?STATE.SPLITPICK:STATE.PLAYPICK;
+    else if(inRect(p, defStartBtn)){ if(defPendingCoop) startLocalCoop(); else setupDefense(); }
+    else { for(const bl of defLimitBtns){ if(inRect(p,bl)){ defKillLimit=bl.v; Sound.hit(); break; } }
+           for(const db of diffBtns){ if(inRect(p,db)){ difficulty=db.d; saveSettings(); Sound.hit(); break; } } }
   } else if(state===STATE.ONLINEPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, opVersusBtn)) state=STATE.VERSUSPICK;
@@ -567,6 +572,7 @@ function padTargets(){
     case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
     case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, backBtn];
     case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, backBtn];
+    case STATE.DEFSETUP: return defLimitBtns.concat(diffBtns, [defStartBtn, backBtn]);
     case STATE.ONLINEPICK: return [opVersusBtn, opCoopBtn, backBtn];
     case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn, backBtn];
     case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn, backBtn];
@@ -604,7 +610,7 @@ function padBackRect(){
   switch(state){
     case STATE.SETTINGS: return setBackBtn;
     case STATE.CUTSCENE: return cutSkipBtn;
-    case STATE.PLAYPICK: case STATE.SPLITPICK: case STATE.SHOOTPICK: case STATE.ONLINEPICK: case STATE.VERSUSPICK: case STATE.VERSUSMODE:
+    case STATE.PLAYPICK: case STATE.SPLITPICK: case STATE.SHOOTPICK: case STATE.DEFSETUP: case STATE.ONLINEPICK: case STATE.VERSUSPICK: case STATE.VERSUSMODE:
     case STATE.STORE: case STATE.NETLOBBY:
     case STATE.CAMPAIGN: case STATE.SHOP: case STATE.STORY: case STATE.COOP: case STATE.NETRESULT: return backBtn;
     default: return null;
@@ -691,7 +697,10 @@ const chance=p=>Math.random()<p;
 function rectHit(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
 
 /* ============================ STATE =================================== */
-const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28, SPLITPICK:29, SHOOTPICK:30};
+const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28, SPLITPICK:29, SHOOTPICK:30, DEFSETUP:31};
+let defKillLimit=0;      // 0 = endless; otherwise win the defense when kills reach this
+let defPendingCoop=false;// which defense the setup screen will launch
+let defWon=false;        // solo defense: reached the kill limit
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
 let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true};
@@ -812,6 +821,13 @@ const MISSIONS=[
    intro:[
      {bg:'night', title:'THE SIGNAL', text:'Crystal in hand. You can’t fire while carrying it — move to the marker and see if the dead follow.'},
      {bg:'toxic', art:'horde', text:'Stay clear of them until you reach the marker. Then plant the crystal and open fire.'},
+   ]},
+  {name:'The Crystal Run', crystalRun:true,
+   intro:[
+     {bg:'dawn', art:'standoff', speaker:'U.S. GENERAL', text:'Good work. Now we know the zombies follow these crystals.'},
+     {bg:'dawn', art:'standoff', speaker:'U.S. GENERAL', text:'Take these 5 crystals we’ve collected and go to the large horde near the back gate. Draw them out to the forest.'},
+     {bg:'dawn', art:'standoff', speaker:'U.S. GENERAL', text:'Plant the crystals in the forest, then get back here. But you might need this to survive…'},
+     {bg:'toxic', art:'rifle', title:'RIFLE!', text:'Shooting speed is increased by a lot.'},
    ]},
   // ── add your next missions below, same format ──
 ];
@@ -1152,7 +1168,7 @@ function playerArt(p){
   const sk=skinById(equippedSkin);
   if(sk && sk.id!=='default' && sk.img) return [sk.img, sk.aw, sk.ah, true];
   if(p){ if(p.weapon==='spread' && Pshot) return [Pshot,PshotAW,PshotAH,true];
-         if(p.rapidT>0 && Prif) return [Prif,PrifAW,PrifAH,true]; }
+         if((p.rapidT>0||p.permRapid) && Prif) return [Prif,PrifAW,PrifAH,true]; }
   if(Pgun) return [Pgun,PgunAW,PgunAH,true];
   return [Psprite,56,74,false];
 }
@@ -1169,7 +1185,9 @@ function makePlayer(){
     face:'🪖'
   };
   if(mode==='campaign'){ p.fireCut=(upg.firerate||0)*0.035;  // TRIGGER SPEED upgrade
-    p.ammo += (upg.ammocap||0)*4; }                          // AMMO CAPACITY upgrade (+4 each)
+    p.ammo += (upg.ammocap||0)*4;                            // AMMO CAPACITY upgrade (+4 each)
+    if(campaignMission>=3) p.permRapid=true;                 // Mission 4 onward: keep the RIFLE power-up
+  }
   return p;
 }
 
@@ -1280,7 +1298,7 @@ function maybeDropPower(x,y){
 
 /* ============================ GAME FLOW ============================== */
 function startGame(){
-  mode='arcade'; wasEndless=false; wasDefense=false;
+  mode='arcade'; wasEndless=false; wasDefense=false; defWon=false;
   explore=null;
   score=0; lives=3; wave=1;
   player=makePlayer();
@@ -1298,11 +1316,12 @@ function buildMissionWave(){
   buildWave(wave, {boss: !m.noboss && missionWave>=m.waves});  // final wave is the boss (unless noboss)
 }
 function startMission(i){
-  mode='campaign';
+  mode='campaign'; defWon=false;
   campaignMission=i; missionWave=1;
   replaying = campaignWon || (i < campaignUnlocked-1);   // already-cleared mission earns no coins
   score=0; coinsThisMission=0;
   explore=null;
+  if(MISSIONS[i].crystalRun){ setupCrystalRun(); return; }   // Mission 4: the crystal run (rifle)
   if(MISSIONS[i].explore){ setupExplore(); return; }    // Mission 3: open-world crystal run
   player=makePlayer();
   lives=clamp(3+(upg.hp||0),1,7);   // STARTING ARMOR upgrade
@@ -1556,6 +1575,8 @@ function update(dt){
     if(pressed['Escape']) state=STATE.PLAYPICK;
   } else if(state===STATE.SHOOTPICK){
     if(pressed['Escape']) state=STATE.PLAYPICK;
+  } else if(state===STATE.DEFSETUP){
+    if(pressed['Escape']) state=defPendingCoop?STATE.SPLITPICK:STATE.PLAYPICK;
   } else if(state===STATE.ONLINEPICK){
     if(pressed['Escape']) state=STATE.MENU;
   } else if(state===STATE.COOPDEF){
@@ -2164,13 +2185,14 @@ function exploreFire(p){
   }
   const sp=740;
   if(p.weapon==='spread'){ Sound.spread(); for(const a of [-0.2,0,0.2]){ const c=Math.cos(a),s=Math.sin(a); bullets.push({x:cx,y:cy,w:8,h:8,vx:(vx*c-vy*s)*sp,vy:(vx*s+vy*c)*sp,col:'#ffe14b',dmg:1,t:0,owner:p}); } }
-  else { (p.rapidT>0?Sound.rifle():Sound.shoot()); bullets.push({x:cx,y:cy,w:8,h:8,vx:vx*sp,vy:vy*sp,col:'#ffe14b',dmg:1,t:0,owner:p}); }
+  else { ((p.rapidT>0||p.permRapid)?Sound.rifle():Sound.shoot()); bullets.push({x:cx,y:cy,w:8,h:8,vx:vx*sp,vy:vy*sp,col:'#ffe14b',dmg:1,t:0,owner:p}); }
   spawnParticles(cx,cy,'#ffe14b',3,180);
 }
 function updateExplore(dt){
   const p=player, ex=explore; if(!p||!ex) return;
   if(ex.defense){ updateDefense(dt); return; }
   if(ex.endless){ updateEndless(dt); return; }
+  if(ex.crystalRun){ updateCrystalRun(dt); return; }
   if(p.invuln>0) p.invuln-=dt;
   if(p.cd>0) p.cd-=dt;
   if(p.recoil>0) p.recoil-=dt*7;
@@ -2259,10 +2281,98 @@ function updateExplore(dt){
   if(ex.reached && !zombies.some(z=>z.alive||z.dying)){ missionComplete(); return; }
 }
 
+/* ===================== MISSION 4 — THE CRYSTAL RUN (rifle) ===================== */
+function crystalTarget(ex){ return (ex.phase===2)?ex.homeMarker:ex.marker; }
+function setupCrystalRun(){
+  const WW=1200, HH=10600;   // ~10,000-px run to the forest, then back
+  explore={ W:WW, H:HH, crystalRun:true, phase:1, reached:false, camX:0, camY:0,
+    marker:{x:WW/2, y:170}, homeMarker:{x:WW/2, y:HH-150}, decor:[] };
+  for(let i=0;i<360;i++) explore.decor.push({x:rand(10,WW-10), y:rand(10,HH-10), t:Math.random()<0.6?0:1, s:rand(0.7,1.5)});
+  player=makePlayer(); player.permRapid=true; player.weapon='gun';
+  player.x=WW/2-24; player.y=HH-120; player.ammo=99;
+  lives=clamp(3+(upg.hp||0),1,7);
+  bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null;
+  zombies=[];
+  let tries=0;
+  while(zombies.length<95 && tries<6000){ tries++;
+    const zx=rand(40,WW-40), zy=rand(360,HH-320);
+    if(Math.hypot(zx-(WW/2), zy-(HH-96))<240) continue;   // keep the start clear
+    zombies.push({ type:'walker', x:zx, y:zy, w:44, h:44, hp:2, hpMax:2, alive:true, dying:false, deadT:0,
+      bob:rand(0,6.28), flash:0, chew:0, atk:0, spdMul:rand(0.8,1.2), aggro:false, rooted:false, face:Math.PI/2 }); }
+  state=STATE.PLAY;
+  toast('RUN TO THE FOREST — draw the horde out!');
+}
+function updateCrystalRun(dt){
+  const p=player, ex=explore; if(!p||!ex) return;
+  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*7;
+  // free movement
+  let mvx=0,mvy=0;
+  if(keys['ArrowLeft']||keys['KeyA'])mvx-=1; if(keys['ArrowRight']||keys['KeyD'])mvx+=1;
+  if(keys['ArrowUp']||keys['KeyW'])mvy-=1; if(keys['ArrowDown']||keys['KeyS'])mvy+=1;
+  if(mvx&&mvy){mvx*=0.7071;mvy*=0.7071;}
+  if(touch.mvx||touch.mvy){mvx=touch.mvx;mvy=touch.mvy;}
+  p.x=clamp(p.x+mvx*p.speed*dt, 8, ex.W-p.w-8);
+  p.y=clamp(p.y+mvy*p.speed*dt, 8, ex.H-p.h-8);
+  p.moving=(mvx!==0||mvy!==0); if(p.moving)p.walkT+=dt*11;
+  ex.camX=clamp(p.x+p.w/2-W/2, 0, Math.max(0,ex.W-W));
+  ex.camY=clamp(p.y+p.h/2-H/2, 0, Math.max(0,ex.H-H));
+  // aim + fire the WHOLE time (rifle)
+  const manual=aimAngleFromInput(p, ex);
+  if(manual!=null){ p.aim=manual; p.aimManual=true; } else p.aimManual=false;
+  p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=1){ p.ammoRegen-=1; p.ammo=Math.min(999,p.ammo+1); }
+  const wantFire=keys['Space']||touch.fire||touch.aimActive||tapAim.active;
+  const fireRate=Math.max(0.07, 0.10-(p.fireCut||0));   // rifle rapid fire
+  if(wantFire && p.cd<=0){ if(p.ammo>0){ exploreFire(p); p.ammo--; p.cd=fireRate; } else { Sound.empty(); p.cd=0.2; } }
+  // reach the forest → plant crystals, phase 2 (get back)
+  if(ex.phase===1 && Math.hypot((p.x+p.w/2)-ex.marker.x,(p.y+p.h/2)-ex.marker.y)<74){
+    ex.phase=2; ex.reached=true; Sound.power(); shake(11,.45); toast('CRYSTALS PLANTED — now get back to base!');
+    for(const z of zombies){ if(z.aggro && !z.rooted){ z.rooted=true; z.rootX=ex.marker.x+rand(-300,300); z.rootY=ex.marker.y+rand(30,420); } }
+  }
+  if(ex.phase===2 && Math.hypot((p.x+p.w/2)-ex.homeMarker.x,(p.y+p.h/2)-ex.homeMarker.y)<74){ missionComplete(); return; }
+  // aggro range: the 5 crystals pull the whole horde in phase 1; normal once planted
+  const AGGRO = (ex.phase===1) ? 2600 : 230;
+  for(const z of zombies){
+    if(z.dying){ tickDying(z,dt,1.05); continue; }
+    if(!z.alive) continue;
+    z.bob+=dt*4; if(z.flash>0)z.flash-=dt;
+    if(z.rooted){   // gathered at the planted crystals — no longer chase the player
+      const tx=z.rootX-(z.x+z.w/2), ty=z.rootY-(z.y+z.h/2), td=Math.hypot(tx,ty)||1;
+      if(td>10){ const zs=42*(z.spdMul||1); z.x+=(tx/td)*zs*dt; z.y+=(ty/td)*zs*dt; z.face=Math.atan2(ty,tx); }
+      else { z.face=Math.sin(z.bob)*0.5+Math.PI/2; }
+      z.atk=0; continue;
+    }
+    const dx=(p.x+p.w/2)-(z.x+z.w/2), dy=(p.y+p.h/2)-(z.y+z.h/2), d=Math.hypot(dx,dy)||1;
+    if(!z.aggro && d<AGGRO){ z.aggro=true; if(Math.random()<0.08) Sound.zGroan(); }
+    if(z.aggro){ const zs=(ex.phase===1?98:88)*(z.spdMul||1);
+      z.x+=(dx/d)*zs*dt; z.y+=(dy/d)*zs*dt; z.face=Math.atan2(dy,dx);
+      z.atk=clamp((z.atk||0)+(d<54?dt*5:-dt*4),0,1);
+      if(zombieTouchesPlayer(z) && p.invuln<=0){ loseLife(); p.invuln=1.3; shake(12,.35);
+        if(lives<=0){ explore=null; Sound.over(); state=STATE.OVER; overT=0; return; } }
+    } else z.atk=0;
+  }
+  // separation — on-screen only (big horde, keep it cheap)
+  const on=[]; for(const z of zombies){ if(z.alive && zOnScreen(z)) on.push(z); }
+  const MINSEP=40;
+  for(let a=0;a<on.length;a++){ const za=on[a];
+    for(let bI=a+1;bI<on.length;bI++){ const zb=on[bI];
+      let dx=(zb.x+zb.w/2)-(za.x+za.w/2), dy=(zb.y+zb.h/2)-(za.y+za.h/2), d=Math.hypot(dx,dy);
+      if(d===0){ dx=(a%2?1:-1); dy=(bI%2?1:-1); d=Math.hypot(dx,dy); }
+      if(d<MINSEP){ const push=(MINSEP-d)/2, ux=dx/d, uy=dy/d; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
+  for(const z of zombies){ if(!z.alive) continue; z.x=clamp(z.x,4,ex.W-z.w-4); z.y=clamp(z.y,4,ex.H-z.h-4); }
+  // bullets
+  for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; }
+  for(const b of bullets){ if(b.dead) continue;
+    for(const z of zombies){ if(!z.alive||z.rooted||!zOnScreen(z)) continue;
+      if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
+        spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
+        if(z.hp<=0){ killZombie(z); score+=10; } break; } } }
+  bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.3 && b.x>=ex.camX-30 && b.x<=ex.camX+W+30 && b.y>=ex.camY-30 && b.y<=ex.camY+H+30);
+}
+
 /* ===================== OPEN WORLD — endless twin-stick survival ===================== */
 let wasEndless=false;
 function setupEndless(){
-  mode='arcade'; wasEndless=true; wasDefense=false;
+  mode='arcade'; wasEndless=true; wasDefense=false; defWon=false;
   explore={ endless:true, reached:true, camX:0, camY:0, marker:null, decor:[], spawnT:0.8, powT:6, elapsed:0, kills:0 };
   player=makePlayer(); player.x=0; player.y=0; player.ammo=12;
   lives=3; score=0;
@@ -2446,8 +2556,8 @@ layoutBuildBar();
 function defSnap(v){ return Math.floor(v/DEF_GRID)*DEF_GRID + DEF_GRID/2; }   // to grid-cell centre
 function defRectsOverlap(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by; }
 function setupDefense(){
-  mode='arcade'; wasEndless=false; wasDefense=true;
-  explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2,
+  mode='arcade'; wasEndless=false; wasDefense=true; defWon=false;
+  explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:defKillLimit,
     cash:DEF_START_CASH,
     flag:(function(){ const fh=Math.round(600*DIFF[difficulty].flagHp); return {x:0, y:0, r:46, hp:fh, hpMax:fh}; })(),
     turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0 };
@@ -2646,6 +2756,8 @@ function updateDefense(dt){
   // power-up pickups still work if any exist
   for(const pu of powerups){ pu.t=(pu.t||0)+dt; if(rectHit(pu,p)){ pu.dead=true; applyPower(pu.type); } }
   powerups=powerups.filter(pu=>!pu.dead);
+  // reached the kill limit → WIN
+  if(ex.killLimit>0 && ex.kills>=ex.killLimit){ defWon=true; defWonKills=ex.kills; explore=null; zombies=[]; bullets=[]; Sound.win(); state=STATE.OVER; overT=0; return; }
   // flag fell → game over
   if(f.hp<=0){ explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; }
   zombies=zombies.filter(z=> z.alive || z.dying);
@@ -2786,24 +2898,26 @@ function drawExploreGround(ex){
   }
 }
 function drawMarker(ex){
-  const m=ex.marker, t=performance.now()/1000, pulse=0.5+0.5*Math.sin(t*4);
-  const col=ex.reached?'#5dff6a':'#ffd24a';
+  const m=ex.crystalRun?crystalTarget(ex):ex.marker, t=performance.now()/1000, pulse=0.5+0.5*Math.sin(t*4);
+  const done = ex.crystalRun ? false : ex.reached;
+  const col=done?'#5dff6a':'#ffd24a';
   ctx.save();
   ctx.globalAlpha=0.3+0.28*pulse; ctx.fillStyle=col;
   ctx.beginPath(); ctx.ellipse(m.x,m.y+4,28,11,0,0,6.28); ctx.fill();
   ctx.globalAlpha=1;
   const grd=ctx.createLinearGradient(0,m.y-96,0,m.y);
-  grd.addColorStop(0, ex.reached?'rgba(93,255,106,0)':'rgba(255,210,74,0)');
-  grd.addColorStop(1, ex.reached?'rgba(93,255,106,'+(0.4+0.3*pulse)+')':'rgba(255,210,74,'+(0.4+0.3*pulse)+')');
+  grd.addColorStop(0, done?'rgba(93,255,106,0)':'rgba(255,210,74,0)');
+  grd.addColorStop(1, done?'rgba(93,255,106,'+(0.4+0.3*pulse)+')':'rgba(255,210,74,'+(0.4+0.3*pulse)+')');
   ctx.fillStyle=grd; ctx.fillRect(m.x-6,m.y-96,12,96);
   // crystal
-  ctx.fillStyle=ex.reached?'#7dffa0':'#ffe86b'; ctx.strokeStyle='#8a6a10'; ctx.lineWidth=2;
+  ctx.fillStyle=done?'#7dffa0':'#ffe86b'; ctx.strokeStyle='#8a6a10'; ctx.lineWidth=2;
   ctx.beginPath(); ctx.moveTo(m.x,m.y-44); ctx.lineTo(m.x+10,m.y-26); ctx.lineTo(m.x,m.y-6); ctx.lineTo(m.x-10,m.y-26); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.restore();
 }
 function drawExploreUI(ex){
   ctx.textAlign='right'; ctx.textBaseline='alphabetic';
   for(let i=0;i<lives;i++) drawHeart(W-22-i*24,18,9, performance.now()/300+i*0.5);
+  if(ex.crystalRun){ drawCrystalRunUI(ex); return; }
   // ammo counter (under the hearts) — only relevant once firing is unlocked
   if(ex.reached && player){
     ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
@@ -2826,6 +2940,28 @@ function drawExploreUI(ex){
       ctx.beginPath(); ctx.moveTo(15,0); ctx.lineTo(-9,-10); ctx.lineTo(-9,10); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.restore();
     }
+  }
+}
+function drawCrystalRunUI(ex){
+  const m=crystalTarget(ex);
+  // ammo (rifle, always firing)
+  if(player){ ctx.textAlign='right'; ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
+    ctx.font='bold 15px '+CF; ctx.fillStyle=player.ammo<=4?'#ff5b5b':'#ffe14b';
+    const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 44); drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 39); ctx.shadowBlur=0; }
+  // objective banner + distance
+  const dist=Math.round(Math.hypot((player.x+player.w/2)-m.x, (player.y+player.h/2)-m.y));
+  ctx.textAlign='center'; ctx.font='bold 14px '+CF; ctx.shadowColor='rgba(0,0,0,.8)'; ctx.shadowBlur=4;
+  ctx.fillStyle= ex.phase===1 ? '#ffe14b' : '#7dffa0';
+  ctx.fillText(ex.phase===1 ? ('RUN TO THE FOREST — '+dist+' px') : ('GET BACK TO BASE — '+dist+' px'), W/2, 30);
+  ctx.shadowBlur=0;
+  // off-screen arrow to the active marker
+  const sx=m.x-ex.camX, sy=m.y-ex.camY;
+  if(sx<24||sx>W-24||sy<52||sy>H-24){
+    const ax=clamp(sx,32,W-32), ay=clamp(sy,64,H-40), ang=Math.atan2(sy-H/2, sx-W/2);
+    ctx.save(); ctx.translate(ax,ay); ctx.rotate(ang);
+    ctx.fillStyle=ex.phase===2?'#7dffa0':'#ffd24a'; ctx.strokeStyle='#26401a'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(16,0); ctx.lineTo(-10,-11); ctx.lineTo(-10,11); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -2870,6 +3006,7 @@ function render(){
   if(state===STATE.PLAYPICK){ ctx.restore(); drawPlayPick(); drawToast(); return; }
   if(state===STATE.SPLITPICK){ ctx.restore(); drawSplitPick(); drawToast(); return; }
   if(state===STATE.SHOOTPICK){ ctx.restore(); drawShootPick(); drawToast(); return; }
+  if(state===STATE.DEFSETUP){ ctx.restore(); drawDefSetup(); drawToast(); return; }
   if(state===STATE.ONLINEPICK){ ctx.restore(); drawOnlinePick(); drawToast(); return; }
   if(state===STATE.COOPDEF){ ctx.restore(); if(codef&&codef.local) drawCoopDefLocal(); else drawCoopDef(); drawToast(); return; }
   if(state===STATE.VERSUSPICK){ ctx.restore(); drawVersusPick(); drawToast(); return; }
@@ -4464,6 +4601,17 @@ function drawSceneArt(art){
     softShadow(W/2,gy-4,64,20,.55); drawGeneral(W/2,gy,2.6,false);   // just the general, centred and larger
   }
   else if(art==='skull'){ ctx.save(); ctx.translate(W/2,cyc); ctx.rotate(Math.sin(cutBlink)*0.05); ctx.fillStyle='#e8eef0'; drawSkull(0,0,52); ctx.restore(); }
+  else if(art==='rifle'){   // power-up reveal — the rifle sits on a glowing pickup halo
+    ctx.save();
+    const pulse=0.5+0.5*Math.sin(cutBlink*2);
+    const g=ctx.createRadialGradient(W/2,cyc,6, W/2,cyc,120);
+    g.addColorStop(0,'rgba(127,208,255,'+(0.35+0.25*pulse)+')'); g.addColorStop(1,'rgba(127,208,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(W/2,cyc,120,0,6.28); ctx.fill();
+    softShadow(W/2, cyc+34, 96, 18, .4);
+    if(GunRifle && GunRifleAW>1){ const w=210, h=w*GunRifleAH/GunRifleAW; ctx.translate(W/2,cyc); ctx.rotate(-0.12); ctx.drawImage(GunRifle,-w/2,-h/2,w,h); }
+    else { drawPowerIcon('rapid', W/2, cyc, 60, cutBlink); }
+    ctx.restore();
+  }
   ctx.restore();
 }
 function drawSkipBtn(){
@@ -4601,6 +4749,16 @@ function drawBloodyText(txt, x, y, size, drip){
 function drawOver(){
   ctx.fillStyle='rgba(0,0,0,.94)'; ctx.fillRect(0,0,W,H);
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  if(defWon){
+    ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
+    ctx.fillStyle='#7ee06a'; ctx.font='bold 48px '+CF; ctx.fillText('VICTORY! 🏆', W/2, H/2-56); ctx.shadowBlur=0;
+    ctx.fillStyle='#c8e6b0'; ctx.font='16px '+CF; ctx.fillText('Flag defended — '+defWonKills+' kills', W/2, H/2-24);
+    ctx.fillStyle='#ffd24a'; ctx.font='bold 21px '+CF; ctx.fillText('SCORE  '+String(score).padStart(6,'0'), W/2, H/2+4);
+    if(score>=hi && score>0){ ctx.fillStyle='#7ee06a'; ctx.font='14px '+CF; ctx.fillText('★ NEW BEST! ★', W/2, H/2+24); }
+    pauseMenuButton(overRetryBtn, '#7ee06a','#3ea22f','#0d3b08','↻  AGAIN');
+    pauseMenuButton(overHomeBtn,  '#6aa4ff','#3f6fd1','#0b1c40','⌂  HOME');
+    return;
+  }
   drawBloodyText('OVERRUN', W/2, H/2-62, 52, overT);
   ctx.fillStyle='#c8a6a6'; ctx.font='16px '+CF;
   ctx.fillText(mode==='campaign' ? MISSIONS[campaignMission].name : 'You reached WAVE '+wave, W/2, H/2-24);
@@ -4643,6 +4801,12 @@ const splitDuelBtn      = {x:W/2-150, y:216, w:300, h:86};   // split-screen: 1v
 const splitShootCoopBtn = {x:W/2-150, y:312, w:300, h:86};   // split-screen: 2v2 co-op shootout vs bots
 const shoot1v1Btn = {x:W/2-150, y:150, w:300, h:96};   // solo shootout: 1v1 vs a bot
 const shoot2v2Btn = {x:W/2-150, y:262, w:300, h:96};   // solo shootout: 2v2 (you + bot ally vs 2 bots)
+const defLimitBtns=[{v:0,label:'ENDLESS'},{v:50,label:'50'},{v:100,label:'100'},{v:250,label:'250'},{v:500,label:'500'}];
+function layoutDefLimitBtns(){ const n=defLimitBtns.length, gap=8, m=22, bw=(W-2*m-gap*(n-1))/n, y=172, h=50;
+  defLimitBtns.forEach((b,i)=>{ b.x=m+i*(bw+gap); b.y=y; b.w=bw; b.h=h; }); }
+layoutDefLimitBtns();
+const defStartBtn = {x:W/2-130, y:430, w:260, h:58};
+let defWonKills=0;
 const netQuickBtn = {x:W/2-150, y:126, w:300, h:70};
 const netHostBtn  = {x:W/2-150, y:210, w:300, h:70};
 const netJoinBtn  = {x:W/2-150, y:294, w:300, h:70};
@@ -4931,7 +5095,7 @@ function netStartCoopDefense(){
   p1.x=-70; p1.y=110; p1.aim=null; p1.ammo=14;
   p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14;
   codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
-    cash:DEF_START_CASH+50, lives:6, over:false, _snap:null,
+    cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:30, ammoRegen:0, killLimit:defKillLimit,
     flag:(function(){ const fh=Math.round(700*DIFF[difficulty].flagHp); return {x:0,y:0,r:46,hp:fh,hpMax:fh}; })(),
     turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
   codef.meKey =(net.role==='host')?'p1':'p2';
@@ -4989,9 +5153,8 @@ function coopActor(pl, inp, dt, host){
   pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving) pl.walkT+=dt*11;
   if(inp.aim!=null){ pl.aim=inp.aim; pl.aimManual=true; } else pl.aimManual=false;
   if(pl.invuln>0)pl.invuln-=dt; if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*7;
-  pl.ammoRegen=(pl.ammoRegen||0)+dt; if(pl.ammoRegen>=2){ pl.ammoRegen-=2; pl.ammo=Math.min(99,pl.ammo+1); }
-  if(host && inp.fire && pl.cd<=0){
-    if(pl.ammo>0){ exploreFire(pl); pl.ammo--; pl.cd=0.26; } else pl.cd=0.25;
+  if(host && inp.fire && pl.cd<=0){   // shared ammo pool (codef.ammo), no cap
+    if(codef && codef.ammo>0){ exploreFire(pl); codef.ammo--; pl.cd=0.26; } else pl.cd=0.25;
   }
 }
 function coopTouch(z, pl){
@@ -5002,6 +5165,8 @@ function coopTouch(z, pl){
 }
 function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turrets, bullets)
   const cd=codef, f=cd.flag;
+  // shared ammo pool slowly refills for the team (no cap)
+  cd.ammoRegen=(cd.ammoRegen||0)+dt; if(cd.ammoRegen>=1.3){ cd.ammoRegen-=1.3; cd.ammo=(cd.ammo||0)+1; }
   cd.spawnT-=dt; if(cd.spawnT<=0){ coopSpawn(Math.min(6, Math.round((2+Math.floor(cd.elapsed/22))*DIFF[difficulty].spawn))); cd.spawnT=Math.max(0.5, 1.6-cd.elapsed*0.02)/DIFF[difficulty].spawn; }
   const maxBosses = cd.kills>=1000 ? 3 : 1;
   if(cd.bosses.length<maxBosses && cd.kills>=cd.bossMark){ coopSpawnBoss(); cd.bossMark+=20; }
@@ -5023,7 +5188,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     z.face=Math.atan2(dy,dx);
     let slow=1;
     if(cd.spikes) for(const sp of cd.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
-    if(z.hp<=0){ killZombie(z); cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); continue; }
+    if(z.hp<=0){ killZombie(z); cd.kills++; cd.ammo=(cd.ammo||0)+1; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); continue; }
     let attacked=false;
     if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
     else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true);
@@ -5057,15 +5222,15 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     let hitBoss=false;
     for(const bo of cd.bosses){ if(bo.dead) continue;
       if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=b.dmg||1; bo.flash=0.12; Sound.zHit();
-        if(b.owner) b.owner.ammo=Math.min(99,b.owner.ammo+1);   // +1 ammo per boss hit, to the shooter
+        cd.ammo=(cd.ammo||0)+1;   // +1 shared ammo per boss hit (player or turret)
         spawnBlood(b.x,b.y,'#7a0f1a',6,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; Sound.kill(); toast('BOSS DOWN! +$45'); }
+        if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; Sound.kill(); toast('BOSS DOWN! +$45'); coopCheckWin(); }
         hitBoss=true; break; } }
     if(hitBoss) continue;
     for(const z of zombies){ if(!z.alive) continue;
       if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(z.hp<=0){ killZombie(z); if(b.owner) b.owner.ammo=Math.min(99,b.owner.ammo+2); cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); } break; } } }
+        if(z.hp<=0){ killZombie(z); cd.ammo=(cd.ammo||0)+2; cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); } break; } } }
   bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
   cd.bosses=cd.bosses.filter(bo=>!bo.dead);
   zombies=zombies.filter(z=> z.alive || z.dying);
@@ -5103,7 +5268,7 @@ function coopSnapshot(){
   const sk=(cd.spikes||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),Math.round(s.hpMax)]);
   const bs=cd.bosses.filter(b=>!b.dead).map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.hp),Math.round(b.hpMax),+(b.face||0).toFixed(2)]);
   return { t:'cst', ca:Math.floor(cd.cash), lv:cd.lives, ki:cd.kills, ov:cd.over?1:0, fh:Math.max(0,Math.round(cd.flag.hp)),
-    p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, sk, bs };
+    am:Math.floor(cd.ammo||0), wo:cd.won?1:0, p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, sk, bs };
 }
 function coopApplySnapshot(s){
   const cd=codef;
@@ -5113,7 +5278,7 @@ function coopApplySnapshot(s){
   cd.walls   = s.wl.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[6]||140,tier:a[5]||1}));
   cd.spikes  = (s.sk||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[5]||240}));
   cd.bosses  = (s.bs||[]).map(a=>({x:a[0],y:a[1],w:96,h:96,hp:a[2],hpMax:a[3],face:a[4],flash:0,dead:false}));
-  cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1;
+  cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1; if(s.am!=null)cd.ammo=s.am; if(s.wo)cd.won=true;
   const sMe = (cd.meKey==='p1')?s.p1:s.p2, sFoe=(cd.foeKey==='p1')?s.p1:s.p2;
   const me=cd[cd.meKey], foe=cd[cd.foeKey];
   foe.x=sFoe[0]; foe.y=sFoe[1]; foe.aim=sFoe[2]; foe.ammo=sFoe[3]; foe.moving=sFoe[4]===1;
@@ -5121,11 +5286,13 @@ function coopApplySnapshot(s){
   me.x+=(sMe[0]-me.x)*0.2; me.y+=(sMe[1]-me.y)*0.2;   // gently reconcile drift
   if(cd.over) coopDefEnd(s.ki);
 }
+function coopCheckWin(){ const cd=codef; if(cd && cd.killLimit>0 && cd.kills>=cd.killLimit && !cd.over){ cd.over=true; cd.won=true; } }
 function coopDefEnd(kills){
-  const k=(kills!=null)?kills:(codef?codef.kills:0);
+  const cd=codef, victory=!!(cd&&cd.won), k=(kills!=null)?kills:(cd?cd.kills:0);
   try{ NetIO.cleanup(); }catch(e){}
   net=null; codef=null; explore=null; mode='arcade'; zombies=[]; bullets=[]; boss=null;
-  toast('CO-OP OVER — '+k+' kills'); state=STATE.MENU;
+  if(victory){ Sound.win(); toast('🏆 DEFENSE WON — '+k+' kills!'); } else toast('CO-OP OVER — '+k+' kills');
+  state=STATE.MENU;
 }
 function drawCoopDef(){
   const cd=codef; if(!cd) return;
@@ -5146,12 +5313,12 @@ function drawCoopUI(cd){
   drawHeart(W-16, 60, 9, performance.now()/300);
   ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
   ctx.fillStyle='#ffd6d6'; ctx.font='bold 14px '+CF; ctx.fillText('×'+Math.max(0,cd.lives), W-30, 65);
-  const me=cd[cd.meKey];
-  ctx.font='bold 15px '+CF;
-  ctx.fillStyle=me.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt='🔫 '+me.ammo; ctx.fillText(atxt, W-14, 84); ctx.shadowBlur=0;
+  const am=Math.max(0,Math.floor(cd.ammo||0));
+  ctx.font='bold 15px '+CF; ctx.fillStyle=am<=2?'#ff5b5b':'#ffe14b';
+  const atxt=''+am; ctx.fillText(atxt, W-14, 84); drawBulletIcon(W-16-ctx.measureText(atxt).width-10, 79, 13); ctx.shadowBlur=0;
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
   ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(cd.cash), 14, 66);
-  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+'  ·  shared cash', 14, 82); ctx.shadowBlur=0;
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+(cd.killLimit>0?(' / '+cd.killLimit):'')+'  ·  shared ammo', 14, 82); ctx.shadowBlur=0;
   buildBtns.forEach((bb,i)=>drawBuildTile(bb, cd.cash, Pad.connected && i===Pad.buildSel));
 }
 
@@ -5165,7 +5332,7 @@ function startLocalCoop(){
   p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14; p2.buildSel=0;
   const fh=Math.round(700*DIFF[difficulty].flagHp);
   codef={ defense2:true, local:true, paused:false, camX:0, camY:0, zoom:EXPLORE_ZOOM, elapsed:0, kills:0, spawnT:1.0,
-    cash:DEF_START_CASH+50, lives:6, over:false, _snap:null,
+    cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:30, ammoRegen:0, killLimit:defKillLimit,
     flag:{x:0,y:0,r:46,hp:fh,hpMax:fh},
     turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
   player=codef.p1; explore=codef;
@@ -5275,8 +5442,9 @@ function drawLocalHalfHUD(hv){
   ctx.shadowColor='rgba(0,0,0,.85)'; ctx.shadowBlur=3;
   ctx.fillStyle = hv.tag==='P1' ? '#7fe0ff' : '#ffd06a';
   ctx.font='bold 13px '+CF; ctx.fillText(hv.tag, bx, by);
-  ctx.fillStyle=pl.ammo<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF;
-  ctx.fillText('🔫'+pl.ammo, bx+28, by);
+  const am=Math.max(0,Math.floor(cd.ammo||0));   // shared pool
+  drawBulletIcon(bx+34, by-5, 13);
+  ctx.fillStyle=am<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF; ctx.fillText(''+am, bx+43, by);
   const b=BUILD_BAR[pl.buildSel||0], cost=BUILD_SPEC[b.type].cost;
   ctx.fillStyle = cd.cash>=cost ? '#9fe27f' : '#ff9a9a';
   ctx.fillText('▸'+b.label+' $'+cost, bx+76, by);
@@ -5975,6 +6143,26 @@ function drawShootPick(){
     'you vs one bot', 'classic showdown');
   drawVersusModeButton(shoot2v2Btn, '#c24a1a','#8f3210','#ff8a3d','2v2 TEAM',
     'you + a bot ally', 'vs 2 enemy bots');
+}
+function drawDefSetup(){
+  panelBg(); drawBackBtn();
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
+  ctx.fillStyle='#7fb0ff'; ctx.font='bold 24px '+CF; ctx.fillText(defPendingCoop?'CO-OP DEFENSE':'DEFENSE', W/2, 66);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('reach the kill limit to WIN — or defend endlessly', W/2, 92);
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 13px '+CF; ctx.fillText('KILL LIMIT', W/2, 158);
+  layoutDefLimitBtns();
+  for(const b of defLimitBtns){ const sel=defKillLimit===b.v;
+    ctx.fillStyle=sel?'#2f6fb0':'rgba(255,255,255,.06)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=sel?'#7fb0ff':'rgba(255,255,255,.22)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
+    ctx.fillStyle=sel?'#fff':'#9fb0c9'; ctx.font='bold 14px '+CF; ctx.textBaseline='middle'; ctx.fillText(b.label, b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
+  ctx.fillStyle='rgba(220,230,245,.5)'; ctx.font='11px '+CF; ctx.fillText(defKillLimit>0?('win at '+defKillLimit+' kills'):'survive as long as you can', W/2, 244);
+  drawDiffSelector();
+  const s=defStartBtn, g=ctx.createLinearGradient(0,s.y,0,s.y+s.h); g.addColorStop(0,'#7ee06a'); g.addColorStop(1,'#3ea22f');
+  ctx.fillStyle=g; roundRectPath(s.x,s.y,s.w,s.h,14); ctx.fill();
+  ctx.lineWidth=2.5; ctx.strokeStyle='#0d3b08'; roundRectPath(s.x,s.y,s.w,s.h,14); ctx.stroke();
+  ctx.fillStyle='#0d3b08'; ctx.font='bold 22px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('▶ START', W/2, s.y+s.h/2+1); ctx.textBaseline='alphabetic';
 }
 function drawVersusPick(){
   panelBg(); drawBackBtn();
