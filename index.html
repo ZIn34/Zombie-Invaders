@@ -6695,6 +6695,7 @@ function teamAI(f, dt){
     if(!teamLineBlocked(f,foe)){ f._belX=foe.x+DUEL_PS/2; f._belY=foe.y+DUEL_PS/2; }   // remember the enemy's last-seen spot for suppressing fire
     if(cmd){
       if(cmd==='stay'){ if(dd>120){ base.mvx+=dx/dd*1.6; base.mvy+=dy/dd*1.6; } action='stick'; }
+      else if(cmd==='retreat'){ base.mvx=-fx/fd*1.6+dx/dd*0.6; base.mvy=-fy/fd*1.6+dy/dd*0.6; base.fire=(fd<700 && !teamLineBlocked(f,foe)); action='regroup'; }   // fall back away from the enemy, toward you (fighting retreat)
       else if(cmd==='split'){ base.mvx-=dx/dd*0.7; base.mvy-=dy/dd*0.7; action='split'; }
       else if(cmd==='coverme'){   // go to the NEAREST cover, then suppress the enemy's last-known spot
         const cov=duelCoverSpot(f, foe, false);
@@ -6776,6 +6777,7 @@ const ALLY_CMDS=[
   {cmd:'stay',    label:'STAY WITH ME',       you:'Stay with me!'},
   {cmd:'hold',    label:'HOLD POSITION',      you:'Hold this position!'},
   {cmd:'allout',  label:'ALL-OUT ATTACK',     you:'Going all out!'},
+  {cmd:'retreat', label:'RETREAT',            you:'Fall back!'},
 ];
 function duelHasAlly(){ return !!(duel && duel.team && duel.humans && duel.humans[0] && duel.fighters && duel.fighters.some(g=>g.bot && !g.dead && g.team===duel.humans[0].team)); }
 function sendAllyCmd(c){
