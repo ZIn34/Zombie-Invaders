@@ -478,7 +478,6 @@ function canvasTap(p, pid){
              return; } }
   } else if(state===STATE.SETTINGS){
     if(inRect(p, setMusicBtn)){ settings.music=!settings.music; saveSettings(); Music.refresh(); Music.start(); Sound.hit(); }
-    else if(inRect(p, setPadAimBtn)){ settings.padAimLeft=(settings.padAimLeft===false); saveSettings(); Sound.hit(); }
     else if(inRect(p, setPadCfgBtn)){ padBindWait=null; Pad.focus=0; state=STATE.PADCFG; Sound.hit(); }
     else if(inRect(p, setShakeBasicBtn)){ settings.shakeBasic=!settings.shakeBasic; saveSettings(); Sound.hit(); }
     else if(inRect(p, setShakeBossBtn)){ settings.shakeBoss=!settings.shakeBoss; saveSettings(); Sound.hit(); }
@@ -614,7 +613,7 @@ function padTargets(){
     case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn, backBtn];
     case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn, backBtn];
     case STATE.STORE: return coinPackBtns.concat(skinActBtns, [backBtn]);
-    case STATE.SETTINGS: return [setShakeBasicBtn, setShakeBossBtn, setMusicBtn, setPadAimBtn, setPadCfgBtn, setBBasicOff, setBBasicNorm, setBBasicMore, setBBossOff, setBBossNorm, setBBossMore, setBackBtn];
+    case STATE.SETTINGS: return [setShakeBasicBtn, setShakeBossBtn, setMusicBtn, setPadCfgBtn, setBBasicOff, setBBasicNorm, setBBasicMore, setBBossOff, setBBossNorm, setBBossMore, setBackBtn];
     case STATE.PADCFG: return padCfgRowSet.concat([padCfgResetBtn, padCfgDoneBtn]);
     case STATE.PAUSE: return [resumeBtn, homeBtn];
     case STATE.OVER: case STATE.WIN: return [overRetryBtn, overHomeBtn];
@@ -713,7 +712,7 @@ function padPoll(){
     if(aimMode){
       // aim stick (Settings-selectable) = aim, no auto-fire; other stick = move; RIGHT TRIGGER = shoot
       // use RAW stick values with a RADIAL deadzone so the aim is fully analog (no 8-direction snapping)
-      const aimLeft = settings.padAimLeft!==false;
+      const aimLeft = false;   // right stick always aims (aim-stick toggle removed)
       const rax=aimLeft?(ax[0]||0):(ax[2]||0), ray=aimLeft?(ax[1]||0):(ax[3]||0);   // aim stick, raw
       const rmx=aimLeft?(ax[2]||0):(ax[0]||0), rmy=aimLeft?(ax[3]||0):(ax[1]||0);   // move stick, raw
       if(Math.hypot(rax,ray)>0.33){ touch.gaim=Math.atan2(ray,rax); touch.gaimActive=true; Pad._ga=true; }
@@ -1106,12 +1105,14 @@ const COIN_PACKS=[
 ];
 function skinById(id){ return PLAYER_SKINS.find(s=>s.id===id); }
 let ZpalePreview=null, ZpalePrevAW=1, ZpalePrevAH=1;   // pale-zombie preview for the store card
+let ZclassicPreview=null, ZclassicPrevAW=1, ZclassicPrevAH=1;   // basic-zombie preview for the store card
 let ZpixelPreview=null, ZpixelPrevAW=1, ZpixelPrevAH=1;   // pixel-zombie preview
 // unified store skin list: player skins + a zombie skin
 const STORE_SKINS=[
   {id:'default', kind:'player', name:'SOLDIER',       price:0},
   {id:'blue',    kind:'player', name:'PIXEL SOLDIER', note:'blue',  price:'$1.99'},
   {id:'green',   kind:'player', name:'PIXEL SOLDIER', note:'green', price:'$2.99'},
+  {id:'classic', kind:'zombie', name:'BASIC ZOMBIE',  note:'enemy skin', price:0},
   {id:'pale',    kind:'zombie', name:'SOLDIER ZOMBIE', note:'enemy skin', price:'$1.99'},
   {id:'pixel',   kind:'zombie', name:'PIXEL ZOMBIE',  note:'enemy skin', price:'$1.99'},
   {id:'green',   kind:'boss',   name:'BRUTE BOSS',    note:'boss skin',  price:'$2.99'},
@@ -1301,6 +1302,7 @@ function zombieSheetFor(id){
 if(typeof ZSHEET!=='undefined') loadZombieSheet(zombieSheetFor(equippedZombieSkin));
 if(typeof ZSHEET!=='undefined') ZSHEET.death.forEach((src,i)=>loadSpriteImage(src,(cv,wh,w,h)=>{ ZdeathB[i]=cv; ZdeathBAW[i]=w; ZdeathBAH[i]=h; }));
 if(typeof ZSHEET_PALE!=='undefined') loadSpriteImage(ZSHEET_PALE.walk[0],(cv,wh,w,h)=>{ ZpalePreview=cv; ZpalePrevAW=w; ZpalePrevAH=h; });
+if(typeof ZSHEET!=='undefined') loadSpriteImage(ZSHEET.walk[0],(cv,wh,w,h)=>{ ZclassicPreview=cv; ZclassicPrevAW=w; ZclassicPrevAH=h; });
 if(typeof ZSHEET_PIXEL!=='undefined') loadSpriteImage(ZSHEET_PIXEL.walk[0],(cv,wh,w,h)=>{ ZpixelPreview=cv; ZpixelPrevAW=w; ZpixelPrevAH=h; });
 let Tsprite=null,TAW=1,TAH=1, Wsprite=null,WAW=1,WAH=1;
 if(typeof TURRET_IMG!=='undefined') loadSpriteImage(TURRET_IMG,(cv,wh,w,h)=>{ Tsprite=cv; TAW=w; TAH=h; });
@@ -3698,7 +3700,7 @@ function drawZombies(){
       const attacking = (z.atk||0)>0.35 || z.chew>0;
       const frames = attacking ? Zatk : Zwalk;
       const AWa = attacking ? ZatkAW : ZwalkAW, AHa = attacking ? ZatkAH : ZwalkAH;
-      let wimg, iaw, iah;
+      let wimg, iaw, iah, wimg2=null, wblend=0;
       if(frames.length){
         if(z.phase==null) z.phase=Math.random()*7;   // fixed per-zombie offset so they don't march in sync
         const paleZ = equippedZombieSkin==='pale';   // soldier-zombie: 40-frame seamless walk loop → play at source 30fps (0.030 = 1 frame/33.3ms), never faster than the video
@@ -3719,13 +3721,20 @@ function drawZombies(){
           fi = ((step % frames.length)+frames.length)%frames.length;
         }
         wimg = frames[fi]||Zsprite; iaw = AWa[fi]||ZAW; iah = AHa[fi]||ZAH;
+        if(!attacking && !paleZ && frames.length>1){
+          // sub-frame cross-fade between the two nearest walk frames → the short 7-frame cycle reads
+          // smoothly instead of hard-stepping (pale already has a dense 40-frame loop, so skip it there)
+          wblend = (performance.now()*speed + z.phase) % 1;
+          wimg2 = frames[(fi+1)%frames.length] || null;
+        }
       } else { wimg=Zsprite; iaw=ZAW; iah=ZAH; }
       let dwA, dhA, topY;
       if(attacking){
         // all skins' attack art is top-down: match the WALK scale and feet-anchor so there's no
         // size/position pop when it toggles walk↔attack, using each frame's own aspect so reaching arms aren't squished
+        // soldier-zombie attack frames carry padding for the wide arm swing → its body sits small, so scale ~2× to read walk-sized
         const boxAsp = (iah? iaw/iah : 1);
-        const s = z.w*1.55, r = Math.sqrt(boxAsp);
+        const s = z.w*1.55*(equippedZombieSkin==='pale'?2.0:1), r = Math.sqrt(boxAsp);
         dhA = s/r; dwA = s*r; topY = -dhA;
       } else {
         // every walk frame at the SAME visual size (constant area), in a box shaped to THIS skin's
@@ -3740,6 +3749,7 @@ function drawZombies(){
         const ccy=feetY+hop-dhA/2;
         ctx.save(); ctx.translate(cx, ccy); ctx.rotate(z.face - Math.PI/2);
         ctx.drawImage(wimg, -dwA/2, -dhA/2, dwA, dhA);
+        if(wimg2 && wblend>0.02){ ctx.globalAlpha=wblend; ctx.drawImage(wimg2,-dwA/2,-dhA/2,dwA,dhA); ctx.globalAlpha=1; }
         if(z.flash>0){ ctx.globalAlpha=Math.min(1,z.flash*9); ctx.drawImage(Zwhite,-dwA/2,-dhA/2,dwA,dhA); ctx.globalAlpha=1; }
         ctx.restore();
       } else {
@@ -3747,6 +3757,7 @@ function drawZombies(){
         ctx.translate(cx, feetY+hop);
         ctx.rotate(tilt);
         ctx.drawImage(wimg, -dwA/2, topY, dwA, dhA);
+        if(wimg2 && wblend>0.02){ ctx.globalAlpha=wblend; ctx.drawImage(wimg2,-dwA/2,topY,dwA,dhA); ctx.globalAlpha=1; }
         if(z.flash>0){ ctx.globalAlpha=Math.min(1,z.flash*9); ctx.drawImage(Zwhite,-dwA/2,topY,dwA,dhA); ctx.globalAlpha=1; }
         ctx.restore();
       }
@@ -4041,8 +4052,8 @@ const storeBtn={x:W/2-104, y:460-20, w:208, h:42};
 const playBtn={x:W/2-108, y:508-25, w:216, h:52};
 // store screen: coin-pack rows + skin cards + action buttons
 const coinPackBtns = COIN_PACKS.map((p,i)=>({x:W/2-150, y:110+i*50, w:300, h:42}));
-const skinCards    = STORE_SKINS.map((s,i)=>{ const c=i%3, r=(i/3|0); return {x:14+c*136, y:294+r*104, w:128, h:96}; });
-const skinActBtns  = STORE_SKINS.map((s,i)=>{ const c=i%3, r=(i/3|0); return {x:14+c*136+14, y:294+r*104+96-21, w:128-28, h:18}; });
+const skinCards    = STORE_SKINS.map((s,i)=>{ const c=i%4, r=(i/4|0); return {x:10+c*106, y:294+r*104, w:96, h:96}; });
+const skinActBtns  = STORE_SKINS.map((s,i)=>{ const c=i%4, r=(i/4|0); return {x:10+c*106+9, y:294+r*104+96-21, w:96-18, h:18}; });
 const backBtn={x:12, y:12, w:74, h:32};
 const gearBtn={x:W-58, y:H-58, w:44, h:44};                 // settings gear, bottom-right of the menu
 const menuLeaderBtn={x:14, y:H-58, w:44, h:44};             // leaderboard, bottom-left of the menu
@@ -4057,8 +4068,7 @@ const setBBossOff ={x:86,  y:440, w:82, h:38};
 const setBBossNorm={x:174, y:440, w:82, h:38};
 const setBBossMore={x:262, y:440, w:82, h:38};
 const setMusicBtn={x:322, y:262, w:96, h:34};
-const setPadAimBtn={x:16, y:262, w:150, h:34};   // controller: which stick aims
-const setPadCfgBtn={x:W/2-105, y:302, w:210, h:28};  // opens the full button-remap screen (own row under AIM/MUSIC)
+const setPadCfgBtn={x:16, y:262, w:190, h:34};  // opens the full button-remap screen (left slot so controller nav can reach it)
 const setBackBtn={x:W/2-70, y:492, w:140, h:46};
 // full controller remap screen: a SET button per action + reset/done
 const padCfgRowSet = PAD_ACTIONS.map((a,i)=>({x:W-104, y:120+i*46, w:88, h:34}));
@@ -4270,7 +4280,7 @@ function drawStore(){
     ctx.lineWidth=2; ctx.strokeStyle=equipped?'#28c0a8':'rgba(255,255,255,.18)'; roundRectPath(c.x,c.y,c.w,c.h,8); ctx.stroke();
     // preview image (left side of the card)
     let img,aw,ah;
-    if(s.kind==='zombie'){ if(s.id==='pixel'){ img=ZpixelPreview; aw=ZpixelPrevAW; ah=ZpixelPrevAH; } else { img=ZpalePreview; aw=ZpalePrevAW; ah=ZpalePrevAH; } }
+    if(s.kind==='zombie'){ if(s.id==='pixel'){ img=ZpixelPreview; aw=ZpixelPrevAW; ah=ZpixelPrevAH; } else if(s.id==='classic'){ img=ZclassicPreview; aw=ZclassicPrevAW; ah=ZclassicPrevAH; } else { img=ZpalePreview; aw=ZpalePrevAW; ah=ZpalePrevAH; } }
     else if(s.kind==='boss'){ img=BossSkin1; aw=BossSkin1AW; ah=BossSkin1AH; }
     else if(s.id==='default'){ img=Pgun||Psprite; aw=Pgun?PgunAW:56; ah=Pgun?PgunAH:74; }
     else { const sk=skinById(s.id); img=sk?sk.img:null; aw=sk?sk.aw:1; ah=sk?sk.ah:1; }
@@ -4315,13 +4325,6 @@ function drawSettings(){
   ctx.fillStyle='#7fd0ff'; ctx.font='bold 17px '+CF; ctx.textAlign='right'; ctx.textBaseline='middle';
   ctx.fillText('♪ MUSIC', setMusicBtn.x-12, setMusicBtn.y+setMusicBtn.h/2+1); ctx.textBaseline='alphabetic';
   drawToggle(setMusicBtn, settings.music);
-
-  // ---- CONTROLLER (which stick aims) ----
-  { const b=setPadAimBtn, right=(settings.padAimLeft===false);
-    ctx.fillStyle='rgba(120,170,255,.12)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
-    ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🎮 AIM: '+(right?'RIGHT':'LEFT')+' STICK', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; ctx.textAlign='center'; }
 
   // ---- CONFIGURE BUTTONS (opens the full remap screen) ----
   { const b=setPadCfgBtn;
@@ -5846,7 +5849,7 @@ function readController(idx){
     place: A_place!=null ? edge(A_place) : (edge(3) || (std && edge(2))) };    // Y·Triangle · X
 }
 function ctrlToInput(c){
-  const aimLeft = settings.padAimLeft!==false;
+  const aimLeft = false;   // right stick always aims (aim-stick toggle removed)
   const axv = aimLeft?c.lx:c.rx, ayv = aimLeft?c.ly:c.ry;   // raw aim stick
   let mxv = aimLeft?c.rx:c.lx, myv = aimLeft?c.ry:c.ly;     // raw move stick
   let aim=null;
