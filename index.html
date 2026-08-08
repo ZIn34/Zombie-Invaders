@@ -3741,7 +3741,7 @@ function drawZombies(){
         // size/position pop when it toggles walk↔attack, using each frame's own aspect so reaching arms aren't squished
         // soldier-zombie attack frames carry padding for the wide arm swing → its body sits small, so scale ~2× to read walk-sized
         const boxAsp = (iah? iaw/iah : 1);
-        const s = z.w*1.55*(equippedZombieSkin==='pale'?1.0:1), r = Math.sqrt(boxAsp);
+        const s = z.w*1.55*(equippedZombieSkin==='pale'?1.3:1), r = Math.sqrt(boxAsp);
         dhA = s/r; dwA = s*r; topY = -dhA;
       } else {
         // every walk frame at the SAME visual size (constant area), in a box shaped to THIS skin's
