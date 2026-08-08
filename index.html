@@ -761,15 +761,11 @@ function padPoll(){
     const pf=hitFire();   // fire (custom or A / RT / RB)
     if(pf){ touch.fire=true; Pad._pf=true; } else if(Pad._pf){ touch.fire=false; Pad._pf=false; }
     if(hitPause()) togglePause();
-    // controller radio menu: X opens the command list, D-pad ▲▼ selects, X sends, B closes (game freezes while open)
+    // controller radio: no page — the selected order shows inline, D-pad ▲▼ changes it, X sends it (game keeps running)
     if(state===STATE.DUEL && duelHasAlly() && !duel.over){
-      if(duel.commsOpen){
-        let d=0; if(edge(13))d=1; else if(edge(12))d=-1;
-        if(d){ duel.commsSel=((duel.commsSel||0)+d+ALLY_CMDS.length)%ALLY_CMDS.length; Sound.hit(); }
-        if(hitPlace()||hitConf()){ sendAllyCmd(ALLY_CMDS[duel.commsSel||0]); }
-        else if(hitBack()){ duel.commsOpen=false; Sound.hit(); }
-        return;   // while the menu is up the pad only drives the menu
-      } else if(hitPlace()){ duel.commsOpen=true; duel.commsSel=0; Sound.hit(); }
+      if(edge(13)){ duel.commsSel=((duel.commsSel||0)+1)%ALLY_CMDS.length; Sound.hit(); }
+      else if(edge(12)){ duel.commsSel=((duel.commsSel||0)-1+ALLY_CMDS.length)%ALLY_CMDS.length; Sound.hit(); }
+      if(hitPlace()) sendAllyCmd(ALLY_CMDS[duel.commsSel||0]);
     }
     // build with the pad in Defense / Co-op: cycle picks, place drops
     const inBuild = (state===STATE.COOPDEF) || (explore && explore.defense);
@@ -6537,6 +6533,7 @@ function teamAI(f, dt){
       else if(cmd==='coverme'){ if(dd>190){ base.mvx+=dx/dd; base.mvy+=dy/dd; } base.fire=(fd<820); action='coverme'; }
       else if(cmd==='push'){ base.mvx+=fx/fd*1.5; base.mvy+=fy/fd*1.5; action='push'; }
       else if(cmd==='flank'){ if(f.flankSign==null)f.flankSign=(duel.fighters.indexOf(f)%2)?1:-1; base.mvx+=-fy/fd*f.flankSign*1.1; base.mvy+=fx/fd*f.flankSign*1.1; action='flank'; }
+      else if(cmd==='hold'){ const hp=duel.allyCmd.hold; if(hp){ const hx=hp.x-f.x, hy=hp.y-f.y, hdd=Math.hypot(hx,hy)||1; if(hdd>100){ base.mvx=hx/hdd*1.6; base.mvy=hy/hdd*1.6; } else { base.mvx*=0.25; base.mvy*=0.25; } } action='stick'; }
     } else if(D===0){
       if(isAlly){ if(dd>340){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; } else if(dd>210){ base.mvx=(base.mvx+dx/dd)*0.5; base.mvy=(base.mvy+dy/dd)*0.5; } }
     } else if(D===1){
@@ -6576,6 +6573,7 @@ const ALLY_CMDS=[
   {cmd:'flank',   label:'I PUSH, YOU FLANK',  you:'I’ll push, you flank!'},
   {cmd:'split',   label:'SPLIT UP',           you:'Split up!'},
   {cmd:'stay',    label:'STAY WITH ME',       you:'Stay with me!'},
+  {cmd:'hold',    label:'HOLD POSITION',      you:'Hold this position!'},
 ];
 function duelHasAlly(){ return !!(duel && duel.team && duel.humans && duel.humans[0] && duel.fighters && duel.fighters.some(g=>g.bot && !g.dead && g.team===duel.humans[0].team)); }
 function sendAllyCmd(c){
@@ -6584,6 +6582,7 @@ function sendAllyCmd(c){
   toast('🎖️ YOU: '+c.you);
   const me=duel.humans&&duel.humans[0];
   const ally=me&&duel.fighters.find(g=>g.bot&&!g.dead&&g.team===me.team);
+  if(c.cmd==='hold' && ally) duel.allyCmd.hold={x:ally.x, y:ally.y};  // lock the spot they're standing on
   if(ally) ally._msgCd=1.2;   // ally acks ~1.2s later
   duel.commsOpen=false;
 }
@@ -6790,13 +6789,25 @@ function drawTeamDuel(){
   if(duel.over) drawTeamOver(); else if(duel.paused) drawLocalPause();
 }
 function drawCommsUI(){
-  // the COMMS button
+  if(Pad.connected){
+    // controller: inline "next order" chip — no menu page
+    const cmd=ALLY_CMDS[duel.commsSel||0];
+    ctx.save(); ctx.textBaseline='middle';
+    const bx=12, by=62, bw=250, bh=32;
+    ctx.fillStyle='rgba(24,40,64,.92)'; roundRectPath(bx,by,bw,bh,8); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(bx,by,bw,bh,8); ctx.stroke();
+    ctx.fillStyle='#8fd0ff'; ctx.font='bold 13px '+CF; ctx.textAlign='left'; ctx.fillText('📻 ▲▼', bx+8, by+bh/2+1);
+    ctx.fillStyle='#eef4ff'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.fillText(cmd.label, bx+bw/2+14, by+bh/2+1);
+    ctx.fillStyle='#ffe14b'; ctx.font='bold 11px '+CF; ctx.textAlign='right'; ctx.fillText('X▶', bx+bw-8, by+bh/2+1);
+    ctx.restore();
+    return;   // no touch button / page while on a controller
+  }
+  // the COMMS button (touch/mouse)
   const b=commsBtn;
   ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillStyle=duel.commsOpen?'rgba(60,90,140,.95)':'rgba(24,40,64,.9)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
   ctx.fillStyle='#dce9ff'; ctx.font='bold 13px '+CF; ctx.fillText('📻 COMMS', b.x+b.w/2, b.y+b.h/2+1);
-  if(Pad.connected){ ctx.fillStyle='#9fb0c9'; ctx.font='10px '+CF; ctx.textAlign='left'; ctx.fillText('🎮 X: open · ▲▼ pick · X send', b.x, b.y+b.h+11); }
   ctx.restore();
   if(!duel.commsOpen) return;
   // dim + command list
