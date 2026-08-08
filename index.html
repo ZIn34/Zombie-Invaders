@@ -6654,8 +6654,8 @@ function makeWarObs(WW,HH){
   return obs;
 }
 function makeWarVehicles(WW,HH){   // DRIVABLE vehicles — x,y is the CENTRE; angle is the facing
-  const T=(x,y)=>({kind:'tank', x:Math.round(x), y:Math.round(y), w:98, h:74, angle:-Math.PI/2, occupied:false, cd:0});
-  const J=(x,y)=>({kind:'jeep', x:Math.round(x), y:Math.round(y), w:76, h:50, angle:-Math.PI/2, occupied:false, cd:0});
+  const T=(x,y)=>({kind:'tank', x:Math.round(x), y:Math.round(y), w:98, h:74, angle:-Math.PI/2, occupied:false, driver:null, wreck:false, hp:32, hpMax:32, cd:0});
+  const J=(x,y)=>({kind:'jeep', x:Math.round(x), y:Math.round(y), w:76, h:50, angle:-Math.PI/2, occupied:false, driver:null, wreck:false, hp:15, hpMax:15, cd:0});
   const v=[];
   v.push(T(460, HH-420), J(760, HH-420));           // right next to YOUR spawn so one's always close
   for(let i=0;i<4;i++) v.push(T(rand(300,WW-300), rand(760,HH-760)));   // more scattered across the field
@@ -6991,26 +6991,73 @@ function warRespawn(f){   // drop a fighter back in at its team's line with full
   const band = f.team===1 ? (duel.H-240) : 200;
   let x=rand(220, duel.W-220-DUEL_PS), y=band + rand(-70,70);
   for(let t=0;t<50 && duelBlocks(x,y,DUEL_PS,DUEL_PS); t++){ x=rand(220,duel.W-220-DUEL_PS); y=band+rand(-70,70); }
-  f.x=x; f.y=y; f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0;
+  f.x=x; f.y=y; f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
   f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
   f.aim = f.team===1 ? -Math.PI/2 : Math.PI/2;
 }
-// ---------- DRIVABLE VEHICLES (war mode) ----------
+// ---------- DRIVABLE VEHICLES (war mode) — anyone can drive; they blow up when wrecked ----------
 function vehRadius(v){ return Math.max(v.w,v.h)/2; }
 function nearestVehicle(f){ if(!f||!duel.vehicles) return null; let best=null,bd=1e9; const cx=f.x+DUEL_PS/2, cy=f.y+DUEL_PS/2;
-  for(const v of duel.vehicles){ if(v.occupied) continue; const d=Math.hypot(v.x-cx,v.y-cy); if(d<vehRadius(v)+44 && d<bd){bd=d;best=v;} } return best; }
+  for(const v of duel.vehicles){ if(v.occupied||v.wreck) continue; const d=Math.hypot(v.x-cx,v.y-cy); if(d<vehRadius(v)+44 && d<bd){bd=d;best=v;} } return best; }
+function nearestEmptyVehicleFor(f, range){ let best=null,bd=range; const cx=f.x+DUEL_PS/2, cy=f.y+DUEL_PS/2;
+  for(const v of duel.vehicles){ if(v.occupied||v.wreck) continue; const d=Math.hypot(v.x-cx,v.y-cy); if(d<bd){bd=d;best=v;} } return best; }
 function vehicleBlocks(f,x,y){   // on-foot fighters can't walk through a vehicle
   if(!duel.vehicles) return false; const cx=x+DUEL_PS/2, cy=y+DUEL_PS/2;
-  for(const v of duel.vehicles){ if(v===duel.driving) continue; if(Math.hypot(v.x-cx,v.y-cy) < vehRadius(v)+DUEL_PS*0.34) return true; } return false; }
+  for(const v of duel.vehicles){ if(v===f._veh) continue; if(Math.hypot(v.x-cx,v.y-cy) < vehRadius(v)+DUEL_PS*0.34) return true; } return false; }
 function vehicleVehBlocks(self,x,y){ if(!duel.vehicles) return false;
   for(const v of duel.vehicles){ if(v===self) continue; if(Math.hypot(v.x-x,v.y-y) < vehRadius(self)+vehRadius(v)) return true; } return false; }
+function enterVehicle(f,v){ v.driver=f; v.occupied=true; f._veh=v; f._inVehicle=true; f._targetVeh=null;
+  v.angle=f.aim||(f.team===1?-Math.PI/2:Math.PI/2); if(f.flankSign==null) f.flankSign=Math.random()<0.5?1:-1; }
+function exitVehicle(f){ const v=f._veh; if(v){ v.occupied=false; v.driver=null;
+    let ox=v.x+vehRadius(v)+30, oy=v.y; if(duelBlocks(ox-DUEL_PS/2,oy-DUEL_PS/2,DUEL_PS,DUEL_PS)) ox=v.x-vehRadius(v)-30;
+    f.x=ox-DUEL_PS/2; f.y=oy-DUEL_PS/2; }
+  f._veh=null; f._inVehicle=false; if(duel.driving===v) duel.driving=null; }
+function destroyVehicle(v, killerTeam){
+  if(v.wreck) return; v.wreck=true;
+  if(duel.blasts){ duel.blasts.push({x:v.x,y:v.y,t:0}); duel.blasts.push({x:v.x+18,y:v.y-14,t:-0.08}); duel.blasts.push({x:v.x-16,y:v.y+12,t:-0.16}); }
+  shake(14,.45); duelBlood(v.x,v.y,20); Sound.over && Sound.over();
+  const d=v.driver;
+  if(d){ d._inVehicle=false; d._veh=null; if(duel.driving===v) duel.driving=null;
+    d.dead=true;
+    if(duel.war){ d.respawnT=5; if(killerTeam===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
+      if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){ duel.over=true; duel.winner=duel.score1>=duel.warGoal?1:2; duel.overT=0; Sound.over(); } }
+  }
+  v.driver=null; v.occupied=false;
+}
 function toggleVehicle(){
   const me=duel.humans[0]; if(!me||me.dead) return;
-  if(duel.driving){ const v=duel.driving; v.occupied=false; duel.driving=null; me._inVehicle=false;   // hop out beside it
-    let ox=v.x+vehRadius(v)+30, oy=v.y;
-    if(duelBlocks(ox-DUEL_PS/2,oy-DUEL_PS/2,DUEL_PS,DUEL_PS)){ ox=v.x-vehRadius(v)-30; }
-    me.x=ox-DUEL_PS/2; me.y=oy-DUEL_PS/2; Sound.hit();
-  } else { const v=nearestVehicle(me); if(v){ v.occupied=true; duel.driving=v; me._inVehicle=true; v.angle=me.aim||-Math.PI/2; Sound.power(); toast(v.kind==='tank'?'🚂 TANK — cannon on fire!':'🚙 JEEP — floor it!'); } }
+  if(me._inVehicle){ exitVehicle(me); Sound.hit(); }
+  else { const v=nearestVehicle(me); if(v){ enterVehicle(me,v); duel.driving=v; Sound.power(); toast(v.kind==='tank'?'🚂 TANK — cannon ready!':'🚙 JEEP — floor it!'); } }
+}
+// bot vehicle behaviour: on foot → grab a nearby vehicle; inside → drive it toward the enemy and fire
+function botVehicleStep(f, dt){
+  if(f._inVehicle){ botDrive(f, dt); return true; }
+  let foe=null,fbd=1e9; for(const g of duel.fighters){ if(g.dead||g.team===f.team) continue; const d=Math.hypot(g.x-f.x,g.y-f.y); if(d<fbd){fbd=d;foe=g;} }
+  let v=(f._targetVeh && !f._targetVeh.occupied && !f._targetVeh.wreck)?f._targetVeh:nearestEmptyVehicleFor(f, 640);
+  if(v && (fbd>300 || Math.hypot(v.x-(f.x+DUEL_PS/2),v.y-(f.y+DUEL_PS/2))<220)){
+    f._targetVeh=v; const cx=f.x+DUEL_PS/2, cy=f.y+DUEL_PS/2, d=Math.hypot(v.x-cx,v.y-cy)||1;
+    if(d < vehRadius(v)+38){ enterVehicle(f, v); return true; }
+    teamDuelActor(f, {mvx:(v.x-cx)/d, mvy:(v.y-cy)/d, aim:Math.atan2(v.y-cy,v.x-cx), fire:false}, dt); return true;
+  }
+  f._targetVeh=null; return false;
+}
+function botDrive(f, dt){
+  const v=f._veh; if(!v||v.wreck){ f._inVehicle=false; f._veh=null; return; }
+  let foe=null,bd=1e9; for(const g of duel.fighters){ if(g.dead||g.team===f.team) continue; const d=Math.hypot(g.x-f.x,g.y-f.y); if(d<bd){bd=d;foe=g;} }
+  let mvx=0,mvy=0, fd=1;
+  if(foe){ const fx=(foe.x+DUEL_PS/2)-v.x, fy=(foe.y+DUEL_PS/2)-v.y; fd=Math.hypot(fx,fy)||1; v.angle=Math.atan2(fy,fx);
+    const want=(v.kind==='tank'?540:360);
+    if(fd>want+80){ mvx=fx/fd; mvy=fy/fd; } else if(fd<want-80){ mvx=-fx/fd; mvy=-fy/fd; }
+    mvx += -fy/fd*0.4*(f.flankSign||1); mvy += fx/fd*0.4*(f.flankSign||1);
+  }
+  const mm=Math.hypot(mvx,mvy)||1; mvx/=mm; mvy/=mm;
+  const spd=v.kind==='jeep'?DUEL_SPD*1.25:DUEL_SPD*0.7, hw=v.w/2, hh=v.h/2;
+  const nx=v.x+mvx*spd*dt, ny=v.y+mvy*spd*dt;
+  if(!duelBlocks(nx-hw,v.y-hh,v.w,v.h) && !vehicleVehBlocks(v,nx,v.y)) v.x=nx; else f.flankSign=-(f.flankSign||1);
+  if(!duelBlocks(v.x-hw,ny-hh,v.w,v.h) && !vehicleVehBlocks(v,v.x,ny)) v.y=ny;
+  f.x=v.x-DUEL_PS/2; f.y=v.y-DUEL_PS/2; f.aim=v.angle;
+  v.cd-=dt;
+  if(foe && fd<(v.kind==='tank'?1250:900) && v.cd<=0){ if(v.kind==='tank'){ tankFire(v,f.team); v.cd=1.35; } else { jeepFire(v,f.team); v.cd=0.14; } }
 }
 function tankFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2+18), my=v.y+Math.sin(a)*(v.w/2+18);
   duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*920,vy:Math.sin(a)*920,team,t:0,shell:true}); Sound.power(); shake(7,.28); }
@@ -7021,13 +7068,15 @@ function shellExplode(b){
   for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle) continue;
     if(Math.hypot((f.x+DUEL_PS/2)-b.x,(f.y+DUEL_PS/2)-b.y)<100){ f.hp-=6; f.flash=0.18;
       if(f.hp<=0){ f.dead=true; if(duel.war){ f.respawnT=5; if(b.team===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
-        if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){duel.over=true;duel.winner=duel.score1>=duel.warGoal?1:2;duel.overT=0;Sound.over();} } duelSplat(f.x+DUEL_PS/2,f.y+DUEL_PS/2); } } }
+        if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){duel.over=true;duel.winner=duel.score1>=duel.warGoal?1:2;duel.overT=0;Sound.over();} } duelSplat(f.x+DUEL_PS/2,f.y+DUEL_PS/2); } }
+  if(duel.vehicles) for(const v of duel.vehicles){ if(v.wreck||!v.driver||v.driver.team===b.team) continue;   // shells damage enemy vehicles too
+    if(Math.hypot(v.x-b.x,v.y-b.y)<115){ v.hp-=10; if(v.hp<=0) destroyVehicle(v, b.team); } } }
 }
 function updateVehicles(dt){
   if(!duel.vehicles) return;
   if(duel.blasts){ for(const bl of duel.blasts) bl.t+=dt; duel.blasts=duel.blasts.filter(bl=>bl.t<0.45); }
   const v=duel.driving; if(!v) return;
-  const me=duel.humans[0]; if(!me || me.dead){ v.occupied=false; duel.driving=null; if(me)me._inVehicle=false; return; }
+  const me=duel.humans[0]; if(!me || me.dead || v.wreck || me._veh!==v){ duel.driving=null; return; }
   const inp = me.ctrl==='kb' ? humanDuelInputFor(me) : ctrlToInput(readController(me.ctrl));
   const spd = v.kind==='jeep' ? DUEL_SPD*1.4 : DUEL_SPD*0.78;
   const hw=v.w/2, hh=v.h/2, nx=v.x+(inp.mvx||0)*spd*dt, ny=v.y+(inp.mvy||0)*spd*dt;
@@ -7077,8 +7126,9 @@ function updateTeamDuel(dt){
         f.x=clamp(f.x+(inp.mvx||0)*DUEL_SPD*1.2*dt, 0, (duel.W||DUEL_W)-DUEL_PS); f.y=clamp(f.y+(inp.mvy||0)*DUEL_SPD*1.2*dt, 0, (duel.H||DUEL_H)-DUEL_PS); }
       continue;
     }
-    if(f._inVehicle) continue;   // the driver is handled by updateVehicles
-    if(f.bot) inp=teamAI(f,dt);
+    if(f._inVehicle && !f.bot) continue;   // human driver handled by updateVehicles
+    if(f.bot){ if(duel.war && botVehicleStep(f, dt)) continue;   // bot is driving or heading for a vehicle
+      inp=teamAI(f,dt); }
     else if(f.ctrl==='kb') inp=humanDuelInputFor(f);
     else inp=ctrlToInput(readController(f.ctrl));
     teamDuelActor(f, inp, dt);
@@ -7089,7 +7139,11 @@ function updateTeamDuel(dt){
   for(const b of duel.bullets){ if(b.dead) continue;
     b.x+=b.vx*dt; b.y+=b.vy*dt; b.t+=dt;
     if(duelBlocks(b.x-2,b.y-2,4,4)){ b.dead=true; if(b.shell) shellExplode(b); continue; }
-    if(duel.vehicles){ let vh=false; for(const v of duel.vehicles){ if(Math.abs(b.x-v.x)<vehRadius(v)+3 && Math.abs(b.y-v.y)<vehRadius(v)+3){ b.dead=true; if(b.shell) shellExplode(b); vh=true; break; } } if(vh) continue; }
+    if(duel.vehicles){ let vh=false; for(const v of duel.vehicles){ if(Math.abs(b.x-v.x)<vehRadius(v)+3 && Math.abs(b.y-v.y)<vehRadius(v)+3){
+        b.dead=true;
+        if(b.shell){ shellExplode(b); }   // shells detonate on the hull (AoE handles the damage)
+        else if(!v.wreck && v.driver && v.driver.team!==b.team){ v.hp-=1; if(v.hp<=0) destroyVehicle(v, b.team); }
+        vh=true; break; } } if(vh) continue; }
     for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle) continue;
       const hx=f.x+DUEL_PS/2, hy=f.y+DUEL_PS/2, HR=26;
       if(Math.abs(b.x-hx)<HR && Math.abs(b.y-hy)<HR){
@@ -7210,8 +7264,16 @@ function drawVehicleBody(kind,w,h,occupied){
   }
 }
 function drawVehicle(v){
-  ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.angle+Math.PI/2); drawVehicleBody(v.kind,v.w,v.h,v.occupied); ctx.restore();
-  if(v.occupied){ ctx.strokeStyle='rgba(120,220,120,.7)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(v.x,v.y,vehRadius(v)+4,0,6.28); ctx.stroke(); }
+  ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.angle+Math.PI/2); drawVehicleBody(v.kind,v.w,v.h,v.occupied&&!v.wreck);
+  if(v.wreck){ ctx.fillStyle='rgba(8,6,4,.6)'; ctx.beginPath(); ctx.ellipse(0,0,v.w*0.56,v.h*0.56,0,0,6.28); ctx.fill(); }
+  ctx.restore();
+  if(v.wreck){ const t=performance.now()/300;   // burning wreck → smoke
+    for(let i=0;i<3;i++){ const s=(t+i*0.34)%1; ctx.globalAlpha=(1-s)*0.38; ctx.fillStyle=i?'#3a3632':'#5a3018'; ctx.beginPath(); ctx.arc(v.x+Math.sin(t*3+i)*7, v.y-8-s*30, 5+s*11, 0,6.28); ctx.fill(); } ctx.globalAlpha=1; return; }
+  if(v.occupied){ const human=v.driver&&!v.driver.bot;
+    ctx.strokeStyle= human?'rgba(120,220,120,.8)':(v.driver&&v.driver.team===1?'rgba(120,220,120,.45)':'rgba(255,120,120,.5)');
+    ctx.lineWidth=human?2.5:2; ctx.beginPath(); ctx.arc(v.x,v.y,vehRadius(v)+4,0,6.28); ctx.stroke();
+    if(v.hp<v.hpMax){ const bw=vehRadius(v)*1.5, bx=v.x-bw/2, by=v.y-vehRadius(v)-12, fr=Math.max(0,v.hp/v.hpMax);
+      ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(bx,by,bw,4); ctx.fillStyle=fr>0.5?'#5dff8a':fr>0.25?'#ffd14b':'#ff5b5b'; ctx.fillRect(bx,by,bw*fr,4); } }
 }
 function drawDuelSceneWorld(cx,cy,VW,VH,me){
   const x0=cx-10,y0=cy-10,x1=cx+VW+10,y1=cy+VH+10;
@@ -7234,7 +7296,7 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
   for(const b of duel.bullets){ if(b.shell){ ctx.fillStyle='#ffd24a'; ctx.beginPath(); ctx.arc(b.x,b.y,6,0,6.28); ctx.fill(); ctx.fillStyle='rgba(255,150,40,.5)'; ctx.beginPath(); ctx.arc(b.x,b.y,9,0,6.28); ctx.fill(); }
     else { ctx.fillStyle=b.team===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); } }
   for(const f of duel.fighters){ if(f.dead||f._inVehicle) continue; drawDuelSoldier(f, f.team===1?'#6ad06a':'#ff6b6b', f===me); }
-  if(duel.blasts) for(const bl of duel.blasts){ const pr=bl.t/0.45, r=10+pr*72; ctx.globalAlpha=1-pr;
+  if(duel.blasts) for(const bl of duel.blasts){ if(bl.t<0) continue; const pr=bl.t/0.45, r=10+pr*72; ctx.globalAlpha=1-pr;
     ctx.fillStyle='rgba(255,150,40,'+(0.4*(1-pr))+')'; ctx.beginPath(); ctx.arc(bl.x,bl.y,r*0.62,0,6.28); ctx.fill();
     ctx.strokeStyle='#ffb04a'; ctx.lineWidth=5*(1-pr)+1; ctx.beginPath(); ctx.arc(bl.x,bl.y,r,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
   drawDuelBlood();
@@ -7261,7 +7323,7 @@ function drawTeamView(v){
     if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP); }
   if(duel.war && !duel.driving && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
     let best=null,bd=1e9; const cx=me.x+DUEL_PS/2, cy=me.y+DUEL_PS/2;
-    for(const vh of duel.vehicles){ if(vh.occupied) continue; const d=Math.hypot(vh.x-cx,vh.y-cy); if(d<bd){bd=d;best=vh;} }
+    for(const vh of duel.vehicles){ if(vh.occupied||vh.wreck) continue; const d=Math.hypot(vh.x-cx,vh.y-cy); if(d<bd){bd=d;best=vh;} }
     if(best) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:best.x-DUEL_PS/2,y:best.y-DUEL_PS/2,w:DUEL_PS,h:DUEL_PS}, '#ffd24a', 0, best.kind.toUpperCase()); }
   if(duel.split) drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-12);
 }
