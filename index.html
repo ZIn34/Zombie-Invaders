@@ -1043,6 +1043,12 @@ const MISSIONS=[
      {bg:'toxic', art:'standoff', speaker:'U.S. GENERAL', text:'But more importantly — we’ve discovered that all of these zombies just disappear when they touch an electric field. I need you to build one.'},
      {bg:'fire', art:'horde', speaker:'U.S. GENERAL', text:'But be careful, because zombies AND bosses are in the area. Good luck.'},
    ]},
+  {name:'The Plasma Field', defense7:true,
+   intro:[
+     {bg:'dawn', art:'standoff', speaker:'U.S. GENERAL', text:'Good, these plasma balls can kill multiple zombies.'},
+     {bg:'toxic', art:'boss', speaker:'U.S. GENERAL', text:'We put a crystal from a boss on this — and much more zombies came at it.'},
+     {bg:'fire', art:'horde', speaker:'U.S. GENERAL', text:'What I need you to do is build a plasma orb out in the open, then plant these 20 crystals in it. Try to survive.'},
+   ]},
   // ── add your next missions below, same format ──
 ];
 function saveProgress(){
@@ -1581,6 +1587,7 @@ function startMission(i){
   replaying = campaignWon || (i < campaignUnlocked-1);   // already-cleared mission earns no coins
   score=0; coinsThisMission=0;
   explore=null;
+  if(MISSIONS[i].defense7){ setupDefense7(); return; }       // Mission 7: plasma-orb defense (1000 kills → plant crystals → swarm)
   if(MISSIONS[i].defense6){ setupDefense6(); return; }       // Mission 6: electric-field defense
   if(MISSIONS[i].shootout5){ setupShootout5(); return; }     // Mission 5: gun-zombie shootout
   if(MISSIONS[i].crystalRun){ setupCrystalRun(); return; }   // Mission 4: the crystal run (rifle)
@@ -3016,6 +3023,20 @@ function setupDefense6(){   // Mission 6: electric-field defense, forced EASY
   defSpawn(5);
   state=STATE.PLAY; toast('BUILD THE FIELD — SURVIVE TO 100 KILLS!');
 }
+function setupDefense7(){   // Mission 7: plasma-orb defense — survive to 1000 kills, plant crystals, then the swarm. Forced EASY, no player damage once the orb is up.
+  mode='campaign'; defWon=false;
+  preMissionDiff=difficulty; difficulty=0;
+  const fh=Math.round(600*DIFF[0].flagHp);
+  explore={ defense:true, mission7:true, orbActive:false, m7phase:'build', crystalsPlanted:false, surviveToSpawn:0, surviveSpawnT:0,
+    camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:0,
+    cash:DEF_START_CASH, flag:{x:0, y:0, r:46, hp:fh, hpMax:fh},
+    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0 };
+  player=makePlayer(); player.x=150; player.y=150; player.ammo=7;
+  lives=clamp(3+(upg.hp||0),1,7); score=0;
+  bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null; zombies=[];
+  defSpawn(5);
+  state=STATE.PLAY; toast('BUILD THE FIELD — SURVIVE TO 1000 KILLS!');
+}
 function defBlocks(x,y,w,h, forZombie){   // arena bounds block everyone; barricades + turrets block only zombies (player walks through their own builds); flag is walk-through
   const ex=explore; if(!ex) return false;
   const H2=DEF_HALF;
@@ -3174,9 +3195,32 @@ function updateDefense(dt){
   const fireRate=Math.max(0.08,((p.rapidT>0||p.permRapid)?0.11:0.28)-(p.fireCut||0));
   if(wantFire && p.cd<=0){ if(p.ammo>0){ exploreFire(p); p.ammo--; p.cd=(p.weapon==='spread')?fireRate*2.9:fireRate; } else { Sound.empty(); p.cd=0.25; } }
   // Mission 6: at 100 kills the electric field comes online — builds break, spawns stop, the orb zaps everything that reaches it
-  if(ex.mission6 && !ex.orbActive && ex.kills>=100){
+  if((ex.mission6||ex.mission7) && !ex.orbActive && ex.kills>=(ex.mission7?1000:100)){
     ex.orbActive=true; ex.turrets=[]; ex.walls=[]; ex.spikes=[];
-    Sound.power(); shake(12,.35); toast('⚡ ELECTRIC FIELD ONLINE — CLEAR THEM OUT! ⚡');
+    Sound.power(); shake(12,.35);
+    if(ex.mission7){ ex.m7phase='plant'; toast('⚡ PLASMA ORB BUILT — STAND ON IT TO PLANT THE 20 CRYSTALS! ⚡'); }
+    else toast('⚡ ELECTRIC FIELD ONLINE — CLEAR THEM OUT! ⚡');
+  }
+  // Mission 7 plant phase: walk onto the orb to plant the crystals, which triggers the final swarm
+  if(ex.mission7 && ex.m7phase==='plant'){
+    const pcx=player.x+player.w/2, pcy=player.y+player.h/2;
+    if(Math.hypot(pcx-ex.flag.x, pcy-ex.flag.y) < ex.flag.r+24){
+      ex.m7phase='survive'; ex.crystalsPlanted=true; ex.surviveToSpawn=200; ex.surviveSpawnT=0.2;
+      zombies=[]; ex.bosses=[];   // clear the field so the 200-strong swarm is the finale
+      Sound.power(); shake(16,.45); toast('20 CRYSTALS PLANTED — HERE COMES THE SWARM! ⚡');
+    }
+  }
+  // Mission 7 survive phase: stream in 200 zombies from all sides; they rush the crystal and get zapped
+  if(ex.mission7 && ex.m7phase==='survive' && ex.surviveToSpawn>0){
+    ex.surviveSpawnT-=dt;
+    if(ex.surviveSpawnT<=0){
+      const aliveN=zombies.filter(z=>z.alive).length, room=Math.max(0, 62-aliveN), n=Math.min(room, ex.surviveToSpawn, 12);
+      const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp));
+      for(let i=0;i<n;i++){ const a=Math.random()*6.28;
+        zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44, hp:zh, hpMax:zh,
+          alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0, spdMul:rand(0.7,1.12), aggro:true, face:Math.PI/2 }); }
+      ex.surviveToSpawn-=n; ex.surviveSpawnT=0.35;
+    }
   }
   if(!ex.orbActive){
     // ramping spawns from all sides
@@ -3219,7 +3263,7 @@ function updateDefense(dt){
     for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     if(!ex.orbActive && zombieTouchesPlayer(z) && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(12,.35);
-      if(lives<=0){ if(ex.mission6)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
+      if(lives<=0){ if(ex.mission6||ex.mission7)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
   }
   // separation — don't stack
   const MINSEP=40;
@@ -3242,7 +3286,7 @@ function updateDefense(dt){
       for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
       const px=p.x+p.w/2, py=p.y+p.h/2;
       if(px>bo.x-6 && px<bo.x+bo.w+6 && py>bo.y-6 && py<bo.y+bo.h+6 && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(14,.4);
-        if(lives<=0){ if(ex.mission6)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
+        if(lives<=0){ if(ex.mission6||ex.mission7)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
     }
   }
   ex.turrets=ex.turrets.filter(t=>t.hp>0);
@@ -3271,10 +3315,14 @@ function updateDefense(dt){
   if(ex.mission6 && ex.orbActive && ex.bosses.length===0 && !zombies.some(z=>z.alive||z.dying)){
     difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.win(); missionComplete(); return;
   }
+  // Mission 7: after the crystals are planted and the whole 200-strong swarm has been wiped out → mission complete
+  if(ex.mission7 && ex.m7phase==='survive' && ex.surviveToSpawn<=0 && ex.bosses.length===0 && !zombies.some(z=>z.alive||z.dying)){
+    difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.win(); missionComplete(); return;
+  }
   // reached the kill limit → WIN
   if(ex.killLimit>0 && ex.kills>=ex.killLimit){ defWon=true; defWonKills=ex.kills; lbSubmit('defense'+difficulty, ex.kills); explore=null; zombies=[]; bullets=[]; Sound.win(); state=STATE.OVER; overT=0; return; }
   // flag fell → game over
-  if(f.hp<=0){ if(ex.mission6){ difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } lbSubmit('defense'+difficulty, ex.kills); explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; }
+  if(f.hp<=0){ if(ex.mission6||ex.mission7){ difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } lbSubmit('defense'+difficulty, ex.kills); explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; }
   zombies=zombies.filter(z=> z.alive || z.dying);
 }
 function drawDefense(){
@@ -3343,6 +3391,10 @@ function drawDefenseFlag(ex){
     ctx.beginPath(); ctx.arc(f.x,f.y,54+pulse*4,0,6.28); ctx.stroke();
     if(FieldOrb){ const s=96+pulse*6, w=s, h=s*FieldOrbAH/FieldOrbAW; ctx.drawImage(FieldOrb, f.x-w/2, f.y-h/2, w, h); }
     else { ctx.fillStyle='#7fe0ff'; ctx.beginPath(); ctx.arc(f.x,f.y,30,0,6.28); ctx.fill(); }
+    // Mission 7: 20 crystals ringing the orb once planted
+    if(ex.crystalsPlanted){ for(let i=0;i<20;i++){ const a=i/20*6.28+t*0.3, rr=38+((i%2)?6:0), cxp=f.x+Math.cos(a)*rr, cyp=f.y+Math.sin(a)*rr;
+      ctx.fillStyle='#b56bff'; ctx.strokeStyle='#e6c2ff'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(cxp,cyp-7); ctx.lineTo(cxp+4,cyp); ctx.lineTo(cxp,cyp+7); ctx.lineTo(cxp-4,cyp); ctx.closePath(); ctx.fill(); ctx.stroke(); } }
     ctx.restore();
     return;
   }
@@ -3397,7 +3449,16 @@ function drawDefenseUI(ex){
   drawMagCount(player, W-14, 81);
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
   ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 66);
-  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills, 14, 82); ctx.shadowBlur=0;
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills+((ex.mission6||ex.mission7)&&!ex.orbActive?(' / '+(ex.mission7?1000:100)):''), 14, 82); ctx.shadowBlur=0;
+  if(ex.mission7){   // phase banner across the top
+    let msg=null, col='#8fd0ff';
+    if(ex.m7phase==='build') msg='BUILD THE PLASMA ORB — '+ex.kills+' / 1000 KILLS';
+    else if(ex.m7phase==='plant'){ msg='⚡ STAND ON THE ORB TO PLANT THE 20 CRYSTALS ⚡'; col='#ffe14b'; }
+    else if(ex.m7phase==='survive'){ const left=ex.surviveToSpawn+zombies.filter(z=>z.alive).length; msg='SURVIVE THE SWARM — '+left+' LEFT'; col='#ff9a6a'; }
+    if(msg){ ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='bold 14px '+CF;
+      const w=ctx.measureText(msg).width+28; ctx.fillStyle='rgba(8,14,22,.8)'; roundRectPath(W/2-w/2, 92, w, 26, 8); ctx.fill();
+      ctx.fillStyle=col; ctx.fillText(msg, W/2, 106); ctx.restore(); }
+  }
   buildBtns.forEach((bb,i)=>drawBuildTile(bb, ex.cash, Pad.connected && !Pad.weaponRow && i===Pad.buildSel));
   // weapon shop (left side)
   const owned=ex.ownedWeapons||{};
@@ -6623,8 +6684,7 @@ function teamAI(f, dt){
         else { base.mvx += -fy/fd*f.flankSign*1.1 + fx/fd*0.55; base.mvy += fx/fd*f.flankSign*1.1 + fy/fd*0.55; if(fd<300){ base.mvx-=fx/fd*0.9; base.mvy-=fy/fd*0.9; } }
         action='flank'; }
       else if(cmd==='hold'){ const hp=duel.allyCmd.hold; if(hp){ const hx=hp.x-f.x, hy=hp.y-f.y, hdd=Math.hypot(hx,hy)||1; if(hdd>100){ base.mvx=hx/hdd*1.6; base.mvy=hy/hdd*1.6; } else { base.mvx=0; base.mvy=0; f._holding=true; } } action='stick'; }
-      else if(cmd==='allout'){ if(f.hp<=2){ base.mvx=-fx/fd*1.4+dx/dd*0.6; base.mvy=-fy/fd*1.4+dy/dd*0.6; action='regroup'; }   // really dying → break for cover
-        else { base.mvx+=fx/fd*1.9; base.mvy+=fy/fd*1.9; if(fd<960 && !teamLineBlocked(f,foe)) base.fire=true; action='push'; } }
+      else if(cmd==='allout'){ base.mvx+=fx/fd*2.1; base.mvy+=fy/fd*2.1; if(fd<1000 && !teamLineBlocked(f,foe)) base.fire=true; action='push'; }   // go fully in — no retreat
     } else if(D===0){
       if(isAlly){ if(dd>340){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; } else if(dd>210){ base.mvx=(base.mvx+dx/dd)*0.5; base.mvy=(base.mvy+dy/dd)*0.5; } }
     } else if(D===1){
