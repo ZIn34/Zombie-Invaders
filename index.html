@@ -6696,6 +6696,12 @@ function teamAI(f, dt){
     if(!teamLineBlocked(f,foe)){ f._belX=foe.x+DUEL_PS/2; f._belY=foe.y+DUEL_PS/2; }   // remember the enemy's last-seen spot for suppressing fire
     if(cmd){
       if(cmd==='stay'){ if(dd>120){ base.mvx+=dx/dd*1.6; base.mvy+=dy/dd*1.6; } action='stick'; }
+      else if(cmd==='protect'){   // bodyguard: plant yourself between the player and the enemy, taking the shots — no self-preservation
+        const ux2=(foe.x-mate.x), uy2=(foe.y-mate.y), ul2=Math.hypot(ux2,uy2)||1;   // player → enemy direction
+        const guardX=mate.x+ux2/ul2*72, guardY=mate.y+uy2/ul2*72;                    // hold a spot just in front of the player
+        const tx=guardX-f.x, ty=guardY-f.y, td=Math.hypot(tx,ty)||1;
+        if(td>18){ base.mvx=tx/td*1.9; base.mvy=ty/td*1.9; } else { base.mvx=0; base.mvy=0; f._holding=true; }
+        base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<1000 && !teamLineBlocked(f,foe)); action='coverme'; }
       else if(cmd==='retreat'){ base.mvx=-fx/fd*1.6+dx/dd*0.6; base.mvy=-fy/fd*1.6+dy/dd*0.6; base.fire=(fd<700 && !teamLineBlocked(f,foe)); action='regroup'; }   // fall back away from the enemy, toward you (fighting retreat)
       else if(cmd==='split'){ base.mvx-=dx/dd*0.7; base.mvy-=dy/dd*0.7; action='split'; }
       else if(cmd==='coverme'){   // go to the NEAREST cover, then suppress the enemy's last-known spot
@@ -6779,6 +6785,7 @@ const ALLY_CMDS=[
   {cmd:'hold',    label:'HOLD POSITION',      you:'Hold this position!'},
   {cmd:'allout',  label:'ALL-OUT ATTACK',     you:'Going all out!'},
   {cmd:'retreat', label:'RETREAT',            you:'Fall back!'},
+  {cmd:'protect', label:'PROTECT ME',         you:'Protect me — stay between us!'},
 ];
 function duelHasAlly(){ return !!(duel && duel.team && duel.humans && duel.humans[0] && duel.fighters && duel.fighters.some(g=>g.bot && !g.dead && g.team===duel.humans[0].team)); }
 function sendAllyCmd(c){
@@ -6899,7 +6906,7 @@ function updateTeamDuel(dt){
   if(duel.allyCmd && duel.allyCmd.t>0) duel.allyCmd.t-=dt;   // player order fades after a few seconds
   // keyboard hotkeys: number keys send that radio command straight to the ally; C toggles the full command page
   if(duelHasAlly() && !duel.over){
-    const DK=['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9'];
+    const DK=['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0'];
     for(let i=0;i<ALLY_CMDS.length && i<DK.length;i++){ if(pressed[DK[i]]){ sendAllyCmd(ALLY_CMDS[i]); break; } }
     if(pressed['KeyC']){ duel.commsOpen=!duel.commsOpen; Sound.hit(); }
   }
@@ -7029,10 +7036,10 @@ function drawCommsUI(){
     const g=ctx.createLinearGradient(0,r.y,0,r.y+r.h); g.addColorStop(0, sel?'#3f6da8':'#2f4d78'); g.addColorStop(1, sel?'#274a78':'#1d3252');
     ctx.fillStyle=g; roundRectPath(r.x,r.y,r.w,r.h,8); ctx.fill();
     ctx.lineWidth=sel?3:2; ctx.strokeStyle=sel?'#ffe14b':'#7fb0ff'; roundRectPath(r.x,r.y,r.w,r.h,8); ctx.stroke();
-    ctx.textAlign='left'; ctx.fillStyle='#8fd0ff'; ctx.font='bold 13px '+CF; ctx.fillText((i+1), r.x+12, r.y+r.h/2+1);
+    ctx.textAlign='left'; ctx.fillStyle='#8fd0ff'; ctx.font='bold 13px '+CF; ctx.fillText((i<9?(i+1):0), r.x+12, r.y+r.h/2+1);
     ctx.textAlign='center'; ctx.fillStyle='#eef4ff'; ctx.font='bold 14px '+CF; ctx.fillText(r.c.label, r.x+r.w/2+8, r.y+r.h/2+1);
   });
-  const rs=commsCmdRects(); const hint = Pad.connected ? '▲▼ choose · X send · Y close' : 'press 1–'+ALLY_CMDS.length+' or tap a command · tap elsewhere to close';
+  const rs=commsCmdRects(); const hint = Pad.connected ? '▲▼ choose · X send · Y close' : 'press a number key or tap a command · tap elsewhere to close';
   ctx.fillStyle='#9fb0c9'; ctx.font='11px '+CF; ctx.textAlign='center'; ctx.fillText(hint, W/2, rs[rs.length-1].y+rs[rs.length-1].h+18);
   ctx.restore();
 }
