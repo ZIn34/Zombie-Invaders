@@ -6198,7 +6198,7 @@ function localGloom(rx,ry,rw,rh,k){ k=(k==null)?1:k;
   ctx.fillStyle=vg; ctx.fillRect(rx,ry,rw,rh); ctx.restore();
 }
 // show where the teammate is in a split-screen half: a tag above them when in view, an edge arrow when off-screen
-function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col){
+function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax){
   if(!mate) return;
   const mcx=mate.x+(mate.w||44)/2, mcy=mate.y+(mate.h||44)/2;
   const sx=rx+(mcx-camX)*z, sy=ry+(mcy-camY)*z;
@@ -6209,11 +6209,13 @@ function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col){
     ctx.fillStyle=col; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.moveTo(sx,ay+11); ctx.lineTo(sx-7,ay); ctx.lineTo(sx+7,ay); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText('TEAMMATE', sx, ay-3);
-    // HP bar under the marker
-    const bw=34, bh=4, bx=sx-bw/2, by=ay+13, frac=Math.max(0,Math.min(1,(mate.hp||0)/DUEL_HP));
-    ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(bx,by,bw,bh);
-    ctx.fillStyle= frac>0.5?'#5dff8a':frac>0.25?'#ffd14b':'#ff5b5b'; ctx.fillRect(bx,by,bw*frac,bh);
-    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.7)'; ctx.strokeRect(bx,by,bw,bh);
+    // HP bar under the marker (only when a max HP is supplied — shootout fighters)
+    if(hpMax && typeof mate.hp==='number'){
+      const bw=34, bh=4, bx=sx-bw/2, by=ay+13, frac=Math.max(0,Math.min(1,mate.hp/hpMax));
+      ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(bx,by,bw,bh);
+      ctx.fillStyle= frac>0.5?'#5dff8a':frac>0.25?'#ffd14b':'#ff5b5b'; ctx.fillRect(bx,by,bw*frac,bh);
+      ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.7)'; ctx.strokeRect(bx,by,bw,bh);
+    }
   } else {
     const cxh=rx+rw/2, cyh=ry+rh/2, ang=Math.atan2(sy-cyh, sx-cxh);
     const ax=clamp(sx, rx+22, rx+rw-22), ay=clamp(sy, ry+34, ry+rh-22);
@@ -6975,7 +6977,7 @@ function drawTeamView(v){
   ctx.restore();
   localGloom(v.rx,v.ry,v.rw,v.rh,0.4);
   { const mate=duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // always mark the teammate (edge arrow when off-screen), until they die
-    if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS}, '#5fd3ff'); }
+    if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP); }
   if(duel.split) drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-12);
 }
 function drawTeamDuel(){
