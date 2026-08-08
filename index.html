@@ -6849,7 +6849,7 @@ function allyCallout(f, dt, action){
     stick :['Staying close!','Right with you!','Grouping up!'],
     flank :['Flanking!','Going around!'],
     push  :['Pushing in!','Advancing!'],
-    coverme:['Covering you — go!','I’ve got your back!'],
+    coverme:['In cover — firing!','Holding cover!','On them from cover!'],
     split :['Splitting up!','Taking the other side!'],
   };
   const arr = pools[action]||pools.hunt;
@@ -6857,7 +6857,7 @@ function allyCallout(f, dt, action){
 }
 // preset radio commands the player can send to the bot ally
 const ALLY_CMDS=[
-  {cmd:'coverme', label:'COVER FIRE FOR ME', you:'Cover fire for me!'},
+  {cmd:'coverme', label:'TAKE COVER & SHOOT', you:'Take cover and open fire!'},
   {cmd:'coveryou',label:'I’LL COVER YOU',     you:'I’ll cover you — go!'},
   {cmd:'flank',   label:'YOU PUSH, I FLANK',  you:'You push, I’ll flank!'},
   {cmd:'push',    label:'I PUSH, YOU FLANK',  you:'I’ll push, you flank!'},
