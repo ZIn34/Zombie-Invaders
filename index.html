@@ -2088,7 +2088,7 @@ function tickDying(z, dt, maxT){
     const side=(z.fall<0?-1:1), lx=z.x+z.w/2+side*z.w*0.55, ly=z.y+z.h-6;
     spawnDeathBlood(z, lx, ly, ly-4);   // blood pools where the body actually came to rest
   }
-  if(z.deadT > (equippedZombieSkin==='pale' ? 2.0 : maxT)) z.dying=false;   // soldier zombie's slower death needs a longer corpse life
+  if(z.deadT > (equippedZombieSkin==='pale' ? 1.6 : maxT)) z.dying=false;   // soldier zombie's slower death needs a longer corpse life
 }
 
 function handlePlayerBulletHits(){
@@ -3756,11 +3756,11 @@ function drawZombies(){
       const pale = equippedZombieSkin==='pale', pixel = equippedZombieSkin==='pixel';
       // soldier zombie plays a longer, slower death → hold it longer before fading out; others fade snappily
       let alpha=1;
-      if(pale){ if(t>1.55) alpha=Math.max(0,1-(t-1.55)/0.45); }
+      if(pale){ if(t>1.15) alpha=Math.max(0,1-(t-1.15)/0.4); }
       else if(t>0.6){ alpha=Math.max(0,1-(t-0.6)/0.4); }
       if(Zdeath.length){
-        // soldier zombie has a longer death clip → step it at a slower, more natural pace
-        const per = pale ? 0.11 : 0.14;
+        // soldier zombie has a longer death clip → step it at a slightly slower, natural pace
+        const per = pale ? 0.08 : 0.14;
         const fi = Math.min(Zdeath.length-1, Math.floor(t/per));
         const aw=ZdeathAW[fi], ah=ZdeathAH[fi];
         const lastFrame = fi===Zdeath.length-1;
