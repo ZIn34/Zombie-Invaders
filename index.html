@@ -537,6 +537,7 @@ function canvasTap(p, pid){
     else if(inRect(p, shoot1v1Btn)) openMapPick(startAIDuel);
     else if(inRect(p, shoot2v2Btn)) openMapPick(startTeamShootoutSolo);
     else if(inRect(p, shoot1v2Btn)) openMapPick(startShootout1v2);
+    else if(inRect(p, shootWarBtn)) startBigWar();   // war has its own big procedural map — skip map pick
   } else if(state===STATE.MAPPICK){
     if(inRect(p, backBtn)){ pendingDuelStart=null; state=mapPickReturn||STATE.SHOOTPICK; Sound.hit(); return; }
     for(const b of mapPickBtns){ if(inRect(p,b)){ mapPickLaunch(b.idx); return; } }
@@ -645,7 +646,7 @@ function padTargets(){
     case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, targetBtn, menuLeaderBtn, gearBtn];
     case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
     case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, splitOpenBtn, shootPUBtn, backBtn];
-    case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, shoot1v2Btn, shootPUBtn, backBtn];
+    case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, shoot1v2Btn, shootWarBtn, shootPUBtn, backBtn];
     case STATE.MAPPICK: return [...mapPickBtns, mapRandomBtn, backBtn];
     case STATE.DEFSETUP: return defLimitBtns.concat(diffBtns, [defStartBtn, defLeaderBtn, backBtn]);
     case STATE.LEADER: return [lbTabDef, lbTabCoop].concat(lbView==='defense'?lbDiffTabs:[], [lbNameBtn, backBtn]);
@@ -5539,7 +5540,8 @@ const splitShootCoopBtn = {x:W/2-150, y:280, w:300, h:80};   // split-screen: 2v
 const splitOpenBtn      = {x:W/2-150, y:368, w:300, h:80};   // split-screen: co-op open-world survival
 const shoot1v1Btn = {x:W/2-150, y:126, w:300, h:82};   // solo shootout: 1v1 vs a bot
 const shoot2v2Btn = {x:W/2-150, y:218, w:300, h:82};   // solo shootout: 2v2 (you + bot ally vs 2 bots)
-const shoot1v2Btn = {x:W/2-150, y:310, w:300, h:82};   // solo shootout: 1v2 (you vs 2 bots)
+const shoot1v2Btn = {x:W/2-150, y:298, w:300, h:74};   // solo shootout: 1v2 (you vs 2 bots)
+const shootWarBtn = {x:W/2-150, y:380, w:300, h:56};   // 10v10 war (you + 9 allies vs 10 bots)
 const shootPUBtn  = {x:W/2-120, y:456, w:240, h:34};   // toggle: weapon power-ups on/off (shootout + split screens)
 const mapPickBtns = (function(){ const cardW=190, cardH=132, gap=20, gx=(W-cardW*2-gap)/2, gy=96, arr=[];
   for(let i=0;i<4;i++){ arr.push({x:gx+(i%2)*(cardW+gap), y:gy+Math.floor(i/2)*(cardH+gap), w:cardW, h:cardH, idx:i}); } return arr; })();
@@ -5798,6 +5800,7 @@ function netShowResults(){ if(!net) return; net.ended=true; state=STATE.NETRESUL
 let duel=null;
 const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.22, DUEL_BSPD=1280, DUEL_PS=44;
 const DUEL_ZOOM=0.85;   // slight zoom-out for a wider view
+const WAR_ZOOM=0.58;    // 10v10 war: zoom out more so you can see the battle & your squad
 const DUEL_MAG=7, DUEL_RELOAD=1.6;   // pistol: 7 shots per magazine, then a reload
 const DUEL_OBS=[   // walls & crates — block both movement AND bullets; spawns & pickup spots kept clear
   {x:120,y:150,w:220,h:44},  {x:520,y:120,w:44,h:240},
@@ -5847,7 +5850,8 @@ const DUEL_PICKS=[   // weapon pickups: fixed spots, respawn after being grabbed
   {type:'rifle',   x:1500, y:900}
 ];
 function duelBlocks(x,y,w,h){
-  if(x<4||y<4||x+w>DUEL_W-4||y+h>DUEL_H-4) return true;
+  const AW=(duel&&duel.W)||DUEL_W, AH=(duel&&duel.H)||DUEL_H;
+  if(x<4||y<4||x+w>AW-4||y+h>AH-4) return true;
   const obs=(duel&&duel.obs)||DUEL_OBS;
   for(const o of obs){ if(x<o.x+o.w && x+w>o.x && y<o.y+o.h && y+h>o.y) return true; }
   return false;
@@ -6427,7 +6431,7 @@ function drawTargetPractice(){
   const x0=cx-10, y0=cy-10, x1=cx+W/z+10, y1=cy+H/z+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
     ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
   for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
     ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
     ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
@@ -6529,7 +6533,7 @@ function drawDuelWorldClipped(hv, z){
   const x0=camX-10, y0=camY-10, x1=camX+VW+10, y1=camY+VH+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
     ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
   for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
     ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
     ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
@@ -6601,13 +6605,14 @@ function clearDuelSpawns(){
   for(const f of list){
     if(!duelBlocks(f.x,f.y,DUEL_PS,DUEL_PS)) continue;
     const ox=f.x, oy=f.y; let placed=false;
+    const AW=(duel.W||DUEL_W), AH=(duel.H||DUEL_H);
     for(let r=44; r<=640 && !placed; r+=44){
       for(let a=0; a<12; a++){
-        const ang=a/12*Math.PI*2, nx=clamp(ox+Math.cos(ang)*r, 90, DUEL_W-90-DUEL_PS), ny=clamp(oy+Math.sin(ang)*r, 90, DUEL_H-90-DUEL_PS);
+        const ang=a/12*Math.PI*2, nx=clamp(ox+Math.cos(ang)*r, 90, AW-90-DUEL_PS), ny=clamp(oy+Math.sin(ang)*r, 90, AH-90-DUEL_PS);
         if(!duelBlocks(nx,ny,DUEL_PS,DUEL_PS)){ f.x=nx; f.y=ny; placed=true; break; }
       }
     }
-    if(!placed){ let nx=ox, ny=oy; for(let t=0;t<120 && duelBlocks(nx,ny,DUEL_PS,DUEL_PS); t++){ nx=rand(90,DUEL_W-90-DUEL_PS); ny=rand(90,DUEL_H-90-DUEL_PS); } f.x=nx; f.y=ny; }
+    if(!placed){ let nx=ox, ny=oy; for(let t=0;t<120 && duelBlocks(nx,ny,DUEL_PS,DUEL_PS); t++){ nx=rand(90,AW-90-DUEL_PS); ny=rand(90,AH-90-DUEL_PS); } f.x=nx; f.y=ny; }
   }
 }
 function startTeamShootout(opts){   // opts:{split, h1:{bot,ctrl}, h2:{bot,ctrl}}
@@ -6630,6 +6635,38 @@ function startTeamShootout(opts){   // opts:{split, h1:{bot,ctrl}, h2:{bot,ctrl}
   toast(opts.split?'CO-OP SHOOTOUT — you + partner vs 2 bots!':'TEAM SHOOTOUT — you + ally vs 2 bots!');
 }
 function startTeamShootoutSolo(){ startTeamShootout({split:false, h1:{bot:false,ctrl:'kb'}, h2:{bot:true}}); }
+// ===== 10v10 WAR — a massive battlefield; you + 9 bot allies vs 10 enemy bots, and your radio orders command the whole squad =====
+function makeWarObs(WW,HH){
+  const obs=[]; const N=52;
+  for(let i=0;i<N;i++){
+    const vert=Math.random()<0.5, long=Math.random()<0.6;
+    const w=vert?44:(long?rand(180,340):rand(70,130)), h=vert?(long?rand(180,340):rand(70,130)):44;
+    const x=rand(140, WW-140-w), y=rand(300, HH-300-h);   // keep the top & bottom spawn bands clearer
+    obs.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});
+  }
+  return obs;
+}
+function warPickups(WW,HH){
+  if(!shootPU) return [];
+  const arr=[]; for(let i=0;i<8;i++){ arr.push({type:(i%2?'rifle':'shotgun'), x:rand(200,WW-200), y:rand(500,HH-500), taken:false, respawnT:0}); }
+  return arr;
+}
+function startBigWar(){
+  try{ NetIO.cleanup(); }catch(e){}
+  mode='duel'; explore=null; coop=null; net=null; codef=null; netShowCodeInput(false);
+  const WW=3400, HH=3400, N=10, fighters=[];
+  for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=HH-240 - (i%2)*80;
+    fighters.push(mkFighter(x, y, -Math.PI/2, 1, i!==0, i===0?'kb':null)); }   // i=0 is you, rest are bot allies
+  for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=180 + (i%2)*80;
+    fighters.push(mkFighter(x, y, Math.PI/2, 2, true, null)); }
+  duel={ W:WW, H:HH, camX:0, camY:0, bullets:[], over:false, winner:0, overT:0, t:0, team:true, split:false, war:true, paused:false,
+    fighters, humans:fighters.filter(f=>!f.bot),
+    pickups:warPickups(WW,HH), obs:makeWarObs(WW,HH) };
+  clearDuelSpawns();
+  padPrev=[{},{}];
+  state=STATE.DUEL;
+  toast('10v10 WAR — command your squad! 📻');
+}
 function startShootout1v2(){   // you alone vs two bots
   try{ NetIO.cleanup(); }catch(e){}
   mode='duel'; explore=null; coop=null; net=null; codef=null; netShowCodeInput(false);
@@ -6925,9 +6962,9 @@ function teamCheckOver(){
   if((!a1||!a2) && !duel.over){ duel.over=true; duel.winner=a1?1:2; duel.overT=0; Sound.over(); }
 }
 function teamCam(){ if(duel.split) return; const me=duel.humans[0]; if(!me) return;
-  duel.zoom=DUEL_ZOOM; const VW=W/DUEL_ZOOM, VH=H/DUEL_ZOOM;
-  duel.camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,DUEL_W-VW));
-  duel.camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,DUEL_H-VH)); }
+  const Z=duel.war?WAR_ZOOM:DUEL_ZOOM; duel.zoom=Z; const VW=W/Z, VH=H/Z;
+  duel.camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,duel.W-VW));
+  duel.camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,duel.H-VH)); }
 function updateTeamDuel(dt){
   if(!duel) return;
   if(duel.allyCmd && duel.allyCmd.t>0) duel.allyCmd.t-=dt;   // player order fades after a few seconds
@@ -6952,7 +6989,7 @@ function updateTeamDuel(dt){
     let inp;
     if(f.dead){   // a dead human can still fly a free spectator camera around the arena
       if(!f.bot){ inp = (f.ctrl==='kb') ? humanDuelInputFor(f) : ctrlToInput(readController(f.ctrl));
-        f.x=clamp(f.x+(inp.mvx||0)*DUEL_SPD*1.2*dt, 0, DUEL_W-DUEL_PS); f.y=clamp(f.y+(inp.mvy||0)*DUEL_SPD*1.2*dt, 0, DUEL_H-DUEL_PS); }
+        f.x=clamp(f.x+(inp.mvx||0)*DUEL_SPD*1.2*dt, 0, (duel.W||DUEL_W)-DUEL_PS); f.y=clamp(f.y+(inp.mvy||0)*DUEL_SPD*1.2*dt, 0, (duel.H||DUEL_H)-DUEL_PS); }
       continue;
     }
     if(f.bot) inp=teamAI(f,dt);
@@ -6982,7 +7019,7 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
   const x0=cx-10,y0=cy-10,x1=cx+VW+10,y1=cy+VH+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
     ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
   for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
     ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
     ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
@@ -7003,7 +7040,7 @@ function drawMateArrow(f){   // friendly marker floating over a teammate in shoo
 }
 function drawTeamView(v){
   const z=v.z, VW=v.rw/z, VH=v.rh/z, me=v.me;
-  const camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,DUEL_W-VW)), camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,DUEL_H-VH));
+  const camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,duel.W-VW)), camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,duel.H-VH));
   duel.camX=camX; duel.camY=camY; duel.zoom=z;
   ctx.save(); ctx.beginPath(); ctx.rect(v.rx,v.ry,v.rw,v.rh); ctx.clip();
   ctx.fillStyle='#252d3c'; ctx.fillRect(v.rx,v.ry,v.rw,v.rh);
@@ -7022,7 +7059,7 @@ function drawTeamDuel(){
   if(duel.split){ const land=_landActive, z=land?0.60:0.66;
     views = land ? [{rx:0,ry:0,rw:W/2,rh:H,me:duel.humans[0],z},{rx:W/2,ry:0,rw:W/2,rh:H,me:duel.humans[1],z}]
                  : [{rx:0,ry:0,rw:W,rh:H/2,me:duel.humans[0],z},{rx:0,ry:H/2,rw:W,rh:H/2,me:duel.humans[1],z}];
-  } else { views=[{rx:0,ry:0,rw:W,rh:H,me:duel.humans[0],z:DUEL_ZOOM}]; }
+  } else { views=[{rx:0,ry:0,rw:W,rh:H,me:duel.humans[0],z:(duel.war?WAR_ZOOM:DUEL_ZOOM)}]; }
   for(const v of views) drawTeamView(v);
   if(duel.split){ ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.lineWidth=4; ctx.beginPath();
     if(_landActive){ ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); } else { ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); }
@@ -7278,7 +7315,7 @@ function drawDuel(){
   const x0=cx-10, y0=cy-10, x1=cx+W/z+10, y1=cy+H/z+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
     ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
   // obstacles
   for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
     ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
@@ -7513,6 +7550,13 @@ function drawShootPick(){
     'you + a bot ally', 'vs 2 enemy bots');
   drawVersusModeButton(shoot1v2Btn, '#2a7d46','#1c5a32','#5dff8a','1v2 SOLO',
     'you alone', 'vs 2 enemy bots');
+  { const b=shootWarBtn;   // 10v10 WAR
+    const g=ctx.createLinearGradient(0,b.y,0,b.y+b.h); g.addColorStop(0,'#c0392b'); g.addColorStop(1,'#7a1f14');
+    ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,11); ctx.fill();
+    ctx.lineWidth=2.5; ctx.strokeStyle='#ff8a6a'; roundRectPath(b.x,b.y,b.w,b.h,11); ctx.stroke();
+    ctx.textAlign='center'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
+    ctx.fillStyle='#ffe6df'; ctx.font='bold 20px '+CF; ctx.fillText('⚔ 10v10 WAR', b.x+b.w/2, b.y+26);
+    ctx.shadowBlur=0; ctx.fillStyle='#ffc9bd'; ctx.font='bold 10px '+CF; ctx.fillText('command 9 allies on a massive battlefield', b.x+b.w/2, b.y+44); }
   drawPUToggle();
 }
 function drawMapPick(){
