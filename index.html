@@ -431,13 +431,22 @@ function canvasPoint(e){
 }
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
 canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
+  lastPtr=e.pointerType||'mouse';
   const p=canvasPoint(e);
   if(state===STATE.LEADER){ lbDragY=p.y; lbDragScroll=lbScroll; lbDragged=false; return; }   // defer to pointerup so we can tell a tap from a scroll-drag
   canvasTap(p, e.pointerId);
 });
 canvas.addEventListener('pointermove', (e)=>{
   if(state===STATE.LEADER && lbDragY!=null){ const p=canvasPoint(e), dy=p.y-lbDragY; if(Math.abs(dy)>4) lbDragged=true; lbScroll=clamp(lbDragScroll-dy, 0, lbMaxScroll); }
+  if((e.pointerType||'mouse')==='mouse'){   // mouse hover → live build ghost over the build bar
+    const p=canvasPoint(e); mouseW.x=p.x; mouseW.y=p.y; mouseW.on=true; lastPtr='mouse';
+    hoverBuildType=null;
+    if((state===STATE.PLAY && explore && explore.defense) || state===STATE.COOPDEF){
+      for(const bb of buildBtns){ if(inRect(p,bb)){ hoverBuildType=bb.type; break; } }
+    }
+  }
 });
+canvas.addEventListener('pointerleave', ()=>{ mouseW.on=false; hoverBuildType=null; });
 canvas.addEventListener('pointerup', (e)=>{
   if(state===STATE.LEADER && lbDragY!=null){ const p=canvasPoint(e); if(!lbDragged) canvasTap(p, e.pointerId); lbDragY=null; }
 });
@@ -450,12 +459,19 @@ function canvasTap(p, pid){
     if(inRect(p, duelQuitBtn)){ duel=null; mode='arcade'; state=STATE.MENU; } else duel.paused=false;
     return;
   }
+  if(touchBuild){   // touch placement confirm: YES/NO at the top, world frozen behind it
+    const cb=buildConfirmBtns();
+    if(inRect(p, cb.yes)){ const t=touchBuild.type; touchBuild=null; if(state===STATE.COOPDEF) coopBuildRequest(t); else defBuild(t); return; }
+    if(inRect(p, cb.no)){ touchBuild=null; Sound.hit(); return; }
+    for(const bb of buildBtns){ if(inRect(p,bb)){ touchBuild={type:bb.type}; Sound.hit(); return; } }   // switch the pending build
+    return;   // swallow taps while confirming
+  }
   if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){
     if(explore && explore.defense){   // defense build buttons take the tap before aiming
-      for(const bb of buildBtns){ if(inRect(p, bb)){ defBuild(bb.type); return; } }
+      for(const bb of buildBtns){ if(inRect(p, bb)){ if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else defBuild(bb.type); return; } }
     }
     if(state===STATE.COOPDEF && codef){   // co-op build buttons
-      for(const bb of buildBtns){ if(inRect(p, bb)){ coopBuildRequest(bb.type); return; } }
+      for(const bb of buildBtns){ if(inRect(p, bb)){ if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else coopBuildRequest(bb.type); return; } }
     }
     tapAim.active=true; tapAim.id=pid; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
   }
@@ -595,6 +611,12 @@ window.addEventListener('pointercancel', (e)=>{ if(e.pointerId===tapAim.id) tapA
 /* left stick = move, right stick = aim+fire (twin-stick modes), A/RT/RB = fire, Start = pause,
    on menus: D-pad / left stick move the highlight, A selects, B goes back. Feeds the same touch.* the on-screen sticks use. */
 const Pad = { connected:false, focus:0, prev:{}, _pm:false, _ga:false, _pf:false, _sy:0, _lastState:-1, buildSel:0 };
+// ---- build placement preview (defense) ----
+let lastPtr='mouse';        // pointer type of the most recent tap: 'touch' | 'mouse' | 'pen'
+let mouseW={x:0,y:0,on:false};   // last mouse position in canvas coords
+let hoverBuildType=null;    // build tile the mouse is hovering → show its ghost
+let touchBuild=null;        // pending touch placement awaiting YES/NO confirm: { type }
+function buildConfirmBtns(){ return { yes:{x:W/2-108,y:54,w:100,h:42}, no:{x:W/2+8,y:54,w:100,h:42} }; }
 window.addEventListener('gamepadconnected', ()=>{ Pad.connected=true; toast('🎮 CONTROLLER CONNECTED'); });
 function firstGamepad(){ const gs=navigator.getGamepads?navigator.getGamepads():[]; for(const g of gs){ if(g) return g; } return null; }
 function netPadTargets(){
@@ -1729,7 +1751,7 @@ function update(dt){
     if(mode==='net'){ if(pressed['Escape']){ netQuit(); state=STATE.MENU; } else { updatePlay(dt); netDefenderTick(dt); } }
     else if(explore && explore.coop && explore.split){ if(pressed['Escape']){ explore=null; zombies=[]; bullets=[]; state=STATE.MENU; toast('OPEN WORLD OVER'); } else updateExplore(dt); }
     else if(pressed['KeyP']||pressed['Escape']){ togglePause(); }
-    else if(explore) updateExplore(dt);
+    else if(explore){ if(touchBuild && explore.defense){/* frozen for build-placement confirm */} else updateExplore(dt); }
     else updatePlay(dt);
   } else if(state===STATE.NETATTACK){
     netAttackerTick(dt);
@@ -1759,7 +1781,7 @@ function update(dt){
   } else if(state===STATE.COOPDEF){
     if(codef && codef.local){
       if(pressed['Escape']) coopDefEnd(codef?codef.kills:0);
-      else updateCoopLocal(dt);
+      else if(!touchBuild) updateCoopLocal(dt);
     }
     else if(pressed['Escape']){ if(net&&net.role==='host'){ try{NetIO.send({t:'cover',ki:codef?codef.kills:0});}catch(e){} } coopDefEnd(codef?codef.kills:0); }
     else if(net && net.role==='host') updateCoopHost(dt);
@@ -2980,6 +3002,41 @@ function doBuild(ctx2, pl, type, isCoop){
   else ctx2.spikes.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cost:spec.cost});
   Sound.power(); toast(spec.kind==='spike'?'SPIKES SET':(spec.kind==='turret'?(type==='turret2'?'HEAVY TURRET':'TURRET'):(type==='wall2'?'STEEL WALL':'BARRICADE'))+' BUILT');
 }
+// where a build would land for this player (mirrors doBuild)
+function buildGhostSpot(pl){
+  const ang=(pl.aim!=null)?pl.aim:-Math.PI/2, dist=60;
+  return { cx:defSnap(pl.x+pl.w/2+Math.cos(ang)*dist), cy:defSnap(pl.y+pl.h/2+Math.sin(ang)*dist), ang };
+}
+function buildSpotBlocked(ctx2, type, cx, cy, isCoop){
+  const spec=BUILD_SPEC[type]; if(!spec) return true;
+  const size=spec.size, x0=cx-size/2, y0=cy-size/2;
+  const hit=(o)=>o && o.hp>0 && defRectsOverlap(x0,y0,size,size, o.x-o.w/2,o.y-o.h/2,o.w,o.h);
+  if(spec.kind==='spike'){ if(cx-size/2<-DEF_HALF||cx+size/2>DEF_HALF||cy-size/2<-DEF_HALF||cy+size/2>DEF_HALF) return true; }
+  else if((isCoop?codefBlocks:defBlocks)(x0,y0,size,size)) return true;
+  if((ctx2.turrets&&ctx2.turrets.some(hit))||(ctx2.walls&&ctx2.walls.some(hit))||(ctx2.spikes&&ctx2.spikes.some(hit))) return true;
+  return false;
+}
+// draw a white (or red-if-blocked) ghost of the build at the spot it would land — world space
+function drawBuildGhost(ctx2, pl, type, isCoop){
+  const spec=BUILD_SPEC[type]; if(!spec||!pl) return;
+  const {cx,cy,ang}=buildGhostSpot(pl); const size=spec.size;
+  const blocked = buildSpotBlocked(ctx2, type, cx, cy, isCoop) || (ctx2.cash<spec.cost);
+  ctx.save(); ctx.globalAlpha=0.5;
+  ctx.fillStyle = blocked ? 'rgba(255,80,80,.28)' : 'rgba(255,255,255,.30)';
+  ctx.strokeStyle = blocked ? '#ff6b6b' : '#ffffff';
+  ctx.setLineDash([6,4]); ctx.lineWidth=2;
+  roundRectPath(cx-size/2, cy-size/2, size, size, 5); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+  if(spec.kind==='turret'){ ctx.fillStyle=blocked?'rgba(255,140,140,.55)':'rgba(255,255,255,.55)';
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(ang); ctx.fillRect(0,-3,size*0.55,6); ctx.restore(); }
+  ctx.globalAlpha=1; ctx.restore();
+}
+// pick which build to preview for solo defense: pending touch > controller selection > mouse hover
+function currentGhostType(){
+  if(touchBuild) return touchBuild.type;
+  if(Pad.connected) return BUILD_BAR[Pad.buildSel].type;
+  if(hoverBuildType) return hoverBuildType;
+  return null;
+}
 function updateDefense(dt){
   const p=player, ex=explore; if(!p||!ex) return;
   ex.elapsed+=dt;
@@ -3104,9 +3161,27 @@ function drawDefense(){
   drawDefenseWalls(ex);
   drawDefenseTurrets(ex);
   drawZombies(); drawDefenseBoss(ex); drawBullets(); drawPlayer(); drawParticles();
+  { const gt=currentGhostType(); if(gt) drawBuildGhost(ex, player, gt, false); }   // white placement ghost
   ctx.restore();
   drawGloom();
   drawDefenseUI(ex);
+  if(touchBuild) drawBuildConfirm(ex, false);   // YES/NO bar (touch)
+}
+// YES / NO confirm bar shown at the top while a touch placement is pending
+function drawBuildConfirm(ctx2, isCoop){
+  const spec=BUILD_SPEC[touchBuild.type];
+  const label = spec ? (touchBuild.type.indexOf('turret')===0?'TURRET':touchBuild.type.indexOf('wall')===0?'WALL':'SPIKES') : 'BUILD';
+  ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(10,16,10,.82)'; roundRectPath(W/2-150, 6, 300, 42, 10); ctx.fill();
+  ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.fillText('Place '+label+' here?', W/2, 27);
+  const cb=buildConfirmBtns();
+  const yg=ctx.createLinearGradient(0,cb.yes.y,0,cb.yes.y+cb.yes.h); yg.addColorStop(0,'#7ee06a'); yg.addColorStop(1,'#3ea22f');
+  ctx.fillStyle=yg; roundRectPath(cb.yes.x,cb.yes.y,cb.yes.w,cb.yes.h,9); ctx.fill();
+  ctx.fillStyle='#0d3b08'; ctx.font='bold 16px '+CF; ctx.fillText('✓ YES', cb.yes.x+cb.yes.w/2, cb.yes.y+cb.yes.h/2+1);
+  const ng=ctx.createLinearGradient(0,cb.no.y,0,cb.no.y+cb.no.h); ng.addColorStop(0,'#e06a6a'); ng.addColorStop(1,'#a72f2f');
+  ctx.fillStyle=ng; roundRectPath(cb.no.x,cb.no.y,cb.no.w,cb.no.h,9); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='bold 16px '+CF; ctx.fillText('✕ NO', cb.no.x+cb.no.w/2, cb.no.y+cb.no.h/2+1);
+  ctx.textBaseline='alphabetic'; ctx.restore();
 }
 function drawDefenseGround(ex){
   const z=ex.zoom||1, x0=ex.camX-10,y0=ex.camY-10,x1=ex.camX+W/z+10,y1=ex.camY+H/z+10;
@@ -5829,9 +5904,11 @@ function drawCoopDef(){
   drawZombies(); drawDefenseBoss(cd); drawBullets();
   drawPlayerObj(cd.p1, true); drawPlayerObj(cd.p2, true);
   drawParticles();
+  { const me=cd[cd.meKey]; const gt = touchBuild?touchBuild.type : (Pad.connected?BUILD_BAR[(me.buildSel||0)].type:hoverBuildType); if(gt) drawBuildGhost(cd, me, gt, true); }
   ctx.restore();
   drawGloom();
   drawCoopUI(cd);
+  if(touchBuild) drawBuildConfirm(cd, true);
 }
 function drawCoopUI(cd){
   ctx.textAlign='right'; ctx.textBaseline='alphabetic';
@@ -5973,6 +6050,7 @@ function drawCoopDefLocal(){
     drawZombies(); drawDefenseBoss(cd); drawBullets();
     drawPlayerObj(cd.p1, true); drawPlayerObj(cd.p2, true);
     drawParticles();
+    { const gt=BUILD_BAR[(hv.pl.buildSel||0)].type; if(gt) drawBuildGhost(cd, hv.pl, gt, true); }   // each player sees their selected build's ghost
     ctx.restore();
     localGloom(hv.rx,hv.ry,hv.rw,hv.rh);
     drawMateMarker(hv.rx,hv.ry,hv.rw,hv.rh, camX,camY,z, (hv.pl===cd.p1?cd.p2:cd.p1), (hv.pl===cd.p1?'#ffd06a':'#7fe0ff'));
