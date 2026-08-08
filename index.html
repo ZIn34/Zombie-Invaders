@@ -5853,6 +5853,30 @@ function duelBlocks(x,y,w,h){
   for(const o of obs){ if(x<o.x+o.w && x+w>o.x && y<o.y+o.h && y+h>o.y) return true; }
   return false;
 }
+// safety net: if two fighters ever end up overlapping (spawn edge cases, a sandwich), ease them apart so nobody jams
+function separateFighters(){
+  if(!duel) return;
+  const list = duel.fighters ? duel.fighters.filter(f=>!f.dead) : [duel.p1,duel.p2].filter(g=>g&&!g.dead);
+  const MIN=DUEL_PS-10;
+  for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
+    const a=list[i], b=list[j], sx=b.x-a.x, sy=b.y-a.y;
+    if(Math.abs(sx)<MIN && Math.abs(sy)<MIN){
+      const ox=MIN-Math.abs(sx), oy=MIN-Math.abs(sy);
+      if(ox<=oy){ const push=ox/2*(sx<0?-1:1); if(!duelBlocks(a.x-push,a.y,DUEL_PS,DUEL_PS)) a.x-=push; if(!duelBlocks(b.x+push,b.y,DUEL_PS,DUEL_PS)) b.x+=push; }
+      else { const push=oy/2*(sy<0?-1:1); if(!duelBlocks(a.x,a.y-push,DUEL_PS,DUEL_PS)) a.y-=push; if(!duelBlocks(b.x,b.y+push,DUEL_PS,DUEL_PS)) b.y+=push; }
+    }
+  }
+}
+// solid body collision between fighters — you can't walk through the enemy (or a teammate) and they can't walk through you
+function fighterBlocks(self, x, y){
+  if(!duel) return false;
+  const list = duel.fighters ? duel.fighters : [duel.p1, duel.p2];
+  const PAD=7, s=DUEL_PS-PAD*2, ax=x+PAD, ay=y+PAD;   // slightly inset box so bodies bump, not snag
+  for(const g of list){ if(!g || g===self || g.dead) continue;
+    const bx=g.x+PAD, by=g.y+PAD;
+    if(ax<bx+s && ax+s>bx && ay<by+s && ay+s>by) return true; }
+  return false;
+}
 /* ===================== ONLINE CO-OP DEFENSE ===================== */
 function netStartCoopDefense(){
   mode='net'; coop=null; duel=null;
@@ -6185,6 +6209,11 @@ function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col){
     ctx.fillStyle=col; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.moveTo(sx,ay+11); ctx.lineTo(sx-7,ay); ctx.lineTo(sx+7,ay); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText('TEAMMATE', sx, ay-3);
+    // HP bar under the marker
+    const bw=34, bh=4, bx=sx-bw/2, by=ay+13, frac=Math.max(0,Math.min(1,(mate.hp||0)/DUEL_HP));
+    ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle= frac>0.5?'#5dff8a':frac>0.25?'#ffd14b':'#ff5b5b'; ctx.fillRect(bx,by,bw*frac,bh);
+    ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.7)'; ctx.strokeRect(bx,by,bw,bh);
   } else {
     const cxh=rx+rw/2, cyh=ry+rh/2, ang=Math.atan2(sy-cyh, sx-cxh);
     const ax=clamp(sx, rx+22, rx+rw-22), ay=clamp(sy, ry+34, ry+rh-22);
@@ -6460,6 +6489,7 @@ function updateDuelLocal(dt){
   duel.t+=dt;
   duelActor(duel.p1, ctrlToInput(c1), dt, true);
   duelActor(duel.p2, ctrlToInput(c2), dt, true);
+  separateFighters();
   duelPickups(dt);
   for(const b of duel.bullets){ if(b.dead) continue;
     b.x+=b.vx*dt; b.y+=b.vy*dt; b.t+=dt;
@@ -6827,8 +6857,8 @@ function drawDuelSplats(){
 function teamDuelActor(f, inp, dt){
   if(f.dead) return;
   const spd=DUEL_SPD*(f.bot?1:0.8);   // human players move 20% slower in shootout
-  const nx=f.x+inp.mvx*spd*dt; if(!duelBlocks(nx,f.y,DUEL_PS,DUEL_PS)) f.x=nx;
-  const ny=f.y+inp.mvy*spd*dt; if(!duelBlocks(f.x,ny,DUEL_PS,DUEL_PS)) f.y=ny;
+  const nx=f.x+inp.mvx*spd*dt; if(!duelBlocks(nx,f.y,DUEL_PS,DUEL_PS) && !fighterBlocks(f,nx,f.y)) f.x=nx;
+  const ny=f.y+inp.mvy*spd*dt; if(!duelBlocks(f.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(f,f.x,ny)) f.y=ny;
   f.moving=!!(inp.mvx||inp.mvy); if(f.moving) f.walkT+=dt*11;
   if(inp.aim!=null) f.aim=inp.aim;
   if(f.cd>0)f.cd-=dt; if(f.recoil>0)f.recoil-=dt*7;
@@ -6893,6 +6923,7 @@ function updateTeamDuel(dt){
     else inp=ctrlToInput(readController(f.ctrl));
     teamDuelActor(f, inp, dt);
   }
+  separateFighters();
   teamPickups(dt);
   for(const b of duel.bullets){ if(b.dead) continue;
     b.x+=b.vx*dt; b.y+=b.vy*dt; b.t+=dt;
@@ -7082,6 +7113,7 @@ function updateDuelAI(dt){
   if(!duel.over){
     duelActor(duel.p1, duelLocalInput(), dt, true);
     duelActor(duel.p2, aiDuelInput(dt), dt, true);
+    separateFighters();
     duelPickups(dt);
     for(const b of duel.bullets){ if(b.dead) continue;
       b.x+=b.vx*dt; b.y+=b.vy*dt; b.t+=dt;
@@ -7114,8 +7146,8 @@ function duelLocalInput(){
 }
 function duelActor(pl, inp, dt, spawn){
   const spd=DUEL_SPD*(pl.bot?1:0.8);   // human players move 20% slower in shootout
-  const nx=pl.x+inp.mvx*spd*dt; if(!duelBlocks(nx,pl.y,DUEL_PS,DUEL_PS)) pl.x=nx;
-  const ny=pl.y+inp.mvy*spd*dt; if(!duelBlocks(pl.x,ny,DUEL_PS,DUEL_PS)) pl.y=ny;
+  const nx=pl.x+inp.mvx*spd*dt; if(!duelBlocks(nx,pl.y,DUEL_PS,DUEL_PS) && !fighterBlocks(pl,nx,pl.y)) pl.x=nx;
+  const ny=pl.y+inp.mvy*spd*dt; if(!duelBlocks(pl.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(pl,pl.x,ny)) pl.y=ny;
   pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving) pl.walkT+=dt*11;
   if(inp.aim!=null) pl.aim=inp.aim;
   if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*7;
