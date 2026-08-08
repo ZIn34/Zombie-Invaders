@@ -1152,6 +1152,7 @@ function toggleZombieSkin(id){
   loadZombieSheet(zombieSheetFor(equippedZombieSkin)); saveProgress(); Sound.hit();
 }
 let Zgun=null, ZgunAW=1, ZgunAH=1;   // pistol art for the gun-zombie (Mission 5)
+let ZgunBody=null, ZgunBodyAW=1, ZgunBodyAH=1;   // upright standing soldier-zombie for the Gunslinger (front-facing, not the top-down crawl)
 let Bloodimg=null, BloodAW=1, BloodAH=1;   // blood splatter decal used on death
 let Fflash=[], FflashAW=[], FflashAH=[];   // 4-frame muzzle flash (sideways art, rotated to aim)
 let Gimg=null, GAW=1, GAH=1;   // uploaded general portrait
@@ -1342,6 +1343,7 @@ if(typeof PSKIN2_IMG!=='undefined') loadSpriteImage(PSKIN2_IMG,(cv,wh,w,h)=>{ PS
 if(typeof BOSSKIN1_IMG!=='undefined') loadSpriteImage(BOSSKIN1_IMG,(cv,wh,w,h)=>{ BossSkin1=cv; BossSkin1white=wh; BossSkin1AW=w; BossSkin1AH=h; });
 if(typeof GENERAL_IMG!=='undefined')        loadSpriteImage(GENERAL_IMG,        (cv,wh,w,h)=>{ Gimg=cv; GAW=w; GAH=h; });
 if(typeof ZGUN_IMG!=='undefined')        loadSpriteImage(ZGUN_IMG,        (cv,wh,w,h)=>{ Zgun=cv; ZgunAW=w; ZgunAH=h; });
+if(typeof ZSHEET_PALE!=='undefined'){ const _gd=ZSHEET_PALE.death; if(_gd&&_gd.length) loadSpriteImage(_gd[_gd.length-1], (cv,wh,w,h)=>{ ZgunBody=cv; ZgunBodyAW=w; ZgunBodyAH=h; }); }   // last death frame = standing front-view
 if(typeof BLOOD_IMG!=='undefined')       loadSpriteImage(BLOOD_IMG,       (cv,wh,w,h)=>{ Bloodimg=cv; BloodAW=w; BloodAH=h; });
 if(typeof FLASH_IMGS!=='undefined') FLASH_IMGS.forEach((src,i)=>loadSpriteImage(src,(cv,wh,w,h)=>{ Fflash[i]=cv; FflashAW[i]=w; FflashAH[i]=h; }));
 if(typeof GUN_RIFLE_IMG!=='undefined')   loadSpriteImage(GUN_RIFLE_IMG,   (cv,wh,w,h)=>{ GunRifle=cv; GunRifleAW=w; GunRifleAH=h; });
@@ -2834,10 +2836,10 @@ function drawOpenCoopHalfHUD(hv){
   ctx.shadowBlur=0;
 }
 // the same cold wash + vignette that gives Normal play its gloomy mood — overlaid in screen space
-function drawGloom(){
-  ctx.fillStyle='rgba(14,20,30,0.16)'; ctx.fillRect(0,0,W,H);
+function drawGloom(k){ k=(k==null)?1:k;
+  ctx.fillStyle='rgba(14,20,30,'+(0.16*k)+')'; ctx.fillRect(0,0,W,H);
   const vg=ctx.createRadialGradient(W/2,H*0.42,Math.min(W,H)*0.22, W/2,H*0.5,Math.max(W,H)*0.7);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(0.62,'rgba(0,0,0,0.18)'); vg.addColorStop(1,'rgba(4,6,10,0.55)');
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(0.62,'rgba(0,0,0,'+(0.18*k)+')'); vg.addColorStop(1,'rgba(4,6,10,'+(0.55*k)+')');
   ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
 }
 function drawEndless(){
@@ -5928,11 +5930,11 @@ function updateCoopLocal(dt){
   coopSimWorld(dt);
   if(cd.over || cd.flag.hp<=0) coopDefEnd(cd.kills);
 }
-function localGloom(rx,ry,rw,rh){
+function localGloom(rx,ry,rw,rh,k){ k=(k==null)?1:k;
   ctx.save(); ctx.beginPath(); ctx.rect(rx,ry,rw,rh); ctx.clip();
-  ctx.fillStyle='rgba(14,20,30,0.16)'; ctx.fillRect(rx,ry,rw,rh);
+  ctx.fillStyle='rgba(14,20,30,'+(0.16*k)+')'; ctx.fillRect(rx,ry,rw,rh);
   const vg=ctx.createRadialGradient(rx+rw/2,ry+rh*0.42,Math.min(rw,rh)*0.22, rx+rw/2,ry+rh*0.5,Math.max(rw,rh)*0.7);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(0.62,'rgba(0,0,0,0.18)'); vg.addColorStop(1,'rgba(4,6,10,0.55)');
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(0.62,'rgba(0,0,0,'+(0.18*k)+')'); vg.addColorStop(1,'rgba(4,6,10,'+(0.55*k)+')');
   ctx.fillStyle=vg; ctx.fillRect(rx,ry,rw,rh); ctx.restore();
 }
 // show where the teammate is in a split-screen half: a tag above them when in view, an edge arrow when off-screen
@@ -6145,16 +6147,16 @@ function drawDuelWorldClipped(hv, z){
   duel.camX=camX; duel.camY=camY; duel.zoom=z;   // drawDuelSoldier culls against these
   ctx.save();
   ctx.beginPath(); ctx.rect(hv.rx,hv.ry,hv.rw,hv.rh); ctx.clip();
-  ctx.fillStyle='#12161f'; ctx.fillRect(hv.rx,hv.ry,hv.rw,hv.rh);
+  ctx.fillStyle='#252d3c'; ctx.fillRect(hv.rx,hv.ry,hv.rw,hv.rh);
   ctx.translate(hv.rx,hv.ry); ctx.scale(z,z); ctx.translate(-Math.round(camX),-Math.round(camY));
   const x0=camX-10, y0=camY-10, x1=camX+VW+10, y1=camY+VH+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-    ctx.fillStyle=((x/64+y/64)&1)?'#182131':'#141c29'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#3a4a63'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
+    ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
   for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-    ctx.fillStyle='#43526b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-    ctx.fillStyle='#5a6c88'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#2b3a52'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
+    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
   drawDuelSplats();
   for(const k of duel.pickups){ if(k.taken) continue; drawDuelPickup(k); }
   for(const b of duel.bullets){ ctx.fillStyle=b.own===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); }
@@ -6162,11 +6164,11 @@ function drawDuelWorldClipped(hv, z){
   drawDuelSoldier(duel.p2, '#ff6b6b', me===duel.p2);
   drawDuelBlood();
   ctx.restore();
-  localGloom(hv.rx,hv.ry,hv.rw,hv.rh);
+  localGloom(hv.rx,hv.ry,hv.rw,hv.rh,0.4);
 }
 function drawDuelLocal(){
   if(!duel) return;
-  ctx.fillStyle='#12161f'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#252d3c'; ctx.fillRect(0,0,W,H);
   const land=_landActive, z=land?0.60:0.66;
   const halves = land
     ? [{rx:0,ry:0,rw:W/2,rh:H,pl:duel.p1,tag:'P1',col:'#6ad06a'},{rx:W/2,ry:0,rw:W/2,rh:H,pl:duel.p2,tag:'P2',col:'#ff6b6b'}]
@@ -6403,12 +6405,12 @@ function updateTeamDuel(dt){
 function drawDuelSceneWorld(cx,cy,VW,VH,me){
   const x0=cx-10,y0=cy-10,x1=cx+VW+10,y1=cy+VH+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-    ctx.fillStyle=((x/64+y/64)&1)?'#182131':'#141c29'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#3a4a63'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
+    ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
   for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-    ctx.fillStyle='#43526b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-    ctx.fillStyle='#5a6c88'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#2b3a52'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
+    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
   drawDuelSplats();
   for(const k of duel.pickups){ if(!k.taken) drawDuelPickup(k); }
   for(const b of duel.bullets){ ctx.fillStyle=b.team===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); }
@@ -6420,18 +6422,18 @@ function drawTeamView(v){
   const camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,DUEL_W-VW)), camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,DUEL_H-VH));
   duel.camX=camX; duel.camY=camY; duel.zoom=z;
   ctx.save(); ctx.beginPath(); ctx.rect(v.rx,v.ry,v.rw,v.rh); ctx.clip();
-  ctx.fillStyle='#12161f'; ctx.fillRect(v.rx,v.ry,v.rw,v.rh);
+  ctx.fillStyle='#252d3c'; ctx.fillRect(v.rx,v.ry,v.rw,v.rh);
   ctx.translate(v.rx,v.ry); ctx.scale(z,z); ctx.translate(-Math.round(camX),-Math.round(camY));
   drawDuelSceneWorld(camX,camY,VW,VH,me);
   ctx.restore();
-  localGloom(v.rx,v.ry,v.rw,v.rh);
+  localGloom(v.rx,v.ry,v.rw,v.rh,0.4);
   if(duel.split){ const mate=duel.humans.find(f=>f!==me && f.team===me.team && !f.dead);
     if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS}, '#6ad06a');
     drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-12); }
 }
 function drawTeamDuel(){
   if(!duel) return;
-  ctx.fillStyle='#12161f'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#252d3c'; ctx.fillRect(0,0,W,H);
   let views;
   if(duel.split){ const land=_landActive, z=land?0.60:0.66;
     views = land ? [{rx:0,ry:0,rw:W/2,rh:H,me:duel.humans[0],z},{rx:W/2,ry:0,rw:W/2,rh:H,me:duel.humans[1],z}]
@@ -6641,18 +6643,18 @@ function duelSetActor(p,a){ p.x=a[0]; p.y=a[1]; p.aim=a[2]; p.hp=a[3]; p.recoil=
 function drawDuel(){
   if(!duel) return;
   const cx=Math.round(duel.camX), cy=Math.round(duel.camY), z=duel.zoom||1;
-  ctx.fillStyle='#12161f'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#252d3c'; ctx.fillRect(0,0,W,H);
   ctx.save(); ctx.scale(z,z); ctx.translate(-cx,-cy);
   // ground grid
   const x0=cx-10, y0=cy-10, x1=cx+W/z+10, y1=cy+H/z+10;
   for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-    ctx.fillStyle=((x/64+y/64)&1)?'#182131':'#141c29'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#3a4a63'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
+    ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,DUEL_W,DUEL_H);
   // obstacles
   for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-    ctx.fillStyle='#43526b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-    ctx.fillStyle='#5a6c88'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#2b3a52'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
+    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
   drawDuelSplats();   // blood decals on the ground
   // weapon pickups
   for(const k of duel.pickups){ if(k.taken) continue; drawDuelPickup(k); }
@@ -6663,7 +6665,7 @@ function drawDuel(){
   drawDuelSoldier(duel.p2, '#ff6b6b', duel.meKey==='p2');
   drawDuelBlood();   // blood spray particles
   ctx.restore();
-  drawGloom();
+  drawGloom(0.4);
   drawDuelHUD();
   if(duel.over) drawDuelOver();
   if(duel.paused) drawDuelPause();
@@ -6736,24 +6738,24 @@ function drawMuzzleFlash(pl){   // shootout fighters
 }
 function drawGunZombie(pl, ring, isMe){
   const cx=pl.x+DUEL_PS/2, cy=pl.y+DUEL_PS/2;
-  const zimg=(Zwalk&&Zwalk.length&&Zwalk[Math.floor((pl.walkT||0))%Math.max(1,Zwalk.length)])||Zwalk[0]||Zsprite;
-  const zaw=(zimg&&ZwalkAW.length)?(ZwalkAW[0]||ZAW||56):56, zah=(zimg&&ZwalkAH.length)?(ZwalkAH[0]||ZAH||74):74;
+  // upright, front-facing standing zombie (not the top-down crawl frame, which read as a splayed blob)
+  const zimg=ZgunBody||(Zwalk&&Zwalk[0])||Zsprite;
+  const zaw=ZgunBody?ZgunBodyAW:(ZwalkAW[0]||ZAW||56), zah=ZgunBody?ZgunBodyAH:(ZwalkAH[0]||ZAH||74);
+  const feetY=pl.y+DUEL_PS-4;
   softShadow(cx, pl.y+DUEL_PS-2, 18, 6, 0.32);
-  ctx.save(); ctx.strokeStyle=ring; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(cx, pl.y+DUEL_PS-4, 15, 0, 6.28); ctx.stroke(); ctx.restore();
-  // upright billboard zombie body, faces the way it's aiming, with a slight walk bob
-  const bh=54, bw=bh*zaw/zah, faceLeft=Math.cos(pl.aim)<0;
-  const bob=pl.moving?Math.sin((pl.walkT||0)*1.6)*2:0;
-  ctx.save(); ctx.translate(cx, cy+bob);
+  ctx.save(); ctx.strokeStyle=ring; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(cx, feetY, 15, 0, 6.28); ctx.stroke(); ctx.restore();
+  const bh=64, bw=bh*zaw/zah, faceLeft=Math.cos(pl.aim)<0;
+  const bob=pl.moving?Math.abs(Math.sin((pl.walkT||0)))*-2:0;   // gentle stride bob while moving
+  ctx.save(); ctx.translate(cx, feetY+2+bob);   // feet planted on the ring
   if(faceLeft){ ctx.scale(-1,1); }
-  if(zimg) ctx.drawImage(zimg, -bw/2, -bh*0.62, bw, bh);
-  // hit flash
-  if(pl.flash>0){ ctx.globalAlpha=Math.min(1,pl.flash*6); ctx.fillStyle='#ff5a5a';
-    if(zimg) ctx.drawImage(zimg, -bw/2, -bh*0.62, bw, bh); ctx.globalAlpha=1; }
+  if(zimg) ctx.drawImage(zimg, -bw/2, -bh, bw, bh);
+  if(pl.flash>0 && zimg){ ctx.globalAlpha=Math.min(1,pl.flash*6); ctx.drawImage(zimg, -bw/2, -bh, bw, bh); ctx.globalAlpha=1; }
   ctx.restore();
   // pistol in the hand, rotated to point along the aim
   if(Zgun){
     const gh=30, gw=gh*ZgunAW/ZgunAH;
-    const hx=cx+Math.cos(pl.aim)*13, hy=cy+Math.sin(pl.aim)*13 + 2;   // hand, out front toward the target
+    const handY=(pl.y+DUEL_PS-4)-30;   // mid-body height on the standing figure
+    const hx=cx+Math.cos(pl.aim)*13, hy=handY+Math.sin(pl.aim)*10;   // hand, out front toward the target
     ctx.save(); ctx.translate(hx,hy); ctx.rotate(pl.aim+Math.PI/2);
     ctx.drawImage(Zgun, -gw/2, -gh*0.7, gw, gh);
     ctx.restore();
