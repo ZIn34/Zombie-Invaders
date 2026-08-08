@@ -3674,7 +3674,7 @@ function drawPlayerObj(p, faceAim){
     const aim=twin? p.aim : -Math.PI/2;   // twin-stick aims; classic horde (normal mode) fires up
     const pixel=(equippedSkin && equippedSkin!=='default');
     let pixL=0;
-    if(pixel) pixL = twin ? 49 : 2;   // pixel flash: twin-stick 49px left; normal mode 2px left
+    if(pixel) pixL = twin ? (explore ? 19 : 49) : 2;   // pixel flash: open-world 19px left (shifted 30px right), other twin-stick 49px left; normal mode 2px left
     drawUnitFlash(cx, scy, aim, heavy, isRifle, rec, 12, pixL);   // non-shootout: raise 12px
   }
 }
@@ -3700,20 +3700,39 @@ function drawZombies(){
       if(frames.length){
         if(z.phase==null) z.phase=Math.random()*7;   // fixed per-zombie offset so they don't march in sync
         const paleZ = equippedZombieSkin==='pale';   // soldier-zombie: 40-frame seamless walk loop → play at source 30fps (0.030 = 1 frame/33.3ms), never faster than the video
-        const speed = attacking ? (paleZ?0.0026:0.0022) : (paleZ?0.030:0.0032);   // steady clock-driven step rate
-        // steady clock-driven cycle (no growing term) → smooth, even frames instead of a fast flicker
-        const fi = ((Math.floor(performance.now()*speed + z.phase) % frames.length)+frames.length)%frames.length;
+        const speed = attacking ? (paleZ?0.0026:0.005) : (paleZ?0.030:0.0032);   // steady clock-driven step rate
+        const step = Math.floor(performance.now()*speed + z.phase);
+        let fi;
+        if(attacking && !paleZ && frames.length>=7){
+          // basic/pixel attack: a clean "chomp" — lunge in and pull back through the tidy frames only,
+          // skipping the wild wind-up/flailing poses that made the old attack look erratic
+          const seq=[3,4,5,6,5,4];
+          fi=seq[((step%seq.length)+seq.length)%seq.length];
+        } else if(attacking && frames.length>1){
+          // ping-pong so the loop never hard-jumps from the last frame back to the first
+          const n=frames.length, period=2*n-2, p=((step%period)+period)%period;
+          fi = p<n ? p : period-p;
+        } else {
+          // steady clock-driven walk cycle (no growing term) → smooth, even frames
+          fi = ((step % frames.length)+frames.length)%frames.length;
+        }
         wimg = frames[fi]||Zsprite; iaw = AWa[fi]||ZAW; iah = AHa[fi]||ZAH;
       } else { wimg=Zsprite; iaw=ZAW; iah=ZAH; }
       let dwA, dhA, topY;
-      if(attacking){
-        // every attack frame the SAME visual size (constant area), box shaped to the average attack aspect
-        // → no single frame blows up huge, even the wide lunge poses
+      const paleZ2 = equippedZombieSkin==='pale';
+      if(attacking && paleZ2){
+        // pale (soldier zombie): keep the centred, slightly larger attack box
         let asum=0,an=0; for(let q=0;q<ZatkAW.length;q++){ if(ZatkAH[q]>0){ asum+=ZatkAW[q]/ZatkAH[q]; an++; } }
         const boxAsp = an ? asum/an : (iah? iaw/iah : 1);
         const s = z.w*1.62, r = Math.sqrt(boxAsp);
         dhA = s/r; dwA = s*r;
         topY = -(z.h*0.55) - dhA/2;   // centred around the body
+      } else if(attacking){
+        // basic/pixel: match the WALK scale and feet-anchor so there's no size/position pop when it
+        // toggles walk↔attack, using each frame's own aspect so the reaching arms aren't squished
+        const boxAsp = (iah? iaw/iah : 1);
+        const s = z.w*1.55, r = Math.sqrt(boxAsp);
+        dhA = s/r; dwA = s*r; topY = -dhA;
       } else {
         // every walk frame at the SAME visual size (constant area), in a box shaped to THIS skin's
         // average frame aspect → no size change between frames, and no over-stretch on wide crawlers
@@ -3755,6 +3774,13 @@ function drawZombies(){
           const fallT=Math.min(1,t/0.55), ang=(z.fall||1)*(Math.PI*0.48)*(1-(1-fallT)*(1-fallT));
           ctx.save(); ctx.globalAlpha=alpha; ctx.translate(cx,feetY); ctx.rotate(ang);
           ctx.drawImage(Zdeath[fi], -dwF/2, -dhF, dwF, dhF); ctx.globalAlpha=1; ctx.restore();
+        } else if(pale){
+          // soldier zombie: the source clip is walk-only (no death frames), so it collapses with a
+          // smooth topple + fade instead of snapping to a lone standing frame
+          const asp=(ah>0?aw/ah:1), sP=z.w*1.55, rP=Math.sqrt(asp), dhP=sP/rP, dwP=sP*rP;
+          const fallT=Math.min(1,t/0.5), ang=(z.fall||1)*(Math.PI*0.5)*(1-(1-fallT)*(1-fallT));
+          ctx.save(); ctx.globalAlpha=alpha; ctx.translate(cx,feetY); ctx.rotate(ang);
+          ctx.drawImage(Zdeath[fi], -dwP/2, -dhP, dwP, dhP); ctx.globalAlpha=1; ctx.restore();
         } else if(explore && z.face!=null){
           // open world / mission 3: the corpse keeps the direction it was crawling when it died
           const ccy = feetY - dhF/2;
