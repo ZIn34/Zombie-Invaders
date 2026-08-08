@@ -3741,7 +3741,7 @@ function drawZombies(){
         // size/position pop when it toggles walk↔attack, using each frame's own aspect so reaching arms aren't squished
         // soldier-zombie attack frames carry padding for the wide arm swing → its body sits small, so scale ~2× to read walk-sized
         const boxAsp = (iah? iaw/iah : 1);
-        const s = z.w*1.55*(equippedZombieSkin==='pale'?1.3:1), r = Math.sqrt(boxAsp);
+        const s = z.w*1.55*(equippedZombieSkin==='pale'?1.56:1), r = Math.sqrt(boxAsp);
         dhA = s/r; dwA = s*r; topY = -dhA;
       } else {
         // every walk frame at the SAME visual size (constant area), in a box shaped to THIS skin's
@@ -3784,12 +3784,12 @@ function drawZombies(){
         const lastFrame = fi===Zdeath.length-1;
         if(pale){
           // soldier zombie's death clip (rear up → collapse to the ground), feet-anchored & walk-matched size, fading out at the end
-          const asp=(ah>0?aw/ah:1), s=z.w*1.55, r=Math.sqrt(asp), dhF=s/r, dwF=s*r;
+          const asp=(ah>0?aw/ah:1), s=z.w*1.86, r=Math.sqrt(asp), dhF=s/r, dwF=s*r;
           const y0=feetY-dhF;
           ctx.save(); ctx.globalAlpha=alpha; ctx.drawImage(Zdeath[fi], cx-dwF/2, y0, dwF, dhF); ctx.globalAlpha=1; ctx.restore();
         } else {
           // the flat final corpse frame shrinks under plain area-scaling → give the last frame a bigger factor
-          const scaleMul = pixel ? 1.5 : (lastFrame?2.2:1.95);
+          const scaleMul = pixel ? 1.5 : (lastFrame?1.87:1.66);   // basic corpse shrunk 15%
           const k=(z.w*scaleMul)/Math.sqrt(aw*ah), dwF=aw*k, dhF=ah*k;   // area scaling (pixel matches its walking size)
           if(pixel){
             // pixel zombie topples over to one side
