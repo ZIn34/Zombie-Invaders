@@ -2458,7 +2458,7 @@ function exploreFire(p){
   let vx=0,vy=-1;
   const mz=explorePlayerMuzzle(p);
   let cx=mz.x, cy=mz.y;
-  if(explore && explore.defense){ cx-=30; if(equippedSkin && equippedSkin!=='default') cx-=30; }   // defense: bullet exits 30px left (pixel soldiers: another 30px left)
+  if(explore && explore.defense){ if(equippedSkin && equippedSkin!=='default') cx+=8; else cx-=30; }   // defense: default soldier 30px left, pixel soldiers 8px right
   // always shoot exactly where the player is aiming — no auto-targeting
   if(p.aim!=null){ vx=Math.cos(p.aim); vy=Math.sin(p.aim); }
   const sp=740;
