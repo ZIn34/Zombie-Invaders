@@ -3783,10 +3783,17 @@ function drawZombies(){
         const aw=ZdeathAW[fi], ah=ZdeathAH[fi];
         const lastFrame = fi===Zdeath.length-1;
         if(pale){
-          // soldier zombie's death clip (rear up → collapse to the ground), feet-anchored & walk-matched size, fading out at the end
+          // soldier zombie's death clip (rear up → collapse to the ground), walk-matched size, fading out at the end
           const asp=(ah>0?aw/ah:1), s=z.w*1.86, r=Math.sqrt(asp), dhF=s/r, dwF=s*r;
-          const y0=feetY-dhF;
-          ctx.save(); ctx.globalAlpha=alpha; ctx.drawImage(Zdeath[fi], cx-dwF/2, y0, dwF, dhF); ctx.globalAlpha=1; ctx.restore();
+          if(explore && z.face!=null){
+            // open world: keep facing the player, the way it did when alive
+            const ccy=feetY-dhF/2;
+            ctx.save(); ctx.globalAlpha=alpha; ctx.translate(cx,ccy); ctx.rotate(z.face-Math.PI/2);
+            ctx.drawImage(Zdeath[fi], -dwF/2, -dhF/2, dwF, dhF); ctx.globalAlpha=1; ctx.restore();
+          } else {
+            const y0=feetY-dhF;
+            ctx.save(); ctx.globalAlpha=alpha; ctx.drawImage(Zdeath[fi], cx-dwF/2, y0, dwF, dhF); ctx.globalAlpha=1; ctx.restore();
+          }
         } else {
           // the flat final corpse frame shrinks under plain area-scaling → give the last frame a bigger factor
           const scaleMul = pixel ? 1.5 : (lastFrame?1.87:1.66);   // basic corpse shrunk 15%
