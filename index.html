@@ -6637,14 +6637,30 @@ function startTeamShootout(opts){   // opts:{split, h1:{bot,ctrl}, h2:{bot,ctrl}
 function startTeamShootoutSolo(){ startTeamShootout({split:false, h1:{bot:false,ctrl:'kb'}, h2:{bot:true}}); }
 // ===== 10v10 WAR — a massive battlefield; you + 9 bot allies vs 10 enemy bots, and your radio orders command the whole squad =====
 function makeWarObs(WW,HH){
-  const obs=[]; const N=52;
+  const obs=[]; const N=54;
   for(let i=0;i<N;i++){
-    const vert=Math.random()<0.5, long=Math.random()<0.6;
-    const w=vert?44:(long?rand(180,340):rand(70,130)), h=vert?(long?rand(180,340):rand(70,130)):44;
-    const x=rand(140, WW-140-w), y=rand(300, HH-300-h);   // keep the top & bottom spawn bands clearer
-    obs.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});
+    const r=Math.random(); let kind, w, h;
+    if(r<0.42){ kind='sandbag'; const vert=Math.random()<0.5, long=rand(150,320); w=vert?46:long; h=vert?long:46; }
+    else if(r<0.66){ kind='crate'; const s=rand(44,72); w=s; h=s; }
+    else if(r<0.85){ kind='rubble'; w=rand(72,150); h=rand(58,120); }
+    else { kind='trap'; const s=rand(54,82); w=s; h=s; }   // steel hedgehog tank-trap
+    const x=rand(140, WW-140-w), y=rand(300, HH-300-h);    // keep the top & bottom spawn bands clearer
+    obs.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h),kind});
   }
   return obs;
+}
+function makeWarVehicles(WW,HH){   // big wrecked/parked vehicles — solid cover
+  const v=[];
+  for(let i=0;i<4;i++){ const w=134,h=88; v.push({x:Math.round(rand(180,WW-180-w)), y:Math.round(rand(380,HH-380-h)), w,h, kind:'tank', face:(Math.random()<0.5?1:-1)}); }
+  for(let i=0;i<5;i++){ const w=96,h=58; v.push({x:Math.round(rand(180,WW-180-w)), y:Math.round(rand(380,HH-380-h)), w,h, kind:'jeep'}); }
+  return v;
+}
+function makeWarDecals(WW,HH){   // non-blocking battlefield dressing: shell craters, scorch marks, barbed wire
+  const d=[];
+  for(let i=0;i<44;i++) d.push({t:'crater', x:Math.round(rand(120,WW-120)), y:Math.round(rand(180,HH-180)), r:Math.round(rand(24,62))});
+  for(let i=0;i<28;i++) d.push({t:'scorch', x:Math.round(rand(120,WW-120)), y:Math.round(rand(180,HH-180)), r:Math.round(rand(18,44))});
+  for(let i=0;i<16;i++){ const vert=Math.random()<0.5; d.push({t:'wire', x:Math.round(rand(200,WW-200)), y:Math.round(rand(320,HH-320)), len:Math.round(rand(150,320)), vert}); }
+  return d;
 }
 function warPickups(WW,HH){
   if(!shootPU) return [];
@@ -6660,12 +6676,13 @@ function startBigWar(){
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=180 + (i%2)*80;
     fighters.push(mkFighter(x, y, Math.PI/2, 2, true, null)); }
   duel={ W:WW, H:HH, camX:0, camY:0, bullets:[], over:false, winner:0, overT:0, t:0, team:true, split:false, war:true, paused:false,
+    warGoal:100, score1:0, score2:0,
     fighters, humans:fighters.filter(f=>!f.bot),
-    pickups:warPickups(WW,HH), obs:makeWarObs(WW,HH) };
+    pickups:warPickups(WW,HH), obs:makeWarObs(WW,HH).concat(makeWarVehicles(WW,HH)), decals:makeWarDecals(WW,HH) };
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
-  toast('10v10 WAR — command your squad! 📻');
+  toast('10v10 WAR — first to 100 kills! 📻');
 }
 function startShootout1v2(){   // you alone vs two bots
   try{ NetIO.cleanup(); }catch(e){}
@@ -6930,7 +6947,7 @@ function drawDuelSplats(){
 }
 function teamDuelActor(f, inp, dt){
   if(f.dead) return;
-  const spd=DUEL_SPD*(f.bot?1:0.8);   // human players move 20% slower in shootout
+  const spd=DUEL_SPD*(f.bot?1:0.62);   // human players move slower in shootout
   const nx=f.x+inp.mvx*spd*dt; if(!duelBlocks(nx,f.y,DUEL_PS,DUEL_PS) && !fighterBlocks(f,nx,f.y)) f.x=nx;
   const ny=f.y+inp.mvy*spd*dt; if(!duelBlocks(f.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(f,f.x,ny)) f.y=ny;
   f.moving=!!(inp.mvx||inp.mvy); if(f.moving) f.walkT+=dt*11;
@@ -6958,8 +6975,17 @@ function teamPickups(dt){
 }
 function teamTickFlash(dt){ for(const f of duel.fighters){ if(f.flash>0)f.flash-=dt; } }
 function teamCheckOver(){
+  if(duel.war) return;   // WAR ends on the kill score, not a wipe (teams respawn)
   const a1=duel.fighters.some(f=>f.team===1&&!f.dead), a2=duel.fighters.some(f=>f.team===2&&!f.dead);
   if((!a1||!a2) && !duel.over){ duel.over=true; duel.winner=a1?1:2; duel.overT=0; Sound.over(); }
+}
+function warRespawn(f){   // drop a fighter back in at its team's line with full health
+  const band = f.team===1 ? (duel.H-240) : 200;
+  let x=rand(220, duel.W-220-DUEL_PS), y=band + rand(-70,70);
+  for(let t=0;t<50 && duelBlocks(x,y,DUEL_PS,DUEL_PS); t++){ x=rand(220,duel.W-220-DUEL_PS); y=band+rand(-70,70); }
+  f.x=x; f.y=y; f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0;
+  f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
+  f.aim = f.team===1 ? -Math.PI/2 : Math.PI/2;
 }
 function teamCam(){ if(duel.split) return; const me=duel.humans[0]; if(!me) return;
   const Z=duel.war?WAR_ZOOM:DUEL_ZOOM; duel.zoom=Z; const VW=W/Z, VH=H/Z;
@@ -6987,8 +7013,15 @@ function updateTeamDuel(dt){
   duel.t+=dt;
   for(const f of duel.fighters){
     let inp;
-    if(f.dead){   // a dead human can still fly a free spectator camera around the arena
-      if(!f.bot){ inp = (f.ctrl==='kb') ? humanDuelInputFor(f) : ctrlToInput(readController(f.ctrl));
+    if(f.dead){
+      if(duel.war && f.respawnT!=null){   // WAR: everyone respawns after 5s
+        f.respawnT-=dt;
+        if(!f.bot){ inp = (f.ctrl==='kb') ? humanDuelInputFor(f) : ctrlToInput(readController(f.ctrl));   // still fly the cam while waiting
+          f.x=clamp(f.x+(inp.mvx||0)*DUEL_SPD*1.2*dt, 0, (duel.W||DUEL_W)-DUEL_PS); f.y=clamp(f.y+(inp.mvy||0)*DUEL_SPD*1.2*dt, 0, (duel.H||DUEL_H)-DUEL_PS); }
+        if(f.respawnT<=0) warRespawn(f);
+        continue;
+      }
+      if(!f.bot){ inp = (f.ctrl==='kb') ? humanDuelInputFor(f) : ctrlToInput(readController(f.ctrl));   // spectator cam (non-war)
         f.x=clamp(f.x+(inp.mvx||0)*DUEL_SPD*1.2*dt, 0, (duel.W||DUEL_W)-DUEL_PS); f.y=clamp(f.y+(inp.mvy||0)*DUEL_SPD*1.2*dt, 0, (duel.H||DUEL_H)-DUEL_PS); }
       continue;
     }
@@ -7007,7 +7040,12 @@ function updateTeamDuel(dt){
       if(Math.abs(b.x-hx)<HR && Math.abs(b.y-hy)<HR){
         if(f._behind && bulletShielded(f,b)){ b.dead=true; break; }   // STAY BEHIND ME: a teammate's body soaks the shot
         f.hp-=1; f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
-        if(f.hp<=0){ f.dead=true; teamCheckOver(); } break; } }
+        if(f.hp<=0){ f.dead=true;
+          if(duel.war){ f.respawnT=5;   // WAR: score the kill, respawn in 5s, first to the goal wins
+            if(b.team===1) duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
+            if(!duel.over && (duel.score1>=duel.warGoal || duel.score2>=duel.warGoal)){ duel.over=true; duel.winner=duel.score1>=duel.warGoal?1:2; duel.overT=0; Sound.over(); }
+          } else teamCheckOver();
+        } break; } }
   }
   duel.bullets=duel.bullets.filter(b=>!b.dead && b.t<3);
   tickDuelBlood(dt);
@@ -7015,15 +7053,98 @@ function updateTeamDuel(dt){
   teamTickFlash(dt);
   teamCam();
 }
+function drawWarGround(x0,y0,x1,y1){
+  const T=128, cols=['#5b4d38','#544629','#5f5138','#4c3f2c'];
+  for(let y=Math.floor(y0/T)*T; y<y1; y+=T) for(let x=Math.floor(x0/T)*T; x<x1; x+=T){
+    ctx.fillStyle=cols[(((x/T)*13+(y/T)*7)&3)]; ctx.fillRect(x,y,T,T); }
+  if(duel.decals) for(const d of duel.decals){
+    if(d.x<x0-90||d.x>x1+90||d.y<y0-90||d.y>y1+90) continue;
+    if(d.t==='crater'){
+      ctx.fillStyle='#3a2f22'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.fill();
+      ctx.fillStyle='#271f16'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r*0.62,0,6.28); ctx.fill();
+      ctx.strokeStyle='#6d5b40'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.stroke();
+    } else if(d.t==='scorch'){ ctx.fillStyle='rgba(18,14,9,.5)'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.fill();
+    } else if(d.t==='wire'){ drawBarbedWire(d); }
+  }
+}
+function drawBarbedWire(d){
+  const ex=d.vert?d.x:d.x+d.len, ey=d.vert?d.y+d.len:d.y, steps=Math.max(4,Math.floor(d.len/20));
+  ctx.strokeStyle='#9aa0a8'; ctx.lineWidth=1.6; ctx.beginPath();
+  for(let i=0;i<=steps;i++){ const t=i/steps, px=d.x+(ex-d.x)*t, py=d.y+(ey-d.y)*t, off=(i%2?7:-7);
+    const wx=d.vert?px+off:px, wy=d.vert?py:py+off; if(i===0)ctx.moveTo(wx,wy); else ctx.lineTo(wx,wy); }
+  ctx.stroke();
+  // barbs
+  ctx.lineWidth=1; for(let i=1;i<steps;i+=1){ const t=i/steps, px=d.x+(ex-d.x)*t, py=d.y+(ey-d.y)*t;
+    ctx.beginPath(); ctx.moveTo(px-3,py-3); ctx.lineTo(px+3,py+3); ctx.moveTo(px+3,py-3); ctx.lineTo(px-3,py+3); ctx.stroke(); }
+  // angled end posts
+  ctx.strokeStyle='#4a3d28'; ctx.lineWidth=3;
+  for(const [ox,oy] of [[d.x,d.y],[ex,ey]]){ ctx.beginPath(); ctx.moveTo(ox-7,oy-9); ctx.lineTo(ox+7,oy+9); ctx.moveTo(ox+7,oy-9); ctx.lineTo(ox-7,oy+9); ctx.stroke(); }
+}
+function drawWarProp(o){
+  const k=o.kind||'sandbag';
+  if(k==='sandbag'){
+    ctx.fillStyle='#8a7a4e'; roundRectPath(o.x,o.y,o.w,o.h,7); ctx.fill();
+    ctx.fillStyle='rgba(255,240,200,.12)'; roundRectPath(o.x+2,o.y+2,o.w-4,Math.max(3,o.h*0.32),5); ctx.fill();
+    ctx.strokeStyle='rgba(74,63,38,.65)'; ctx.lineWidth=1.5;
+    if(o.w>=o.h){ for(let bx=o.x+16;bx<o.x+o.w-4;bx+=18){ ctx.beginPath(); ctx.moveTo(bx,o.y+2); ctx.lineTo(bx,o.y+o.h-2); ctx.stroke(); } }
+    else { for(let by=o.y+16;by<o.y+o.h-4;by+=18){ ctx.beginPath(); ctx.moveTo(o.x+2,by); ctx.lineTo(o.x+o.w-2,by); ctx.stroke(); } }
+    ctx.strokeStyle='#5f5233'; ctx.lineWidth=2; roundRectPath(o.x,o.y,o.w,o.h,7); ctx.stroke();
+  } else if(k==='crate'){
+    ctx.fillStyle='#7a5230'; ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.fillStyle='rgba(255,235,190,.14)'; ctx.fillRect(o.x+3,o.y+3,o.w-6,5);
+    ctx.strokeStyle='#3f2a14'; ctx.lineWidth=3; ctx.strokeRect(o.x+1.5,o.y+1.5,o.w-3,o.h-3);
+    ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(o.x+2,o.y+2); ctx.lineTo(o.x+o.w-2,o.y+o.h-2); ctx.moveTo(o.x+o.w-2,o.y+2); ctx.lineTo(o.x+2,o.y+o.h-2); ctx.stroke();
+  } else if(k==='rubble'){
+    ctx.fillStyle='#6f7178'; roundRectPath(o.x,o.y,o.w,o.h,4); ctx.fill();
+    ctx.strokeStyle='#44464c'; ctx.lineWidth=2; roundRectPath(o.x,o.y,o.w,o.h,4); ctx.stroke();
+    ctx.fillStyle='#5a5c63'; for(let i=0;i<5;i++){ const rx=o.x+6+((i*29)%Math.max(1,o.w-16)), ry=o.y+6+((i*19)%Math.max(1,o.h-14)); ctx.fillRect(rx,ry,10,8); }
+    ctx.strokeStyle='#3a3c40'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(o.x+4,o.y+o.h*0.42); ctx.lineTo(o.x+o.w-6,o.y+o.h*0.28); ctx.stroke();
+  } else if(k==='tank'){
+    const bw=o.w, bh=o.h, cx=o.x+bw/2, cy=o.y+bh/2;
+    ctx.fillStyle='rgba(20,22,16,.34)'; ctx.beginPath(); ctx.ellipse(cx,cy+4,bw*0.52,bh*0.46,0,0,6.28); ctx.fill();   // ground shadow
+    // tracks (left & right)
+    ctx.fillStyle='#26281d'; ctx.fillRect(o.x, o.y, bw*0.2, bh); ctx.fillRect(o.x+bw*0.8, o.y, bw*0.2, bh);
+    ctx.fillStyle='#3a3d2c'; for(let ty=o.y+4; ty<o.y+bh-6; ty+=11){ ctx.fillRect(o.x+2,ty,bw*0.2-4,6); ctx.fillRect(o.x+bw*0.8+2,ty,bw*0.2-4,6); }
+    // hull
+    ctx.fillStyle='#4b5033'; roundRectPath(o.x+bw*0.16, o.y+bh*0.1, bw*0.68, bh*0.8, 6); ctx.fill();
+    ctx.strokeStyle='#2e3220'; ctx.lineWidth=2; roundRectPath(o.x+bw*0.16, o.y+bh*0.1, bw*0.68, bh*0.8, 6); ctx.stroke();
+    // barrel (points toward the battle)
+    ctx.fillStyle='#363b24'; const bl=bh*0.62; if(o.face>0) ctx.fillRect(cx-5, cy, 10, bl); else ctx.fillRect(cx-5, cy-bl, 10, bl);
+    // turret
+    ctx.fillStyle='#565c3a'; ctx.beginPath(); ctx.arc(cx,cy,bh*0.27,0,6.28); ctx.fill();
+    ctx.strokeStyle='#2e3220'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,bh*0.27,0,6.28); ctx.stroke();
+    ctx.fillStyle='rgba(255,250,220,.12)'; ctx.beginPath(); ctx.arc(cx-3,cy-3,bh*0.13,0,6.28); ctx.fill();
+  } else if(k==='jeep'){
+    const wr=o.h*0.2;
+    ctx.fillStyle='#1a1c14'; for(const [wx,wy] of [[o.x+o.w*0.22,o.y+wr],[o.x+o.w*0.78,o.y+wr],[o.x+o.w*0.22,o.y+o.h-wr],[o.x+o.w*0.78,o.y+o.h-wr]]){ ctx.beginPath(); ctx.arc(wx,wy,wr,0,6.28); ctx.fill(); }
+    ctx.fillStyle='#5b6238'; roundRectPath(o.x+o.w*0.1, o.y+o.h*0.16, o.w*0.8, o.h*0.68, 5); ctx.fill();
+    ctx.strokeStyle='#343a20'; ctx.lineWidth=2; roundRectPath(o.x+o.w*0.1, o.y+o.h*0.16, o.w*0.8, o.h*0.68, 5); ctx.stroke();
+    ctx.fillStyle='#3f4527'; ctx.fillRect(o.x+o.w*0.3, o.y+o.h*0.32, o.w*0.4, o.h*0.36);   // open cabin
+    ctx.fillStyle='rgba(200,220,255,.22)'; ctx.fillRect(o.x+o.w*0.32, o.y+o.h*0.18, o.w*0.36, o.h*0.12);   // windshield
+  } else {   // steel hedgehog tank-trap
+    ctx.fillStyle='rgba(24,26,30,.32)'; ctx.beginPath(); ctx.ellipse(o.x+o.w/2,o.y+o.h/2,o.w*0.5,o.h*0.4,0,0,6.28); ctx.fill();
+    const cx=o.x+o.w/2, cy=o.y+o.h/2, r=Math.min(o.w,o.h)/2;
+    ctx.lineCap='round'; ctx.strokeStyle='#8c929c'; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.moveTo(cx-r,cy-r); ctx.lineTo(cx+r,cy+r); ctx.moveTo(cx+r,cy-r); ctx.lineTo(cx-r,cy+r); ctx.moveTo(cx,cy-r); ctx.lineTo(cx,cy+r); ctx.stroke();
+    ctx.strokeStyle='#5f656e'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(cx-r,cy-r); ctx.lineTo(cx+r,cy+r); ctx.moveTo(cx+r,cy-r); ctx.lineTo(cx-r,cy+r); ctx.stroke();
+    ctx.lineCap='butt';
+  }
+}
 function drawDuelSceneWorld(cx,cy,VW,VH,me){
   const x0=cx-10,y0=cy-10,x1=cx+VW+10,y1=cy+VH+10;
-  for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-    ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
-  for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+  if(duel.war){
+    drawWarGround(x0,y0,x1,y1);
+    ctx.strokeStyle='#2a2016'; ctx.lineWidth=10; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
+    for(const o of duel.obs){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue; drawWarProp(o); }
+  } else {
+    for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
+      ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
+    ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
+    for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
+      ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
+      ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+  }
   drawDuelSplats();
   for(const k of duel.pickups){ if(!k.taken) drawDuelPickup(k); }
   for(const b of duel.bullets){ ctx.fillStyle=b.team===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); }
@@ -7110,9 +7231,19 @@ function drawCommsUI(){
   ctx.restore();
 }
 function drawTeamHUD(){
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
+  if(duel.war){
+    ctx.fillStyle='#6ad06a'; ctx.font='bold 15px '+CF; ctx.fillText('YOUR TEAM  '+(duel.score1||0)+' / '+duel.warGoal, 12, 20);
+    ctx.textAlign='right'; ctx.fillStyle='#ff6b6b'; ctx.fillText((duel.score2||0)+' / '+duel.warGoal+'  ENEMY', W-12, 20);
+    ctx.shadowBlur=0;
+    const me=duel.humans[0];
+    if(me && me.dead && me.respawnT!=null){ ctx.save(); ctx.textAlign='center'; ctx.fillStyle='rgba(6,10,16,.66)'; roundRectPath(W/2-96, H*0.4-18, 192, 40, 9); ctx.fill();
+      ctx.fillStyle='#ffd14b'; ctx.font='bold 15px '+CF; ctx.fillText('RESPAWNING… '+Math.ceil(me.respawnT), W/2, H*0.4+8); ctx.restore(); }
+    if(!duel.split && me) drawTeamWeaponLine(me, 12, 46);
+    return;
+  }
   const t1=duel.fighters.filter(f=>f.team===1).length, t2=duel.fighters.filter(f=>f.team===2).length;
   const a1=duel.fighters.filter(f=>f.team===1&&!f.dead).length, a2=duel.fighters.filter(f=>f.team===2&&!f.dead).length;
-  ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
   ctx.fillStyle='#6ad06a'; ctx.font='bold 14px '+CF; ctx.fillText((t1>1?'YOUR TEAM ':'YOU ')+a1+'/'+t1, 12, 20);
   ctx.textAlign='right'; ctx.fillStyle='#ff6b6b'; ctx.fillText('ENEMY '+a2+'/'+t2, W-12, 20);
   ctx.shadowBlur=0;
@@ -7221,7 +7352,7 @@ function duelLocalInput(){
   return {mvx,mvy,aim,fire};
 }
 function duelActor(pl, inp, dt, spawn){
-  const spd=DUEL_SPD*(pl.bot?1:0.8);   // human players move 20% slower in shootout
+  const spd=DUEL_SPD*(pl.bot?1:0.62);   // human players move slower in shootout
   const nx=pl.x+inp.mvx*spd*dt; if(!duelBlocks(nx,pl.y,DUEL_PS,DUEL_PS) && !fighterBlocks(pl,nx,pl.y)) pl.x=nx;
   const ny=pl.y+inp.mvy*spd*dt; if(!duelBlocks(pl.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(pl,pl.x,ny)) pl.y=ny;
   pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving) pl.walkT+=dt*11;
