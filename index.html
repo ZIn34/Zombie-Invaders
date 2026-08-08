@@ -2458,7 +2458,7 @@ function exploreFire(p){
   let vx=0,vy=-1;
   const mz=explorePlayerMuzzle(p);
   let cx=mz.x, cy=mz.y;
-  if(explore && explore.defense) cx-=30;   // defense: bullet exits 30px to the left
+  if(explore && explore.defense){ cx-=30; if(equippedSkin && equippedSkin!=='default') cx-=30; }   // defense: bullet exits 30px left (pixel soldiers: another 30px left)
   // always shoot exactly where the player is aiming — no auto-targeting
   if(p.aim!=null){ vx=Math.cos(p.aim); vy=Math.sin(p.aim); }
   const sp=740;
@@ -3206,8 +3206,7 @@ function updateDefense(dt){
     const pcx=player.x+player.w/2, pcy=player.y+player.h/2;
     if(Math.hypot(pcx-ex.flag.x, pcy-ex.flag.y) < ex.flag.r+24){
       ex.m7phase='survive'; ex.crystalsPlanted=true; ex.surviveToSpawn=200; ex.surviveSpawnT=0.2;
-      zombies=[]; ex.bosses=[];   // clear the field so the 200-strong swarm is the finale
-      Sound.power(); shake(16,.45); toast('20 CRYSTALS PLANTED — HERE COMES THE SWARM! ⚡');
+      Sound.power(); shake(16,.45); toast('20 CRYSTALS PLANTED — HERE THEY COME! ⚡');   // keep the current zombies, just pile 200 more on
     }
   }
   // Mission 7 survive phase: stream in 200 zombies from all sides; they rush the crystal and get zapped
@@ -3454,7 +3453,7 @@ function drawDefenseUI(ex){
     let msg=null, col='#8fd0ff';
     if(ex.m7phase==='build') msg='BUILD THE PLASMA ORB — '+ex.kills+' / 1000 KILLS';
     else if(ex.m7phase==='plant'){ msg='⚡ STAND ON THE ORB TO PLANT THE 20 CRYSTALS ⚡'; col='#ffe14b'; }
-    else if(ex.m7phase==='survive'){ const left=ex.surviveToSpawn+zombies.filter(z=>z.alive).length; msg='SURVIVE THE SWARM — '+left+' LEFT'; col='#ff9a6a'; }
+    else if(ex.m7phase==='survive'){ const left=ex.surviveToSpawn+zombies.filter(z=>z.alive).length; msg='ZOMBIES LEFT — '+left; col='#ff9a6a'; }
     if(msg){ ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='bold 14px '+CF;
       const w=ctx.measureText(msg).width+28; ctx.fillStyle='rgba(8,14,22,.8)'; roundRectPath(W/2-w/2, 92, w, 26, 8); ctx.fill();
       ctx.fillStyle=col; ctx.fillText(msg, W/2, 106); ctx.restore(); }
