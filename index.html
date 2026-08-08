@@ -1338,16 +1338,26 @@ function makePlayer(){
     cd:0, weapon:'gun', // gun | spread | laser
     weaponT:0, rapidT:0, shieldT:0, invuln:0,
     walkT:0, moving:false,
-    ammo:5, ammoRegen:0,
+    ammo:7, ammoRegen:0, reloadT:0, killAcc:0,
     fireCut:0, permRapid:false, permSpread:false, shieldBonus:0,
     face:'🪖'
   };
   if(mode==='campaign'){ p.fireCut=(upg.firerate||0)*0.035;  // TRIGGER SPEED upgrade
-    p.ammo += (upg.ammocap||0)*4;                            // AMMO CAPACITY upgrade (+4 each)
     if(campaignMission>=3) p.permRapid=true;                 // Mission 4 onward: keep the RIFLE power-up
   }
   return p;
 }
+// ---- universal 7-round MAGAZINE (all modes except shootout, which has its own) ----
+// p.ammo is the current magazine; when empty it auto-reloads at shootout speed, and every 2 kills grants a full mag.
+const MAG_SIZE=7, MAG_RELOAD=1.6;
+function magReload(p, dt){
+  if(!p) return;
+  if(p.reloadT>0){ p.reloadT-=dt; if(p.reloadT<=0){ p.reloadT=0; p.ammo=MAG_SIZE; } }   // reload finished → full mag
+  else if(p.ammo<=0){ p.reloadT=MAG_RELOAD; if(Sound.reload) Sound.reload(); }            // empty → start reload
+  if(p.ammo>MAG_SIZE) p.ammo=MAG_SIZE;                                                    // cap at one magazine
+}
+function magKill(p){ if(!p) return; p.killAcc=(p.killAcc||0)+1; if(p.killAcc>=2){ p.killAcc=0; p.ammo=MAG_SIZE; p.reloadT=0; } }  // every 2 kills → full mag
+function magText(p){ return (p&&p.reloadT>0) ? 'RELOAD' : (''+((p&&p.ammo)||0)); }
 
 /* ============================ ZOMBIES ================================= */
 // types: walker, runner, brute, spitter, boss
@@ -1841,8 +1851,7 @@ function updatePlay(dt){
   if(p.recoil>0) p.recoil-=dt*7;   // shooting recoil eases back
 
 // ---- ammo regen: +1 every 2 seconds ----
-  p.ammoRegen += dt;
-  if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
+  magReload(p, dt);
   // ---- shooting (costs 1 ammo) ----
   const wantFire = keys['Space']||touch.fire;
   const fireRate = Math.max(0.08, ((p.rapidT>0||p.permRapid)?0.11:0.28) - (p.fireCut||0));
@@ -1892,7 +1901,6 @@ function updatePlay(dt){
       if(rectHit(b, boss)){
         // boss is damageable the whole way down — you can shoot it constantly from the moment it appears
         boss.hp -= b.dmg||1; boss.flash=0.13;
-        if(player) player.ammo=Math.min(99,player.ammo+1); // +1 ammo per boss hit
         if(mode==='coop' && coop){ coop.bossHits=(coop.bossHits||0)+1;
           if(coop.advanced && coop.bossHits%5===0) dropPower(b.x, boss.y+boss.h*0.5); }  // reward every 5 boss hits
         spawnBlood(b.x,b.y,'#8a1220',8,140,settings.bloodBoss);      // blood spray
@@ -2057,7 +2065,7 @@ function killBoss(){
 function killZombie(z){
   z.alive=false; z.dying=true; z.deadT=0;
   // +2 ammo reward. In co-op the reward is granted at the bullet-hit site (to whoever's shot killed it), so skip here.
-  if(player && !codef && !(explore&&explore.coop)) player.ammo=Math.min(99,player.ammo+2);
+  if(player && !codef && !(explore&&explore.coop)) magKill(player);
   if(mode==='campaign' && !replaying){ coins++; coinsThisMission++; } // +1 coin per kill (not on replays)
   if(mode==='coop' && coop){ coop.killed++;
     if(coop.advanced && coop.killed%3===0) dropPower(z.x+z.w/2, z.y+z.h/2); }  // reward every 3 kills
@@ -2149,7 +2157,7 @@ function applyPower(type){
   switch(type){
     case 'rapid': p.rapidT=7; p.weapon='gun'; p.weaponT=0; break;      // cancels spread
     case 'spread': p.weapon='spread'; p.weaponT=10; p.rapidT=0; break; // cancels rapid
-    case 'ammo': p.ammo=Math.min(99,p.ammo+10); break; // +10 shots
+    case 'ammo': p.ammo=MAG_SIZE; p.reloadT=0; break; // refill the magazine
     case 'shield': p.shieldT=8+(p.shieldBonus||0); break;
     case 'life': lives=Math.min(7,lives+1); break; // max 7 hearts
     case 'nuke':
@@ -2210,7 +2218,7 @@ function updateChase(dt){
   if(p.invuln>0) p.invuln-=dt;
   if(p.cd>0) p.cd-=dt;
   if(p.recoil>0) p.recoil-=dt*7;
-  p.ammoRegen+=dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
+  magReload(p, dt);
   // movement
   let mvx=0,mvy=0;
   if(keys['ArrowLeft']||keys['KeyA']) mvx-=1;
@@ -2275,7 +2283,6 @@ function updateChase(dt){
     if(b.dead) continue;
     if(boss && !boss.dead && rectHit(b,boss)){
       boss.hp-=b.dmg||1; boss.flash=0.13;
-      if(p) p.ammo=Math.min(99,p.ammo+1);   // +1 ammo per boss hit (same as the normal fight)
       if(mode==='coop' && coop){ coop.bossHits=(coop.bossHits||0)+1;
         if(coop.advanced && coop.bossHits%5===0) dropPower(b.x, boss.y+boss.h*0.5); }
       spawnBlood(b.x,b.y,'#8a1220',8,140,settings.bloodBoss); spawnBlood(b.x,b.y,'#b01a26',5,180,settings.bloodBoss);
@@ -2383,7 +2390,7 @@ function updateExplore(dt){
     ex.reached=true; Sound.power(); shake(8,.3); toast('OPEN FIRE — CLEAR THEM ALL!');
   }
   // ammo regenerates once you can fire
-  if(ex.reached){ p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); } }
+  magReload(p, dt);
   // AIM: aim stick or a screen tap points the soldier (no auto-targeting)
   if(ex.reached){
     const manual=aimAngleFromInput(p, ex);
@@ -2486,7 +2493,7 @@ function updateCrystalRun(dt){
   // aim + fire the WHOLE time (rifle)
   const manual=aimAngleFromInput(p, ex);
   if(manual!=null){ p.aim=manual; p.aimManual=true; } else p.aimManual=false;
-  p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=1){ p.ammoRegen-=1; p.ammo=Math.min(999,p.ammo+1); }
+  magReload(p, dt);
   const wantFire=keys['Space']||touch.fire||touch.aimActive||tapAim.active;
   const fireRate=Math.max(0.07, 0.10-(p.fireCut||0));   // rifle rapid fire
   if(wantFire && p.cd<=0){ if(p.ammo>0){ exploreFire(p); p.ammo--; p.cd=fireRate; } else { Sound.empty(); p.cd=0.2; } }
@@ -2612,7 +2619,7 @@ function updateEndless(dt){
   ex.zoom=EXPLORE_ZOOM; const VW=W/ex.zoom, VH=H/ex.zoom;
   ex.camX=p.x+p.w/2-VW/2; ex.camY=p.y+p.h/2-VH/2;
   // ammo regen
-  p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
+  magReload(p, dt);
   // aim: manual stick / screen tap only — no auto-targeting (keep last aim when idle)
   { const manual=aimAngleFromInput(p, ex);
     if(manual!=null){ p.aim=manual; p.aimManual=true; }
@@ -2696,7 +2703,7 @@ function openCoopActor(pl, inp, dt){
   endlessMove(pl, inp.mvx||0, inp.mvy||0, dt, pl.speed);
   pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving)pl.walkT+=dt*11;
   if(inp.aim!=null){ pl.aim=inp.aim; pl.aimManual=true; } else pl.aimManual=false;
-  pl.ammoRegen=(pl.ammoRegen||0)+dt; if(pl.ammoRegen>=2){ pl.ammoRegen-=2; pl.ammo=Math.min(99,pl.ammo+1); }
+  magReload(pl, dt);
   const fireRate=Math.max(0.08,((pl.rapidT>0||pl.permRapid)?0.11:0.28)-(pl.fireCut||0));
   if(inp.fire && pl.cd<=0){ if(pl.ammo>0){ exploreFire(pl); pl.ammo--; pl.cd=(pl.weapon==='spread')?fireRate*2.9:fireRate; } else { Sound.empty(); pl.cd=0.25; } }
 }
@@ -2744,7 +2751,7 @@ function updateOpenCoop(dt){
     for(const z of zombies){ if(!z.alive) continue;
       if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(z.hp<=0){ killZombie(z); if(b.owner) b.owner.ammo=Math.min(99,b.owner.ammo+2); score+=10; ex.kills++; } break; } } }
+        if(z.hp<=0){ killZombie(z); if(b.owner) magKill(b.owner); score+=10; ex.kills++; } break; } } }
   bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.3 && hs.some(pl=>Math.hypot(b.x-(pl.x+pl.w/2),b.y-(pl.y+pl.h/2))<Math.hypot(W,H)/1.3));
   // power-up pickups — apply to whichever player grabs it
   for(const pu of powerups){ pu.t=(pu.t||0)+dt;
@@ -2796,7 +2803,7 @@ function drawOpenCoopHalfHUD(hv){
   ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.85)'; ctx.shadowBlur=3;
   ctx.fillStyle=hv.col; ctx.font='bold 13px '+CF; ctx.fillText(hv.tag+'  ♥'+Math.max(0,pl.lives||0), bx, by);
   ctx.fillStyle=pl.ammo<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF;
-  const atxt=''+pl.ammo; ctx.fillText(atxt, bx+72, by); drawWeaponAmmoIcon(pl, bx+52, by-6);
+  const atxt=magText(pl); ctx.fillText(atxt, bx+72, by); drawWeaponAmmoIcon(pl, bx+52, by-6);
   if(pl.shieldT>0){ ctx.fillStyle='#5dff6a'; ctx.fillText('🛡', bx+100, by); }
   ctx.shadowBlur=0;
 }
@@ -2827,7 +2834,7 @@ function drawEndlessUI(ex){
   ctx.textAlign='right'; ctx.textBaseline='alphabetic';
   for(let i=0;i<lives;i++) drawHeart(W-22-i*24,20,9, performance.now()/300+i*0.5);
   ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3; ctx.font='bold 15px '+CF;
-  ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 46);
+  ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt=magText(player); ctx.fillText(atxt, W-14, 46);
   drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 41); ctx.shadowBlur=0;
   ctx.textAlign='left';
   ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
@@ -2987,7 +2994,7 @@ function updateDefense(dt){
   ex.camX=clamp(p.x+p.w/2-VW/2, -DEF_HALF-30, DEF_HALF-VW+30);
   ex.camY=clamp(p.y+p.h/2-VH/2, -DEF_HALF-30, DEF_HALF-VH+30);
   // ammo regen
-  p.ammoRegen=(p.ammoRegen||0)+dt; if(p.ammoRegen>=2){ p.ammoRegen-=2; p.ammo=Math.min(99,p.ammo+1); }
+  magReload(p, dt);
   // aim: stick / tap only — no auto-targeting (keep last aim when idle)
   { const manual=aimAngleFromInput(p, ex);
     if(manual!=null){ p.aim=manual; p.aimManual=true; }
@@ -3163,7 +3170,7 @@ function drawDefenseUI(ex){
   ctx.textAlign='right'; ctx.textBaseline='alphabetic';
   for(let i=0;i<lives;i++) drawHeart(W-22-i*24,20,9, performance.now()/300+i*0.5);
   ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3; ctx.font='bold 15px '+CF;
-  ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 66);
+  ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b'; const atxt=magText(player); ctx.fillText(atxt, W-14, 66);
   drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 61); ctx.shadowBlur=0;
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
   ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 66);
@@ -3253,7 +3260,7 @@ function drawExploreUI(ex){
   if(ex.reached && player){
     ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
     ctx.font='bold 15px '+CF; ctx.fillStyle=player.ammo<=2?'#ff5b5b':'#ffe14b';
-    const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 44); ctx.shadowBlur=0;
+    const atxt=magText(player); ctx.fillText(atxt, W-14, 44); ctx.shadowBlur=0;
     drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 39);
   }
   ctx.textAlign='center'; ctx.font='bold 14px '+CF; ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=4;
@@ -3278,7 +3285,7 @@ function drawCrystalRunUI(ex){
   // ammo (rifle, always firing)
   if(player){ ctx.textAlign='right'; ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
     ctx.font='bold 15px '+CF; ctx.fillStyle=player.ammo<=4?'#ff5b5b':'#ffe14b';
-    const atxt=''+player.ammo; ctx.fillText(atxt, W-14, 44); drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 39); ctx.shadowBlur=0; }
+    const atxt=magText(player); ctx.fillText(atxt, W-14, 44); drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 39); ctx.shadowBlur=0; }
   // objective banner + distance
   const dist=Math.round(Math.hypot((player.x+player.w/2)-m.x, (player.y+player.h/2)-m.y));
   ctx.textAlign='center'; ctx.font='bold 14px '+CF; ctx.shadowColor='rgba(0,0,0,.8)'; ctx.shadowBlur=4;
@@ -3734,7 +3741,7 @@ function drawZombies(){
         // size/position pop when it toggles walk↔attack, using each frame's own aspect so reaching arms aren't squished
         // soldier-zombie attack frames carry padding for the wide arm swing → its body sits small, so scale ~2× to read walk-sized
         const boxAsp = (iah? iaw/iah : 1);
-        const s = z.w*1.55*(equippedZombieSkin==='pale'?2.0:1), r = Math.sqrt(boxAsp);
+        const s = z.w*1.55*(equippedZombieSkin==='pale'?1.0:1), r = Math.sqrt(boxAsp);
         dhA = s/r; dwA = s*r; topY = -dhA;
       } else {
         // every walk frame at the SAME visual size (constant area), in a box shaped to THIS skin's
@@ -4012,7 +4019,7 @@ function drawHUD(){
     ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=3;
     ctx.font='bold 15px "Comic Sans MS","Comic Neue",system-ui,sans-serif';
     ctx.fillStyle = p.ammo<=2 ? '#ff5b5b' : '#ffe14b';
-    const atxt=''+p.ammo; ctx.fillText(atxt, W-14, 44);
+    const atxt=magText(p); ctx.fillText(atxt, W-14, 44);
     ctx.shadowBlur=0;
     drawWeaponAmmoIcon(p, W-16-ctx.measureText(atxt).width-11, 39);
   }
@@ -5511,7 +5518,7 @@ function netShowResults(){ if(!net) return; net.ended=true; state=STATE.NETRESUL
 
 /* ===================== ONLINE SHOOTOUT (1v1 duel, large map) ===================== */
 let duel=null;
-const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.22, DUEL_BSPD=640, DUEL_PS=44;
+const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.22, DUEL_BSPD=1280, DUEL_PS=44;
 const DUEL_ZOOM=0.85;   // slight zoom-out for a wider view
 const DUEL_MAG=7, DUEL_RELOAD=1.6;   // pistol: 7 shots per magazine, then a reload
 const DUEL_OBS=[   // walls & crates — block both movement AND bullets; spawns & pickup spots kept clear
@@ -5568,7 +5575,7 @@ function netStartCoopDefense(){
   p1.x=-70; p1.y=110; p1.aim=null; p1.ammo=14;
   p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14;
   codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
-    cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:30, ammoRegen:0, killLimit:defKillLimit,
+    cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:7, ammoRegen:0, reloadT:0, killAcc:0, killLimit:defKillLimit,
     flag:(function(){ const fh=Math.round(700*DIFF[difficulty].flagHp); return {x:0,y:0,r:46,hp:fh,hpMax:fh}; })(),
     turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
   codef.meKey =(net.role==='host')?'p1':'p2';
@@ -5640,7 +5647,7 @@ function coopTouch(z, pl){
 function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turrets, bullets)
   const cd=codef, f=cd.flag;
   // shared ammo pool slowly refills for the team (no cap)
-  cd.ammoRegen=(cd.ammoRegen||0)+dt; if(cd.ammoRegen>=1.3){ cd.ammoRegen-=1.3; cd.ammo=(cd.ammo||0)+1; }
+  magReload(cd, dt);
   cd.spawnT-=dt; if(cd.spawnT<=0){ coopSpawn(Math.min(6, Math.round((2+Math.floor(cd.elapsed/22))*DIFF[difficulty].spawn))); cd.spawnT=Math.max(0.5, 1.6-cd.elapsed*0.02)/DIFF[difficulty].spawn; }
   const maxBosses = cd.kills>=1000 ? 3 : 1;
   if(cd.bosses.length<maxBosses && cd.kills>=cd.bossMark){ coopSpawnBoss(); cd.bossMark+=20; }
@@ -5662,7 +5669,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     z.face=Math.atan2(dy,dx);
     let slow=1;
     if(cd.spikes) for(const sp of cd.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
-    if(z.hp<=0){ killZombie(z); cd.kills++; cd.ammo=(cd.ammo||0)+1; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); continue; }
+    if(z.hp<=0){ killZombie(z); cd.kills++; magKill(cd); cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); continue; }
     let attacked=false;
     if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
     else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true);
@@ -5697,7 +5704,6 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     let hitBoss=false;
     for(const bo of cd.bosses){ if(bo.dead) continue;
       if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=b.dmg||1; bo.flash=0.12; Sound.zHit();
-        cd.ammo=(cd.ammo||0)+1;   // +1 shared ammo per boss hit (player or turret)
         spawnBlood(b.x,b.y,'#7a0f1a',6,120,basicBloodMul()); if(!b.pierce)b.dead=true;
         if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; Sound.kill(); toast('BOSS DOWN! +$45'); coopCheckWin(); }
         hitBoss=true; break; } }
@@ -5705,7 +5711,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     for(const z of zombies){ if(!z.alive) continue;
       if(rectHit(b,{x:z.x,y:z.y,w:z.w,h:z.h})){ z.hp-=b.dmg||1; z.flash=0.14; Sound.zHit();
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
-        if(z.hp<=0){ killZombie(z); cd.ammo=(cd.ammo||0)+2; cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); } break; } } }
+        if(z.hp<=0){ killZombie(z); magKill(cd); cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); } break; } } }
   bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
   cd.bosses=cd.bosses.filter(bo=>!bo.dead);
   zombies=zombies.filter(z=> z.alive || z.dying);
@@ -5808,7 +5814,7 @@ function startLocalCoop(){
   p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14; p2.buildSel=0; p2.lives=3; p2.down=false;
   const fh=Math.round(700*DIFF[difficulty].flagHp);
   codef={ defense2:true, local:true, paused:false, camX:0, camY:0, zoom:EXPLORE_ZOOM, elapsed:0, kills:0, spawnT:1.0,
-    cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:30, ammoRegen:0, killLimit:defKillLimit,
+    cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:7, ammoRegen:0, reloadT:0, killAcc:0, killLimit:defKillLimit,
     flag:{x:0,y:0,r:46,hp:fh,hpMax:fh},
     turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
   player=codef.p1; explore=codef;
