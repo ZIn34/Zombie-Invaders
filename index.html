@@ -5866,6 +5866,18 @@ function separateFighters(){
     }
   }
 }
+// is a bullet heading for fighter f blocked by a living teammate standing in its incoming line? (used for STAY BEHIND ME)
+function bulletShielded(f, b){
+  if(!duel||!duel.fighters) return false;
+  const fx=f.x+DUEL_PS/2, fy=f.y+DUEL_PS/2, vl=Math.hypot(b.vx,b.vy)||1, inx=-b.vx/vl, iny=-b.vy/vl;   // toward the shooter
+  for(const g of duel.fighters){ if(g===f||g.dead||g.team!==f.team) continue;
+    const rx=(g.x+DUEL_PS/2)-fx, ry=(g.y+DUEL_PS/2)-fy, along=rx*inx+ry*iny;   // distance toward the shooter
+    if(along<=0 || along>150) continue;                                        // teammate must be on the shooter side, close
+    const perp=Math.abs(rx*(-iny)+ry*inx);                                     // lateral offset from the bullet's path
+    if(perp < DUEL_PS*0.62) return true;                                       // their body covers the line → shot absorbed
+  }
+  return false;
+}
 // solid body collision between fighters — you can't walk through the enemy (or a teammate) and they can't walk through you
 function fighterBlocks(self, x, y){
   if(!duel) return false;
@@ -6680,7 +6692,7 @@ function duelAvoid(f, dx, dy){
 // The ally also calls out what it's doing to the player.
 function teamAI(f, dt){
   const D=difficulty;
-  f._holding=false;
+  f._holding=false; f._behind=false;
   const enemies=duel.fighters.filter(g=>!g.dead && g.team!==f.team);
   if(!enemies.length) return {mvx:0,mvy:0,aim:f.aim,fire:false};
   const human = duel.humans && duel.humans.find(h=>!h.dead && h.team===f.team && h!==f);
@@ -6708,10 +6720,11 @@ function teamAI(f, dt){
         base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<1000 && !teamLineBlocked(f,foe)); action='coverme'; }
       else if(cmd==='retreat'){ base.mvx=-fx/fd*1.6+dx/dd*0.6; base.mvy=-fy/fd*1.6+dy/dd*0.6; base.fire=(fd<700 && !teamLineBlocked(f,foe)); action='regroup'; }   // fall back away from the enemy, toward you (fighting retreat)
       else if(cmd==='behind'){   // hide behind the player — use them as a shield, keep yourself safe
+        f._behind=true;
         const ux2=(mate.x-foe.x), uy2=(mate.y-foe.y), ul2=Math.hypot(ux2,uy2)||1;   // enemy → player direction
-        const spotX=mate.x+ux2/ul2*66, spotY=mate.y+uy2/ul2*66;                      // 66px behind the player, away from the enemy
+        const spotX=mate.x+ux2/ul2*58, spotY=mate.y+uy2/ul2*58;                      // tuck in right behind the player, away from the enemy
         const tx=spotX-f.x, ty=spotY-f.y, td=Math.hypot(tx,ty)||1;
-        if(td>18){ base.mvx=tx/td*1.9; base.mvy=ty/td*1.9; } else { base.mvx=0; base.mvy=0; f._holding=true; }
+        if(td>16){ base.mvx=tx/td*2.0; base.mvy=ty/td*2.0; } else { base.mvx=0; base.mvy=0; f._holding=true; }
         base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<800 && !teamLineBlocked(f,foe)); action='stick'; }
       else if(cmd==='coverme'){   // go to the NEAREST cover, then suppress the enemy's last-known spot
         const cov=duelCoverSpot(f, foe, false);
@@ -6954,7 +6967,9 @@ function updateTeamDuel(dt){
     if(duelBlocks(b.x-2,b.y-2,4,4)){ b.dead=true; continue; }
     for(const f of duel.fighters){ if(f.dead||f.team===b.team) continue;
       const hx=f.x+DUEL_PS/2, hy=f.y+DUEL_PS/2, HR=26;
-      if(Math.abs(b.x-hx)<HR && Math.abs(b.y-hy)<HR){ f.hp-=1; f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
+      if(Math.abs(b.x-hx)<HR && Math.abs(b.y-hy)<HR){
+        if(f._behind && bulletShielded(f,b)){ b.dead=true; break; }   // STAY BEHIND ME: a teammate's body soaks the shot
+        f.hp-=1; f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
         if(f.hp<=0){ f.dead=true; teamCheckOver(); } break; } }
   }
   duel.bullets=duel.bullets.filter(b=>!b.dead && b.t<3);
