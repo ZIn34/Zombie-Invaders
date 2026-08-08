@@ -523,7 +523,11 @@ function canvasTap(p, pid){
     if(inRect(p, backBtn)) state=defPendingCoop?STATE.SPLITPICK:STATE.PLAYPICK;
     else if(inRect(p, defLeaderBtn)) enterLeader(defPendingCoop?'coopdef':'defense', STATE.DEFSETUP);
     else if(inRect(p, defStartBtn)){ if(defPendingCoop) startLocalCoop(); else setupDefense(); }
-    else { for(const bl of defLimitBtns){ if(inRect(p,bl)){ defKillLimit=bl.v; Sound.hit(); break; } }
+    else { for(const bl of defLimitBtns){ if(inRect(p,bl)){
+             if(bl.custom){ try{ const cur=defKillLimit>0?defKillLimit:100;
+               const raw=(window.prompt('Type the number of kills to win:', cur)||'').replace(/[^0-9]/g,'');
+               const n=parseInt(raw,10); if(n>0){ defKillLimit=Math.max(1,Math.min(100000,n)); Sound.hit(); } }catch(e){} }
+             else { defKillLimit=bl.v; Sound.hit(); } break; } }
            for(const db of diffBtns){ if(inRect(p,db)){ difficulty=db.d; saveSettings(); Sound.hit(); break; } } }
   } else if(state===STATE.LEADER){
     if(inRect(p, backBtn)) state=lbBackState;
@@ -2968,7 +2972,7 @@ function doBuild(ctx2, pl, type, isCoop){
     if(ctx2.turrets.some(hit)||ctx2.walls.some(hit)||ctx2.spikes.some(hit)){ toast('NO ROOM'); Sound.empty(); return; }
   } else {
     if(blocks(x0,y0,size,size)){ toast('NO ROOM'); Sound.empty(); return; }
-    if(ctx2.turrets.some(hit)||ctx2.spikes.some(hit)){ toast('NO ROOM'); Sound.empty(); return; }
+    if(ctx2.turrets.some(hit)||ctx2.walls.some(hit)||ctx2.spikes.some(hit)){ toast('NO ROOM'); Sound.empty(); return; }
   }
   ctx2.cash-=spec.cost;
   if(spec.kind==='turret') ctx2.turrets.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:0,range:spec.range,fireCd:spec.fireCd,dmg:spec.dmg,tier:(type==='turret2'?2:1),aim:ang,cost:spec.cost});
@@ -4481,7 +4485,7 @@ function wrapLines(text, maxW, font){
   return lines;
 }
 let tutT=0, tutPage=0;
-const TUT_PAGES=6;
+const TUT_PAGES=8;
 function tutArrow(x1,y1,x2,y2,col,wid){
   ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=wid||2.6; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
@@ -4576,6 +4580,25 @@ function tutIllo(page, bx,by,bw,bh){
     ctx.fillStyle='rgba(255,255,255,.5)'; ctx.font='9px '+CF; ctx.textAlign='center';
     ctx.fillText('MOVE', bx+28, gY+2); ctx.fillText('AIM', bx+bw-28, gY+2);
   } else if(page===4){
+    // defense: wall, turret, flag, zombie approaching
+    ctx.fillStyle='#7c6a44'; roundRectPath(bx+bw*0.20-15, gY-26, 30, 26, 4); ctx.fill();
+    ctx.strokeStyle='#5a4c30'; ctx.lineWidth=2; roundRectPath(bx+bw*0.20-15, gY-26, 30, 26, 4); ctx.stroke();
+    const txx=bx+bw*0.48;
+    ctx.fillStyle='#4a5666'; roundRectPath(txx-15, gY-26, 30, 26, 5); ctx.fill();
+    ctx.strokeStyle='#2f3742'; roundRectPath(txx-15, gY-26, 30, 26, 5); ctx.stroke();
+    ctx.fillStyle='#7d8a9c'; ctx.fillRect(txx-3, gY-42, 6, 18);
+    const fxx=bx+bw*0.74;
+    ctx.strokeStyle='#cfd6dd'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(fxx, gY); ctx.lineTo(fxx, gY-48); ctx.stroke();
+    ctx.fillStyle='#e0483a'; ctx.beginPath(); ctx.moveTo(fxx, gY-48); ctx.lineTo(fxx+22, gY-42); ctx.lineTo(fxx, gY-34); ctx.closePath(); ctx.fill();
+    tutZombie(bx+bw*0.36, by+40, 26);
+  } else if(page===5){
+    // shootout: two soldiers face off with cover between them
+    tutPlayer(bx+bw*0.24, gY, 44);
+    ctx.save(); ctx.translate(bx+bw*0.76, gY); ctx.scale(-1,1); tutPlayer(0, 0, 44); ctx.restore();
+    ctx.fillStyle='#5b6470'; roundRectPath(cx-17, gY-36, 34, 36, 5); ctx.fill();
+    ctx.strokeStyle='#3f4650'; ctx.lineWidth=2; roundRectPath(cx-17, gY-36, 34, 36, 5); ctx.stroke();
+    ctx.fillStyle='#ffe14b'; ctx.fillRect(bx+bw*0.38, gY-30, 11, 4); ctx.fillRect(bx+bw*0.54, gY-30, 11, 4);
+  } else if(page===6){
     // store: soldier, equipped zombie icon, a coin, a music note
     tutPlayer(bx+bw*0.30, gY, 48);
     drawZombieIcon(bx+bw*0.58, by+bh*0.5, 40);
@@ -4619,16 +4642,16 @@ function drawTutorial(){
     section('#9fe27f','✦ MOVE',
       'Drag the left joystick (or use WASD / arrow keys) to move anywhere on the field.');
     section('#9fe27f','✦ SHOOT',
-      'Hold FIRE (or Space) to shoot straight up. A basic zombie takes 2 hits. Killing zombies earns coins.');
-    section('#ffd24a','✦ AMMO',
-      'You start with 5 shots and regain them over time and per kill — watch the counter, top-right.');
+      'Hold FIRE (or Space) to shoot. A basic zombie takes 2 hits. Killing zombies earns coins.');
+    section('#ffd24a','✦ MAGAZINE',
+      'You carry a 7-round magazine. Empty it and it reloads automatically, and every 2 kills instantly snaps in a full mag. The counter (top-right) shows RELOAD while reloading.');
   } else if(tutPage===1){
     ctx.textAlign='center'; ctx.fillStyle='#ffd24a'; ctx.font='bold 15px '+CF;
     ctx.fillText('WIRE & POWER-UPS', W/2, 254);
     section('#9fe27f','✦ BARBED WIRE',
       'Wire blocks YOU until it is torn — but your bullets pass right through it to hit the horde.');
     section('#ffd24a','✦ POWER-UP CRATES',
-      'Crates drop in — grab them: RIFLE rapid fire, SHOTGUN spread, SHIELD, HEART +1 life, AMMO +10, AIR STRIKE clears the screen. The ammo icon shows your current gun.');
+      'Crates drop in — grab them: RIFLE rapid fire, SHOTGUN spread, SHIELD, HEART +1 life, AMMO refill, AIR STRIKE clears the screen. The ammo icon shows your current gun.');
   } else if(tutPage===2){
     ctx.textAlign='center'; ctx.fillStyle='#ff7a7a'; ctx.font='bold 15px '+CF;
     ctx.fillText('THE BOSS & THE CHASE', W/2, 254);
@@ -4640,16 +4663,30 @@ function drawTutorial(){
     ctx.textAlign='center'; ctx.fillStyle='#9fe27f'; ctx.font='bold 15px '+CF;
     ctx.fillText('CAMPAIGN & OPEN WORLD', W/2, 254);
     section('#9fe27f','✦ MISSIONS',
-      'Play the story in CAMPAIGN — clear each mission to unlock the next, and spend coins in the ARMORY between missions on armor, fire rate, ammo and more.');
-    section('#ffd24a','✦ TWIN-STICK HUNT',
-      'Open-world missions use TWO sticks: LEFT to move, RIGHT to aim & fire. Reach the glowing crystal marker first — then clear every zombie on screen.');
+      'Play the story in CAMPAIGN — clear each mission to unlock the next, and spend coins in the ARMORY between missions on armor, fire rate and more.');
+    section('#ffd24a','✦ OPEN WORLD',
+      'Endless twin-stick roaming: LEFT stick moves, RIGHT stick aims & fires. Roam freely and survive as long as you can.');
   } else if(tutPage===4){
+    ctx.textAlign='center'; ctx.fillStyle='#7fd0ff'; ctx.font='bold 15px '+CF;
+    ctx.fillText('DEFENSE', W/2, 254);
+    section('#7fd0ff','✦ PROTECT THE FLAG',
+      'Hold off the horde and keep the flag alive. Earn cash from kills and spend it on the build bar up top: TURRETS shoot for you, WALLS block zombies, SPIKES hurt them. Builds can’t be stacked on the same spot; stand next to one and pick SELL to refund it.');
+    section('#9fe27f','✦ WIN OR ENDLESS',
+      'Choose ENDLESS, or TYPE a kill target to win at. Play solo or 2-player co-op — each difficulty has its own leaderboard.');
+  } else if(tutPage===5){
+    ctx.textAlign='center'; ctx.fillStyle='#c58bff'; ctx.font='bold 15px '+CF;
+    ctx.fillText('SHOOTOUT', W/2, 254);
+    section('#c58bff','✦ TWIN-STICK DUELS',
+      'A gunfight on a big map with cover to hide behind. Play 1v1, 2v2 or 1v2 against tactical bots — or a friend in 2-PLAYER SPLIT.');
+    section('#ffd24a','✦ GUNS & MAGS',
+      'Your pistol holds 7 rounds and reloads when empty. Grab SHOTGUN and RIFLE crates for more firepower, and toggle POWER-UPS on or off before the match.');
+  } else if(tutPage===6){
     ctx.textAlign='center'; ctx.fillStyle='#ffd24a'; ctx.font='bold 15px '+CF;
     ctx.fillText('STORE & SETTINGS', W/2, 254);
     section('#ffd24a','✦ STORE',
-      'Spend the coins you earn on new looks — soldier skins, zombie skins and a boss skin. Your equipped zombie even shows up in the online menus.');
+      'Spend coins on new looks — soldier skins plus the BASIC, SOLDIER and PIXEL zombie skins. Your equipped zombie even shows up in the online menus.');
     section('#7fd0ff','✦ SETTINGS',
-      'Toggle screen shake, blood, and the ♪ MUSIC on or off. Press M any time to mute everything.');
+      'Toggle screen shake, blood and ♪ MUSIC. Remap every controller button under BUTTONS — the right stick always aims. Press M any time to mute.');
   } else {
     ctx.textAlign='center'; ctx.fillStyle='#5dff8a'; ctx.font='bold 15px '+CF;
     ctx.fillText('PLAY ONLINE', W/2, 254);
@@ -5282,7 +5319,7 @@ function drawPUToggle(){
 }
 let shootPU=true;   // are weapon pickups spawned in shootout?
 function shootPicks(){ return shootPU ? DUEL_PICKS.map(k=>({type:k.type, x:k.x, y:k.y, taken:false, respawnT:0})) : []; }
-const defLimitBtns=[{v:0,label:'ENDLESS'},{v:50,label:'50'},{v:100,label:'100'},{v:250,label:'250'},{v:500,label:'500'}];
+const defLimitBtns=[{v:0,label:'ENDLESS'},{v:-1,label:'TYPE ▸',custom:true}];
 function layoutDefLimitBtns(){ const n=defLimitBtns.length, gap=8, m=22, bw=(W-2*m-gap*(n-1))/n, y=172, h=50;
   defLimitBtns.forEach((b,i)=>{ b.x=m+i*(bw+gap); b.y=y; b.w=bw; b.h=h; }); }
 layoutDefLimitBtns();
@@ -6845,10 +6882,11 @@ function drawDefSetup(){
   ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('reach the kill limit to WIN — or defend endlessly', W/2, 92);
   ctx.fillStyle='#c9e6b0'; ctx.font='bold 13px '+CF; ctx.fillText('KILL LIMIT', W/2, 158);
   layoutDefLimitBtns();
-  for(const b of defLimitBtns){ const sel=defKillLimit===b.v;
+  for(const b of defLimitBtns){ const sel = b.custom ? defKillLimit>0 : defKillLimit===b.v;
+    const label = b.custom ? (defKillLimit>0 ? (defKillLimit+' kills ✎') : 'TYPE ▸') : b.label;
     ctx.fillStyle=sel?'#2f6fb0':'rgba(255,255,255,.06)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle=sel?'#7fb0ff':'rgba(255,255,255,.22)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
-    ctx.fillStyle=sel?'#fff':'#9fb0c9'; ctx.font='bold 14px '+CF; ctx.textBaseline='middle'; ctx.fillText(b.label, b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
+    ctx.fillStyle=sel?'#fff':'#9fb0c9'; ctx.font='bold 15px '+CF; ctx.textBaseline='middle'; ctx.fillText(label, b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
   ctx.fillStyle='rgba(220,230,245,.5)'; ctx.font='11px '+CF; ctx.fillText(defKillLimit>0?('win at '+defKillLimit+' kills'):'survive as long as you can', W/2, 244);
   drawDiffSelector();
   const s=defStartBtn, g=ctx.createLinearGradient(0,s.y,0,s.y+s.h); g.addColorStop(0,'#7ee06a'); g.addColorStop(1,'#3ea22f');
