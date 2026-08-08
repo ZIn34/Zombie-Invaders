@@ -6662,10 +6662,14 @@ function duelAvoid(f, dx, dy){
   const LA=DUEL_PS*1.15;   // how far ahead we probe
   const clear=(ang)=>!duelBlocks(f.x+Math.cos(ang)*LA, f.y+Math.sin(ang)*LA, DUEL_PS, DUEL_PS);
   const base=Math.atan2(dy,dx);
-  if(clear(base)) return {x:dx,y:dy};
-  for(let a=Math.PI/8; a<=Math.PI+0.01; a+=Math.PI/8){   // fan outward from the desired heading
-    if(clear(base+a)) return {x:Math.cos(base+a), y:Math.sin(base+a)};
-    if(clear(base-a)) return {x:Math.cos(base-a), y:Math.sin(base-a)};
+  if(clear(base)){ f._avTurn=0; return {x:dx,y:dy}; }   // path clear → stop committing to a side
+  // commit to rounding the wall on ONE side so the bot doesn't pace back and forth along the face
+  let dir = f._avTurn || (f._avTurn = (duel.fighters && duel.fighters.indexOf(f)%2 ? 1 : -1) || 1);
+  for(let a=Math.PI/8; a<=Math.PI+0.01; a+=Math.PI/8){   // sweep the committed side first
+    if(clear(base+dir*a)) return {x:Math.cos(base+dir*a), y:Math.sin(base+dir*a)};
+  }
+  for(let a=Math.PI/8; a<=Math.PI+0.01; a+=Math.PI/8){   // committed side fully blocked → switch and round the other way
+    if(clear(base-dir*a)){ f._avTurn=-dir; return {x:Math.cos(base-dir*a), y:Math.sin(base-dir*a)}; }
   }
   return {x:dx,y:dy};
 }
@@ -6703,7 +6707,12 @@ function teamAI(f, dt){
         if(td>18){ base.mvx=tx/td*1.9; base.mvy=ty/td*1.9; } else { base.mvx=0; base.mvy=0; f._holding=true; }
         base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<1000 && !teamLineBlocked(f,foe)); action='coverme'; }
       else if(cmd==='retreat'){ base.mvx=-fx/fd*1.6+dx/dd*0.6; base.mvy=-fy/fd*1.6+dy/dd*0.6; base.fire=(fd<700 && !teamLineBlocked(f,foe)); action='regroup'; }   // fall back away from the enemy, toward you (fighting retreat)
-      else if(cmd==='split'){ base.mvx-=dx/dd*0.7; base.mvy-=dy/dd*0.7; action='split'; }
+      else if(cmd==='behind'){   // hide behind the player — use them as a shield, keep yourself safe
+        const ux2=(mate.x-foe.x), uy2=(mate.y-foe.y), ul2=Math.hypot(ux2,uy2)||1;   // enemy → player direction
+        const spotX=mate.x+ux2/ul2*66, spotY=mate.y+uy2/ul2*66;                      // 66px behind the player, away from the enemy
+        const tx=spotX-f.x, ty=spotY-f.y, td=Math.hypot(tx,ty)||1;
+        if(td>18){ base.mvx=tx/td*1.9; base.mvy=ty/td*1.9; } else { base.mvx=0; base.mvy=0; f._holding=true; }
+        base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<800 && !teamLineBlocked(f,foe)); action='stick'; }
       else if(cmd==='coverme'){   // go to the NEAREST cover, then suppress the enemy's last-known spot
         const cov=duelCoverSpot(f, foe, false);
         if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1; if(td>50){ base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; } else { base.mvx=0; base.mvy=0; } }
@@ -6723,6 +6732,11 @@ function teamAI(f, dt){
         action='flank'; }
       else if(cmd==='hold'){ const hp=duel.allyCmd.hold; if(hp){ const hx=hp.x-f.x, hy=hp.y-f.y, hdd=Math.hypot(hx,hy)||1; if(hdd>100){ base.mvx=hx/hdd*1.6; base.mvy=hy/hdd*1.6; } else { base.mvx=0; base.mvy=0; f._holding=true; } } action='stick'; }
       else if(cmd==='allout'){ base.mvx+=fx/fd*2.1; base.mvy+=fy/fd*2.1; if(fd<1000 && !teamLineBlocked(f,foe)) base.fire=true; action='push'; }   // go fully in — no retreat
+    } else if(f.hp<=2){   // low on health (no order overriding) → break off and fall back to cover instead of trading shots
+      const cov=duelCoverSpot(f, foe, false);
+      if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1; base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; }
+      else { base.mvx=-fx/fd*1.6+dx/dd*0.5; base.mvy=-fy/fd*1.6+dy/dd*0.5; }
+      base.fire=(fd<620 && !teamLineBlocked(f,foe)); action='regroup';
     } else if(D===0){
       if(isAlly){ if(dd>340){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; } else if(dd>210){ base.mvx=(base.mvx+dx/dd)*0.5; base.mvy=(base.mvy+dy/dd)*0.5; } }
     } else if(D===1){
@@ -6780,8 +6794,8 @@ const ALLY_CMDS=[
   {cmd:'coveryou',label:'I’LL COVER YOU',     you:'I’ll cover you — go!'},
   {cmd:'flank',   label:'YOU PUSH, I FLANK',  you:'You push, I’ll flank!'},
   {cmd:'push',    label:'I PUSH, YOU FLANK',  you:'I’ll push, you flank!'},
-  {cmd:'split',   label:'SPLIT UP',           you:'Split up!'},
   {cmd:'stay',    label:'STAY WITH ME',       you:'Stay with me!'},
+  {cmd:'behind',  label:'STAY BEHIND ME',     you:'I’ll stay behind you!'},
   {cmd:'hold',    label:'HOLD POSITION',      you:'Hold this position!'},
   {cmd:'allout',  label:'ALL-OUT ATTACK',     you:'Going all out!'},
   {cmd:'retreat', label:'RETREAT',            you:'Fall back!'},
