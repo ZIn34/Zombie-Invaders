@@ -466,6 +466,13 @@ function canvasTap(p, pid){
     for(const bb of buildBtns){ if(inRect(p,bb)){ touchBuild={type:bb.type}; Sound.hit(); return; } }   // switch the pending build
     return;   // swallow taps while confirming
   }
+  if(state===STATE.DUEL && duelHasAlly() && !duel.over && !duel.paused){   // radio commands to the ally
+    if(duel.commsOpen){
+      for(const r of commsCmdRects()){ if(inRect(p,r)){ sendAllyCmd(r.c); Sound.hit(); return; } }
+      duel.commsOpen=false; return;   // tap elsewhere closes the wheel
+    }
+    if(inRect(p, commsBtn)){ duel.commsOpen=true; Sound.hit(); return; }
+  }
   if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){
     if(explore && explore.defense){   // defense build buttons take the tap before aiming
       for(const wb of defWeaponBtns){ if(inRect(p, wb)){ defBuyOrEquip(player, explore, wb); return; } }   // weapon shop
@@ -754,6 +761,16 @@ function padPoll(){
     const pf=hitFire();   // fire (custom or A / RT / RB)
     if(pf){ touch.fire=true; Pad._pf=true; } else if(Pad._pf){ touch.fire=false; Pad._pf=false; }
     if(hitPause()) togglePause();
+    // controller radio menu: X opens the command list, D-pad ▲▼ selects, X sends, B closes (game freezes while open)
+    if(state===STATE.DUEL && duelHasAlly() && !duel.over){
+      if(duel.commsOpen){
+        let d=0; if(edge(13))d=1; else if(edge(12))d=-1;
+        if(d){ duel.commsSel=((duel.commsSel||0)+d+ALLY_CMDS.length)%ALLY_CMDS.length; Sound.hit(); }
+        if(hitPlace()||hitConf()){ sendAllyCmd(ALLY_CMDS[duel.commsSel||0]); }
+        else if(hitBack()){ duel.commsOpen=false; Sound.hit(); }
+        return;   // while the menu is up the pad only drives the menu
+      } else if(hitPlace()){ duel.commsOpen=true; duel.commsSel=0; Sound.hit(); }
+    }
     // build with the pad in Defense / Co-op: cycle picks, place drops
     const inBuild = (state===STATE.COOPDEF) || (explore && explore.defense);
     if(inBuild){
@@ -1801,7 +1818,7 @@ function update(dt){
     if(pressed['Escape']){ netQuit(); state=STATE.MENU; }
   } else if(state===STATE.DUEL){
     if(duel && duel.targetPractice){ if(pressed['Escape']){ duel=null; mode='arcade'; state=STATE.MENU; } else updateTargetPractice(dt); }
-    else if(duel && duel.team){ if(pressed['Escape']) teamDuelEnd(); else updateTeamDuel(dt); }
+    else if(duel && duel.team){ if(pressed['Escape']) teamDuelEnd(); else if(!duel.commsOpen) updateTeamDuel(dt); }   // comms menu (touch) fully freezes the fight
     else if(duel && duel.local){ if(pressed['Escape']) duelLocalEnd(); else updateDuelLocal(dt); }
     else if(pressed['Escape']){ netQuit(); state=STATE.MENU; }
     else if(duel && duel.ai){ if(!duel.paused) updateDuelAI(dt);
@@ -6491,19 +6508,87 @@ function startTeamShootoutCoop(){ startTeamShootout({split:true, h1:{bot:false,c
 function teamDuelEnd(){ duel=null; mode='arcade'; state=STATE.MENU; toast('SHOOTOUT OVER'); }
 function teamLineBlocked(a,b){ const ax=a.x+DUEL_PS/2,ay=a.y+DUEL_PS/2,bx=b.x+DUEL_PS/2,by=b.y+DUEL_PS/2,steps=12;
   for(let i=1;i<steps;i++){ const t=i/steps,x=ax+(bx-ax)*t,y=ay+(by-ay)*t; if(duelBlocks(x-3,y-3,6,6)) return true; } return false; }
+// Team-bot brain. Coordination scales with difficulty (same methods for the ally and the enemy bots):
+//   EASY   – independent (ally loosely follows you)
+//   NORMAL – the pair sticks together
+//   HARD   – they "communicate": focus-fire the weakest enemy and flank it from opposite sides
+// The ally also calls out what it's doing to the player.
 function teamAI(f, dt){
-  let foe=null, bd=Infinity;
-  for(const g of duel.fighters){ if(g.dead||g.team===f.team) continue; const d=Math.hypot(g.x-f.x,g.y-f.y); if(d<bd){bd=d;foe=g;} }
-  const base = foe ? aiTactical(f, foe, dt) : {mvx:0,mvy:0,aim:f.aim,fire:false};
-  // a bot ally loosely follows its human teammate so it doesn't wander off alone
+  const D=difficulty;
+  const enemies=duel.fighters.filter(g=>!g.dead && g.team!==f.team);
+  if(!enemies.length) return {mvx:0,mvy:0,aim:f.aim,fire:false};
   const human = duel.humans && duel.humans.find(h=>!h.dead && h.team===f.team && h!==f);
-  if(human){
-    const dx=human.x-f.x, dy=human.y-f.y, dist=Math.hypot(dx,dy)||1;
-    if(dist>340){ base.mvx=dx/dist; base.mvy=dy/dist; }                 // too far → head to the player
-    else if(dist>210){ base.mvx=(base.mvx+dx/dist)*0.5; base.mvy=(base.mvy+dy/dist)*0.5; }   // medium → blend follow + fight
+  const isAlly=!!human;
+  const mate = human || duel.fighters.find(g=>g!==f && g.team===f.team && !g.dead);   // who this bot coordinates with
+  // target: HARD focus-fires the weakest enemy (communication); otherwise nearest
+  let foe;
+  if(D===2){ foe=enemies.reduce((a,b)=> b.hp<a.hp?b:a); }
+  else { foe=enemies[0]; let bd=Infinity; for(const g of enemies){ const d=Math.hypot(g.x-f.x,g.y-f.y); if(d<bd){bd=d;foe=g;} } }
+  const base = aiTactical(f, foe, dt);
+  const sp=Math.hypot(base.mvx,base.mvy)||1;   // keep the tactical move speed
+  let action='hunt';
+  const cmd = (isAlly && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;   // player's order overrides the default behavior
+  if(mate){
+    const dx=mate.x-f.x, dy=mate.y-f.y, dd=Math.hypot(dx,dy)||1;
+    const fx=foe.x-f.x, fy=foe.y-f.y, fd=Math.hypot(fx,fy)||1;
+    if(cmd){
+      if(cmd==='stay'){ if(dd>120){ base.mvx+=dx/dd*1.6; base.mvy+=dy/dd*1.6; } action='stick'; }
+      else if(cmd==='split'){ base.mvx-=dx/dd*0.7; base.mvy-=dy/dd*0.7; action='split'; }
+      else if(cmd==='coverme'){ if(dd>190){ base.mvx+=dx/dd; base.mvy+=dy/dd; } base.fire=(fd<820); action='coverme'; }
+      else if(cmd==='push'){ base.mvx+=fx/fd*1.5; base.mvy+=fy/fd*1.5; action='push'; }
+      else if(cmd==='flank'){ if(f.flankSign==null)f.flankSign=(duel.fighters.indexOf(f)%2)?1:-1; base.mvx+=-fy/fd*f.flankSign*1.1; base.mvy+=fx/fd*f.flankSign*1.1; action='flank'; }
+    } else if(D===0){
+      if(isAlly){ if(dd>340){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; } else if(dd>210){ base.mvx=(base.mvx+dx/dd)*0.5; base.mvy=(base.mvy+dy/dd)*0.5; } }
+    } else if(D===1){
+      if(dd>250){ base.mvx+=dx/dd*1.1; base.mvy+=dy/dd*1.1; action='stick'; }   // NORMAL: stick together
+    } else {
+      if(dd>300){ base.mvx+=dx/dd; base.mvy+=dy/dd; action='regroup'; }          // HARD: regroup + flank the shared target
+      if(f.flankSign==null) f.flankSign=(duel.fighters.indexOf(f)%2)?1:-1;
+      const tx=foe.x-f.x, ty=foe.y-f.y, td=Math.hypot(tx,ty)||1;
+      base.mvx += -ty/td*f.flankSign*0.7; base.mvy += tx/td*f.flankSign*0.7; action='flank';
+    }
+    const m=Math.hypot(base.mvx,base.mvy)||1; base.mvx=base.mvx/m*sp; base.mvy=base.mvy/m*sp;
   }
+  if(isAlly) allyCallout(f, dt, action);
   return base;
 }
+function allyCallout(f, dt, action){
+  f._msgCd=(f._msgCd||0)-dt;
+  if(f._msgCd>0) return;
+  f._msgCd = 6 + Math.random()*5;   // ~6–11s between callouts
+  const pools={
+    hunt  :['On it!','Engaging!','I got this one!'],
+    regroup:['Regrouping on you!','Coming to you!'],
+    stick :['Staying close!','Right with you!','Grouping up!'],
+    flank :['Flanking!','Going around!'],
+    push  :['Pushing in!','Advancing!'],
+    coverme:['Covering you — go!','I’ve got your back!'],
+    split :['Splitting up!','Taking the other side!'],
+  };
+  const arr = pools[action]||pools.hunt;
+  toast('🤖 ALLY: '+arr[Math.floor(Math.random()*arr.length)]);
+}
+// preset radio commands the player can send to the bot ally
+const ALLY_CMDS=[
+  {cmd:'coverme', label:'COVER FIRE FOR ME', you:'Cover fire for me!'},
+  {cmd:'push',    label:'I’LL COVER YOU',     you:'I’ll cover you — go!'},
+  {cmd:'push',    label:'YOU PUSH, I FLANK',  you:'You push, I’ll flank!'},
+  {cmd:'flank',   label:'I PUSH, YOU FLANK',  you:'I’ll push, you flank!'},
+  {cmd:'split',   label:'SPLIT UP',           you:'Split up!'},
+  {cmd:'stay',    label:'STAY WITH ME',       you:'Stay with me!'},
+];
+function duelHasAlly(){ return !!(duel && duel.team && duel.humans && duel.humans[0] && duel.fighters && duel.fighters.some(g=>g.bot && !g.dead && g.team===duel.humans[0].team)); }
+function sendAllyCmd(c){
+  if(!duel) return;
+  duel.allyCmd={type:c.cmd, t:9};
+  toast('🎖️ YOU: '+c.you);
+  const me=duel.humans&&duel.humans[0];
+  const ally=me&&duel.fighters.find(g=>g.bot&&!g.dead&&g.team===me.team);
+  if(ally) ally._msgCd=1.2;   // ally acks ~1.2s later
+  duel.commsOpen=false;
+}
+const commsBtn={x:12, y:62, w:118, h:30};
+function commsCmdRects(){ const n=ALLY_CMDS.length, w=250, h=34, gap=6, x=W/2-w/2, y0=H/2-(n*(h+gap))/2; return ALLY_CMDS.map((c,i)=>({x, y:y0+i*(h+gap), w, h, c})); }
 function humanDuelInputFor(f){
   let mvx=0,mvy=0;
   if(keys['ArrowLeft']||keys['KeyA'])mvx-=1; if(keys['ArrowRight']||keys['KeyD'])mvx+=1;
@@ -6607,6 +6692,12 @@ function teamCam(){ if(duel.split) return; const me=duel.humans[0]; if(!me) retu
   duel.camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,DUEL_H-VH)); }
 function updateTeamDuel(dt){
   if(!duel) return;
+  if(duel.allyCmd && duel.allyCmd.t>0) duel.allyCmd.t-=dt;   // player order fades after a few seconds
+  // keyboard hotkeys: number keys 1–6 send that radio command straight to the ally
+  if(duelHasAlly() && !duel.over){
+    const DK=['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6'];
+    for(let i=0;i<ALLY_CMDS.length && i<DK.length;i++){ if(pressed[DK[i]]){ sendAllyCmd(ALLY_CMDS[i]); break; } }
+  }
   const split=duel.split;
   const c0=split?readController(0):null, c1=split?readController(1):null;
   if(split && (c0.start||c1.start)) duel.paused=!duel.paused;
@@ -6695,7 +6786,34 @@ function drawTeamDuel(){
     if(_landActive){ ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); } else { ctx.moveTo(0,H/2); ctx.lineTo(W,H/2); }
     ctx.stroke(); ctx.strokeStyle='rgba(120,150,200,0.55)'; ctx.lineWidth=1.5; ctx.stroke(); }
   drawTeamHUD();
+  if(duelHasAlly() && !duel.over && !duel.split) drawCommsUI();
   if(duel.over) drawTeamOver(); else if(duel.paused) drawLocalPause();
+}
+function drawCommsUI(){
+  // the COMMS button
+  const b=commsBtn;
+  ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=duel.commsOpen?'rgba(60,90,140,.95)':'rgba(24,40,64,.9)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
+  ctx.fillStyle='#dce9ff'; ctx.font='bold 13px '+CF; ctx.fillText('📻 COMMS', b.x+b.w/2, b.y+b.h/2+1);
+  if(Pad.connected){ ctx.fillStyle='#9fb0c9'; ctx.font='10px '+CF; ctx.textAlign='left'; ctx.fillText('🎮 X: open · ▲▼ pick · X send', b.x, b.y+b.h+11); }
+  ctx.restore();
+  if(!duel.commsOpen) return;
+  // dim + command list
+  ctx.save();
+  ctx.fillStyle='rgba(4,8,14,.55)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='bold 14px '+CF;
+  ctx.fillStyle='#bcd0ff'; ctx.fillText('SEND A COMMAND', W/2, commsCmdRects()[0].y-22);
+  commsCmdRects().forEach((r,i)=>{
+    const sel = Pad.connected && (duel.commsSel||0)===i;
+    const g=ctx.createLinearGradient(0,r.y,0,r.y+r.h); g.addColorStop(0, sel?'#3f6da8':'#2f4d78'); g.addColorStop(1, sel?'#274a78':'#1d3252');
+    ctx.fillStyle=g; roundRectPath(r.x,r.y,r.w,r.h,8); ctx.fill();
+    ctx.lineWidth=sel?3:2; ctx.strokeStyle=sel?'#ffe14b':'#7fb0ff'; roundRectPath(r.x,r.y,r.w,r.h,8); ctx.stroke();
+    ctx.textAlign='left'; ctx.fillStyle='#8fd0ff'; ctx.font='bold 13px '+CF; ctx.fillText((i+1), r.x+12, r.y+r.h/2+1);
+    ctx.textAlign='center'; ctx.fillStyle='#eef4ff'; ctx.font='bold 14px '+CF; ctx.fillText(r.c.label, r.x+r.w/2+8, r.y+r.h/2+1);
+  });
+  ctx.fillStyle='#9fb0c9'; ctx.font='11px '+CF; const rs=commsCmdRects(); ctx.fillText('tap anywhere else to close', W/2, rs[rs.length-1].y+rs[rs.length-1].h+18);
+  ctx.restore();
 }
 function drawTeamHUD(){
   const t1=duel.fighters.filter(f=>f.team===1).length, t2=duel.fighters.filter(f=>f.team===2).length;
