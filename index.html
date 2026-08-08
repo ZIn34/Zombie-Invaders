@@ -6217,7 +6217,7 @@ function localGloom(rx,ry,rw,rh,k){ k=(k==null)?1:k;
   ctx.fillStyle=vg; ctx.fillRect(rx,ry,rw,rh); ctx.restore();
 }
 // show where the teammate is in a split-screen half: a tag above them when in view, an edge arrow when off-screen
-function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax){
+function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax, label){
   if(!mate) return;
   const mcx=mate.x+(mate.w||44)/2, mcy=mate.y+(mate.h||44)/2;
   const sx=rx+(mcx-camX)*z, sy=ry+(mcy-camY)*z;
@@ -6227,7 +6227,7 @@ function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax){
     ctx.globalAlpha=0.5+0.5*Math.abs(Math.sin(performance.now()/400));
     ctx.fillStyle=col; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.moveTo(sx,ay+11); ctx.lineTo(sx-7,ay); ctx.lineTo(sx+7,ay); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText('TEAMMATE', sx, ay-3);
+    ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText(label||'TEAMMATE', sx, ay-3);
     // HP bar under the marker (only when a max HP is supplied — shootout fighters)
     if(hpMax && typeof mate.hp==='number'){
       const bw=34, bh=4, bx=sx-bw/2, by=ay+13, frac=Math.max(0,Math.min(1,mate.hp/hpMax));
@@ -6654,9 +6654,12 @@ function makeWarObs(WW,HH){
   return obs;
 }
 function makeWarVehicles(WW,HH){   // DRIVABLE vehicles — x,y is the CENTRE; angle is the facing
+  const T=(x,y)=>({kind:'tank', x:Math.round(x), y:Math.round(y), w:98, h:74, angle:-Math.PI/2, occupied:false, cd:0});
+  const J=(x,y)=>({kind:'jeep', x:Math.round(x), y:Math.round(y), w:76, h:50, angle:-Math.PI/2, occupied:false, cd:0});
   const v=[];
-  for(let i=0;i<3;i++){ v.push({kind:'tank', x:Math.round(rand(300,WW-300)), y:Math.round(rand(560,HH-560)), w:98, h:74, angle:-Math.PI/2, occupied:false, cd:0}); }
-  for(let i=0;i<5;i++){ v.push({kind:'jeep', x:Math.round(rand(280,WW-280)), y:Math.round(rand(560,HH-560)), w:76, h:50, angle:-Math.PI/2, occupied:false, cd:0}); }
+  v.push(T(460, HH-420), J(760, HH-420));           // right next to YOUR spawn so one's always close
+  for(let i=0;i<4;i++) v.push(T(rand(300,WW-300), rand(760,HH-760)));   // more scattered across the field
+  for(let i=0;i<6;i++) v.push(J(rand(280,WW-280), rand(620,HH-620)));
   return v;
 }
 function makeWarDecals(WW,HH){   // non-blocking battlefield dressing: shell craters, scorch marks, barbed wire
@@ -7256,6 +7259,10 @@ function drawTeamView(v){
   localGloom(v.rx,v.ry,v.rw,v.rh,0.4);
   { const mate=duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // always mark the teammate (edge arrow when off-screen), until they die
     if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP); }
+  if(duel.war && !duel.driving && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
+    let best=null,bd=1e9; const cx=me.x+DUEL_PS/2, cy=me.y+DUEL_PS/2;
+    for(const vh of duel.vehicles){ if(vh.occupied) continue; const d=Math.hypot(vh.x-cx,vh.y-cy); if(d<bd){bd=d;best=vh;} }
+    if(best) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:best.x-DUEL_PS/2,y:best.y-DUEL_PS/2,w:DUEL_PS,h:DUEL_PS}, '#ffd24a', 0, best.kind.toUpperCase()); }
   if(duel.split) drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-12);
 }
 function drawTeamDuel(){
