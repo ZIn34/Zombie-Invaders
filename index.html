@@ -5810,7 +5810,7 @@ function netShowResults(){ if(!net) return; net.ended=true; state=STATE.NETRESUL
 let duel=null;
 const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.26, DUEL_BSPD=1080, DUEL_PS=44;
 const DUEL_ZOOM=0.85;   // slight zoom-out for a wider view
-const WAR_ZOOM=0.58;    // 10v10 war: zoom out more so you can see the battle & your squad
+const WAR_ZOOM=0.74;    // 10v10 war: tighter view (bots only engage within about this range too)
 const WAR_KILL_CASH=60;   // cash you earn per kill in the war
 const WAR_SHOP=[   // buy weapons & vehicles with your kill cash
   {key:'rifle',   label:'RIFLE',   cost:150, hot:'KeyR'},
@@ -6680,6 +6680,7 @@ function startTeamShootout(opts){   // opts:{split, h1:{bot,ctrl}, h2:{bot,ctrl}
     fighters, humans:fighters.filter(f=>!f.bot),
     pickups:shootPicks(),
     obs:duelMapPick() };
+  duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // the one ally your radio orders control
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
@@ -6733,6 +6734,7 @@ function startBigWar(){
     warGoal:100, score1:0, score2:0, driving:null, blasts:[], cash:0,
     fighters, humans:fighters.filter(f=>!f.bot),
     pickups:[], obs:makeWarObs(WW,HH), vehicles:[], decals:makeWarDecals(WW,HH) };   // no auto-spawn vehicles or pickups — buy them with kill cash
+  duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // only this ally follows your orders; the rest fight on their own
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
@@ -6813,12 +6815,19 @@ function teamAI(f, dt){
   const base = aiTactical(f, foe, dt);
   const sp=Math.hypot(base.mvx,base.mvy)||1;   // keep the tactical move speed
   let action='hunt';
-  const cmd = (isAlly && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;   // player's order overrides the default behavior
+  const commanded = isAlly && f===duel.squadMate;         // only the squadmate obeys your radio orders
+  const independent = isAlly && duel.war && !commanded;   // the rest of your squad fights on its own & spreads out
+  const cmd = (commanded && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;
   if(mate){
     const dx=mate.x-f.x, dy=mate.y-f.y, dd=Math.hypot(dx,dy)||1;
     const fx=foe.x-f.x, fy=foe.y-f.y, fd=Math.hypot(fx,fy)||1;
     if(!teamLineBlocked(f,foe)){ f._belX=foe.x+DUEL_PS/2; f._belY=foe.y+DUEL_PS/2; }   // remember the enemy's last-seen spot for suppressing fire
-    if(cmd){
+    if(independent){   // hunt independently, but push away from nearby teammates so the squad spreads across the field
+      let sx=0,sy=0,cnt=0;
+      for(const g of duel.fighters){ if(g===f||g.dead||g.team!==f.team) continue; const gx=f.x-g.x, gy=f.y-g.y, gd=Math.hypot(gx,gy); if(gd<340){ sx+=gx/(gd||1); sy+=gy/(gd||1); cnt++; } }
+      if(cnt){ const sl=Math.hypot(sx,sy)||1; base.mvx += sx/sl*0.95; base.mvy += sy/sl*0.95; }
+      action='hunt';
+    } else if(cmd){
       if(cmd==='stay'){ if(dd>120){ base.mvx+=dx/dd*1.6; base.mvy+=dy/dd*1.6; } action='stick'; }
       else if(cmd==='protect'){   // bodyguard: plant yourself between the player and the enemy, taking the shots — no self-preservation
         const ux2=(foe.x-mate.x), uy2=(foe.y-mate.y), ul2=Math.hypot(ux2,uy2)||1;   // player → enemy direction
@@ -6834,11 +6843,13 @@ function teamAI(f, dt){
         const tx=spotX-f.x, ty=spotY-f.y, td=Math.hypot(tx,ty)||1;
         if(td>16){ base.mvx=tx/td*2.0; base.mvy=ty/td*2.0; } else { base.mvx=0; base.mvy=0; f._holding=true; }
         base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<800 && !teamLineBlocked(f,foe)); action='stick'; }
-      else if(cmd==='coverme'){   // go to the NEAREST cover, then suppress the enemy's last-known spot
-        const cov=duelCoverSpot(f, foe, false);
-        if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1; if(td>50){ base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; } else { base.mvx=0; base.mvy=0; } }
-        const bxx=(f._belX!=null?f._belX:foe.x+DUEL_PS/2), byy=(f._belY!=null?f._belY:foe.y+DUEL_PS/2);
-        base.aim=Math.atan2(byy-(f.y+DUEL_PS/2), bxx-(f.x+DUEL_PS/2)); base.fire=(fd<1050); action='coverme'; }
+      else if(cmd==='coverme'){   // take cover, then lean out to get a real shot (don't just fire into the wall)
+        const cov=duelCoverSpot(f, foe, false), clear=!teamLineBlocked(f,foe);
+        if(cov && !clear){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1;
+          if(td>50){ base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; }                                   // still moving to cover
+          else { if(f.flankSign==null)f.flankSign=Math.random()<0.5?1:-1; base.mvx=-fy/fd*f.flankSign*1.3; base.mvy=fx/fd*f.flankSign*1.3; }   // at cover but blocked → lean out sideways
+        } else { base.mvx=0; base.mvy=0; }                                                        // clear line → hold and fire
+        base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<1050 && !teamLineBlocked(f,foe)); action='coverme'; }
       else if(cmd==='coveryou'){   // move up to a RANDOM forward cover spot and lay down fire so the player can advance to us
         if(!f._covSpot || (f._covSpotT=(f._covSpotT||0)-dt)<=0){ f._covSpot=duelCoverSpot(f, foe, true); f._covSpotT=4; }
         const cov=f._covSpot;
@@ -6890,7 +6901,7 @@ function teamAI(f, dt){
       }
     }
   }
-  if(isAlly) allyCallout(f, dt, action);
+  if(commanded) allyCallout(f, dt, action);   // only your squadmate radios back
   return base;
 }
 function allyCallout(f, dt, action){
@@ -7400,8 +7411,8 @@ function drawTeamView(v){
   drawDuelSceneWorld(camX,camY,VW,VH,me);
   ctx.restore();
   localGloom(v.rx,v.ry,v.rw,v.rh,0.4);
-  { const mate=duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // always mark the teammate (edge arrow when off-screen), until they die
-    if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP); }
+  { const mate=(duel.squadMate && !duel.squadMate.dead) ? duel.squadMate : duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // mark your commandable squadmate
+    if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE'); }
   if(duel.war && !duel.driving && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
     let best=null,bd=1e9; const cx=me.x+DUEL_PS/2, cy=me.y+DUEL_PS/2;
     for(const vh of duel.vehicles){ if(vh.occupied||vh.wreck) continue; const d=Math.hypot(vh.x-cx,vh.y-cy); if(d<bd){bd=d;best=vh;} }
@@ -7533,7 +7544,9 @@ function aiTactical(f, foe, dt){
   const cx=f.x+DUEL_PS/2, cy=f.y+DUEL_PS/2, fx=foe.x+DUEL_PS/2, fy=foe.y+DUEL_PS/2;
   const dx=fx-cx, dy=fy-cy, dist=Math.hypot(dx,dy)||1, ux=dx/dist, uy=dy/dist;
   const D=difficulty;
-  const wanderMax=D===0?0.6:D===2?0.08:0.24, fireDist=D===0?430:D===2?900:680, spdMul=D===0?0.82:D===2?1.14:0.98;
+  const wanderMax=D===0?0.6:D===2?0.08:0.24, spdMul=D===0?0.82:D===2?1.14:0.98;
+  let fireDist=D===0?430:D===2?900:680;
+  if(duel&&duel.war) fireDist=Math.min(fireDist, 520);   // war: bots only engage within about the player's view (no off-screen sniping)
   f.aiWander=clamp((f.aiWander||0)+(Math.random()-0.5)*0.5,-wanderMax,wanderMax);
   const aim=Math.atan2(dy,dx)+f.aiWander;
   const blocked=teamLineBlocked(f,foe);
