@@ -6725,7 +6725,7 @@ function warPickups(WW,HH){
 function startBigWar(){
   try{ NetIO.cleanup(); }catch(e){}
   mode='duel'; explore=null; coop=null; net=null; codef=null; netShowCodeInput(false);
-  const WW=3400, HH=3400, N=10, fighters=[];
+  const WW=6000, HH=6000, N=10, fighters=[];   // a much larger battlefield — you + your buddy hunt the enemy across it
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=HH-240 - (i%2)*80;
     fighters.push(mkFighter(x, y, -Math.PI/2, 1, i!==0, i===0?'kb':null)); }   // i=0 is you, rest are bot allies
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=180 + (i%2)*80;
@@ -6872,6 +6872,10 @@ function teamAI(f, dt){
       if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1; base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; }
       else { base.mvx=-fx/fd*1.6+dx/dd*0.5; base.mvy=-fy/fd*1.6+dy/dd*0.5; }
       base.fire=(fd<620 && !teamLineBlocked(f,foe)); action='regroup';
+    } else if(commanded){   // your battle buddy: naturally stick with you and fight alongside
+      if(dd>260){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; }                                   // too far → close on you
+      else if(dd>150){ base.mvx=(base.mvx+dx/dd*1.2)*0.55; base.mvy=(base.mvy+dy/dd*1.2)*0.55; action='stick'; }   // drift back while fighting
+      else action='hunt';                                                                                // close enough → fight freely
     } else if(D===0){
       if(isAlly){ if(dd>340){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; } else if(dd>210){ base.mvx=(base.mvx+dx/dd)*0.5; base.mvy=(base.mvy+dy/dd)*0.5; } }
     } else if(D===1){
