@@ -7013,7 +7013,7 @@ function exitVehicle(f){ const v=f._veh; if(v){ v.occupied=false; v.driver=null;
     f.x=ox-DUEL_PS/2; f.y=oy-DUEL_PS/2; }
   f._veh=null; f._inVehicle=false; if(duel.driving===v) duel.driving=null; }
 function destroyVehicle(v, killerTeam){
-  if(v.wreck) return; v.wreck=true;
+  if(v.wreck) return; v.wreck=true; v.respawnT=12;   // a fresh one rolls back in after 12s
   if(duel.blasts){ duel.blasts.push({x:v.x,y:v.y,t:0}); duel.blasts.push({x:v.x+18,y:v.y-14,t:-0.08}); duel.blasts.push({x:v.x-16,y:v.y+12,t:-0.16}); }
   shake(14,.45); duelBlood(v.x,v.y,20); Sound.over && Sound.over();
   const d=v.driver;
@@ -7075,6 +7075,8 @@ function shellExplode(b){
 function updateVehicles(dt){
   if(!duel.vehicles) return;
   if(duel.blasts){ for(const bl of duel.blasts) bl.t+=dt; duel.blasts=duel.blasts.filter(bl=>bl.t<0.45); }
+  for(const vv of duel.vehicles){ if(vv.wreck && vv.respawnT!=null){ vv.respawnT-=dt;   // wrecks rebuild into fresh vehicles
+    if(vv.respawnT<=0){ vv.wreck=false; vv.occupied=false; vv.driver=null; vv.hp=vv.hpMax; vv.cd=0; vv.respawnT=null; vv.angle=-Math.PI/2; } } }
   const v=duel.driving; if(!v) return;
   const me=duel.humans[0]; if(!me || me.dead || v.wreck || me._veh!==v){ duel.driving=null; return; }
   const inp = me.ctrl==='kb' ? humanDuelInputFor(me) : ctrlToInput(readController(me.ctrl));
