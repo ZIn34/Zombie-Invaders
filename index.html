@@ -133,6 +133,7 @@ let W = canvas.width, H = canvas.height;
 const controlsBar = document.getElementById('controls');
 let _ctrlShown = true;
 let _aimShown = false;
+let _aimLbl = 'AIM';
 function syncControls(){   // only show the joystick/pause/fire bar during actual play
   const show = ((state===STATE.PLAY && !(explore&&explore.coop&&explore.split)) || state===STATE.CHASE || state===STATE.PAUSE || state===STATE.DEATH || (state===STATE.DUEL && !(duel&&(duel.local || (duel.team&&duel.split)))) || (state===STATE.COOPDEF && !(codef&&codef.local)));
   if(show!==_ctrlShown){ _ctrlShown=show; if(controlsBar) controlsBar.style.display = show ? '' : 'none'; fit(); }
@@ -144,6 +145,8 @@ function syncControls(){   // only show the joystick/pause/fire bar during actua
     if(fb) fb.style.display = aimMode ? 'none' : '';
     if(aj) aj.style.display = aimMode ? 'flex' : 'none';
   }
+  const aj2=document.getElementById('aimjoy');   // the aim stick becomes a LOOK stick in shootout modes
+  if(aj2){ const want=(state===STATE.DUEL)?'LOOK':'AIM'; if(want!==_aimLbl){ _aimLbl=want; const l=aj2.querySelector('.aimlbl'); if(l) l.textContent=want; } }
 }
 
 /* ---------- Fit stage to viewport while keeping aspect ratio ---------- */
@@ -369,7 +372,7 @@ window.addEventListener('keydown', e=>{
 window.addEventListener('keyup', e=>{ keys[e.code]=false; });
 
 // Touch controls: analog joystick (move) + fire button
-const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false, gaim:0, gaimActive:false};
+const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false, gaim:0, gaimActive:false, lookx:0,looky:0,lookActive:false};
 // tap/click anywhere on the play field to aim there (open world, duel, mission 3)
 const tapAim = {active:false, id:null, x:0, y:0};
 function isAimState(){ return (state===STATE.PLAY && explore) || state===STATE.DUEL || state===STATE.COOPDEF; }
@@ -407,11 +410,14 @@ const DIFF=[
     let dx=clientX-cx, dy=clientY-cy; const d=Math.hypot(dx,dy);
     if(d>R){ dx=dx/d*R; dy=dy/d*R; }
     aimThumb.style.transform='translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)+'px)';
-    const R2=R*R, mag=dx*dx+dy*dy, dead=R*0.28;
-    if(Math.sqrt(mag)>dead){ touch.aimx=dx; touch.aimy=dy; touch.aimActive=true; }
-    else { touch.aimx=0; touch.aimy=0; touch.aimActive=false; }
+    const mag=Math.sqrt(dx*dx+dy*dy), dead=R*0.28;
+    const lookOnly=(state===STATE.DUEL);   // shootout: this stick only pans your view — tap the screen to aim + fire
+    if(mag>dead){
+      if(lookOnly){ touch.lookx=dx; touch.looky=dy; touch.lookActive=true; touch.aimx=0; touch.aimy=0; touch.aimActive=false; }
+      else { touch.aimx=dx; touch.aimy=dy; touch.aimActive=true; touch.lookActive=false; }
+    } else { touch.aimx=0; touch.aimy=0; touch.aimActive=false; touch.lookx=0; touch.looky=0; touch.lookActive=false; }
   }
-  function resetAim(){ aimId=null; touch.aimx=0; touch.aimy=0; touch.aimActive=false; aimThumb.style.transform='translate(0,0)'; }
+  function resetAim(){ aimId=null; touch.aimx=0; touch.aimy=0; touch.aimActive=false; touch.lookx=0; touch.looky=0; touch.lookActive=false; aimThumb.style.transform='translate(0,0)'; }
   aimJoy.addEventListener('pointerdown', e=>{ e.preventDefault(); aimId=e.pointerId; try{aimJoy.setPointerCapture(e.pointerId);}catch(_){} setAim(e.clientX,e.clientY); maybeStart(); });
   window.addEventListener('pointermove', e=>{ if(e.pointerId===aimId) setAim(e.clientX,e.clientY); });
   window.addEventListener('pointerup', e=>{ if(e.pointerId===aimId) resetAim(); });
@@ -1045,8 +1051,8 @@ const MISSIONS=[
   {name:'The Gunslinger', shootout5:true,
    intro:[
      {bg:'dawn', art:'standoff', speaker:'U.S. GENERAL', text:'Alright — so now we know the signal is stronger the more crystals there are. But we have bigger problems.'},
-     {bg:'toxic', art:'horde', speaker:'U.S. GENERAL', text:'We’ve been finding zombies with guns. These zombies have killed most of the soldiers we send to fight them.'},
-     {bg:'fire', art:'standoff', speaker:'U.S. GENERAL', text:'I need you to destroy one we found at the town. Good luck, soldier.'},
+     {bg:'toxic', art:'standoff', speaker:'U.S. GENERAL', text:'We’ve discovered that there is another civilization — we think they are helping the zombies.'},
+     {bg:'fire', art:'standoff', speaker:'U.S. GENERAL', text:'We found one out at the town. Kill them.'},
    ]},
   {name:'The Electric Field', defense6:true,
    intro:[
@@ -6278,20 +6284,21 @@ function localGloom(rx,ry,rw,rh,k){ k=(k==null)?1:k;
   ctx.fillStyle=vg; ctx.fillRect(rx,ry,rw,rh); ctx.restore();
 }
 // show where the teammate is in a split-screen half: a tag above them when in view, an edge arrow when off-screen
-function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax, label){
+function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax, label, sc){
   if(!mate) return;
+  const s=(sc==null?1:Math.max(0.35,Math.min(1,sc)));   // shrink with distance
   const mcx=mate.x+(mate.w||44)/2, mcy=mate.y+(mate.h||44)/2;
   const sx=rx+(mcx-camX)*z, sy=ry+(mcy-camY)*z;
   ctx.save();
   if(sx>=rx+8 && sx<=rx+rw-8 && sy>=ry+30 && sy<=ry+rh-8){
-    const ay=sy-30;
+    const ay=sy-30*s;
     ctx.globalAlpha=0.5+0.5*Math.abs(Math.sin(performance.now()/400));
     ctx.fillStyle=col; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(sx,ay+11); ctx.lineTo(sx-7,ay); ctx.lineTo(sx+7,ay); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText(label||'TEAMMATE', sx, ay-3);
+    ctx.beginPath(); ctx.moveTo(sx,ay+11*s); ctx.lineTo(sx-7*s,ay); ctx.lineTo(sx+7*s,ay); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold '+Math.max(6,Math.round(9*s))+'px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText(label||'TEAMMATE', sx, ay-3*s);
     // HP bar under the marker (only when a max HP is supplied — shootout fighters)
     if(hpMax && typeof mate.hp==='number'){
-      const bw=34, bh=4, bx=sx-bw/2, by=ay+13, frac=Math.max(0,Math.min(1,mate.hp/hpMax));
+      const bw=34*s, bh=Math.max(2,4*s), bx=sx-bw/2, by=ay+13*s, frac=Math.max(0,Math.min(1,mate.hp/hpMax));
       ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle= frac>0.5?'#5dff8a':frac>0.25?'#ffd14b':'#ff5b5b'; ctx.fillRect(bx,by,bw*frac,bh);
       ctx.lineWidth=1; ctx.strokeStyle='rgba(0,0,0,.7)'; ctx.strokeRect(bx,by,bw,bh);
@@ -6301,7 +6308,7 @@ function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax, label){
     const ax=clamp(sx, rx+22, rx+rw-22), ay=clamp(sy, ry+34, ry+rh-22);
     ctx.translate(ax,ay); ctx.rotate(ang);
     ctx.fillStyle=col; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(15,0); ctx.lineTo(-10,-9); ctx.lineTo(-10,9); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(15*s,0); ctx.lineTo(-10*s,-9*s); ctx.lineTo(-10*s,9*s); ctx.closePath(); ctx.fill(); ctx.stroke();
   }
   ctx.restore();
 }
@@ -6528,9 +6535,9 @@ function setupShootout5(){
     obs:DUEL_MAPS[Math.floor(Math.random()*DUEL_MAPS.length)],
     aiWander:0, aiStrafe:1, aiStrafeT:0 };
   duel.p1.weapon='rifle'; duel.p1.wammo=Infinity; duel.p1.permRifle=true;   // you keep the campaign rifle
-  duel.p2.isGunZombie=true; duel.p2.bot=true;                               // the foe is a zombie with a pistol (normal mode)
+  duel.p2.team=2; duel.p2.bot=true;                                         // the foe is an enemy soldier (uses the shootout-enemy sprite)
   duel.meKey='p1'; duel.foeKey='p2';
-  state=STATE.DUEL; toast('DESTROY THE GUN-ZOMBIE!');
+  state=STATE.DUEL; toast('KILL THE ENEMY SOLDIER!');
 }
 function endShootout5(){
   if(!duel) return;
@@ -6538,7 +6545,7 @@ function endShootout5(){
   duel=null;
   if(won){
     if(!replaying){ coins+=20; coinsThisMission=(coinsThisMission||0)+20; }   // gun-zombie kill = 20 coins
-    Sound.power(); toast('GUN-ZOMBIE DOWN! +20 COINS');
+    Sound.power(); toast('ENEMY DOWN! +20 COINS');
     missionComplete();
   } else {
     Sound.over(); state=STATE.OVER;   // you died — retry the mission
@@ -6941,24 +6948,7 @@ function teamAI(f, dt){
       }
     }
   }
-  if(commanded) allyCallout(f, dt, action);   // only your squadmate radios back
   return base;
-}
-function allyCallout(f, dt, action){
-  f._msgCd=(f._msgCd||0)-dt;
-  if(f._msgCd>0) return;
-  f._msgCd = 6 + Math.random()*5;   // ~6–11s between callouts
-  const pools={
-    hunt  :['On it!','Engaging!','I got this one!'],
-    regroup:['Regrouping on you!','Coming to you!'],
-    stick :['Staying close!','Right with you!','Grouping up!'],
-    flank :['Flanking!','Going around!'],
-    push  :['Pushing in!','Advancing!'],
-    coverme:['In cover — firing!','Holding cover!','On them from cover!'],
-    split :['Splitting up!','Taking the other side!'],
-  };
-  const arr = pools[action]||pools.hunt;
-  toast('ALLY: '+arr[Math.floor(Math.random()*arr.length)]);
 }
 // preset radio commands the player can send to the bot ally
 const ALLY_CMDS=[
@@ -6981,7 +6971,6 @@ function sendAllyCmd(c){
   const me=duel.humans&&duel.humans[0];
   const ally=me&&duel.fighters.find(g=>g.bot&&!g.dead&&g.team===me.team);
   if(c.cmd==='hold' && ally) duel.allyCmd.hold={x:ally.x, y:ally.y};  // lock the spot they're standing on
-  if(ally) ally._msgCd=1.2;   // ally acks ~1.2s later
   duel.commsOpen=false;
 }
 const commsBtn={x:12, y:62, w:118, h:30};
@@ -7205,10 +7194,21 @@ function updateVehicles(dt){
   v.cd-=dt;
   if(inp.fire && v.cd<=0){ if(v.kind==='tank'){ tankFire(v,me.team); v.cd=1.15; } else { jeepFire(v,me.team); v.cd=0.11; } }
 }
+function duelAdvanceLook(me){   // smooth a "look" vector toward wherever the player is facing — shifts the camera that way
+  if(!duel) return;
+  let ang=null;
+  if(touch.lookActive) ang=Math.atan2(touch.looky, touch.lookx);   // mobile: the look stick pans the view
+  else if(me && me.aim!=null) ang=me.aim;                          // otherwise follow the aim/mouse direction
+  const cx=(ang==null)?0:Math.cos(ang), cy=(ang==null)?0:Math.sin(ang);
+  if(duel._lvx==null){ duel._lvx=cx; duel._lvy=cy; }
+  else { const k=0.10; duel._lvx+=(cx-duel._lvx)*k; duel._lvy+=(cy-duel._lvy)*k; }
+}
+function duelLookOff(VW,VH){ const off=Math.min(VW,VH)*0.22; return {x:(duel._lvx||0)*off, y:(duel._lvy||0)*off}; }
 function teamCam(){ if(duel.split) return; const me=duel.humans[0]; if(!me) return;
   const Z=duel.war?WAR_ZOOM:DUEL_ZOOM; duel.zoom=Z; const VW=W/Z, VH=H/Z;
-  duel.camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,duel.W-VW));
-  duel.camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,duel.H-VH)); }
+  duelAdvanceLook(me); const lo=duelLookOff(VW,VH);
+  duel.camX=clamp(me.x+DUEL_PS/2+lo.x-VW/2,0,Math.max(0,duel.W-VW));
+  duel.camY=clamp(me.y+DUEL_PS/2+lo.y-VH/2,0,Math.max(0,duel.H-VH)); }
 function updateTeamDuel(dt){
   if(!duel) return;
   if(duel.allyCmd && duel.allyCmd.t>0) duel.allyCmd.t-=dt;   // player order fades after a few seconds
@@ -7446,6 +7446,17 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
     ctx.fillStyle='rgba(255,150,40,'+(0.4*(1-pr))+')'; ctx.beginPath(); ctx.arc(bl.x,bl.y,r*0.62,0,6.28); ctx.fill();
     ctx.strokeStyle='#ffb04a'; ctx.lineWidth=5*(1-pr)+1; ctx.beginPath(); ctx.arc(bl.x,bl.y,r,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
   drawDuelBlood();
+  if(duel.war && duel.buildings){   // roofs hide each building's interior until you step inside it
+    const pcx=me?me.x+DUEL_PS/2:0, pcy=me?me.y+DUEL_PS/2:0, t=26;
+    for(const bd of duel.buildings){ if(bd.x>x1||bd.x+bd.w<x0||bd.y>y1||bd.y+bd.h<y0) continue;
+      const inside = me && pcx>bd.x && pcx<bd.x+bd.w && pcy>bd.y && pcy<bd.y+bd.h;
+      if(inside) continue;   // you're in → see the interior
+      const rx=bd.x+t, ry=bd.y+t, rw=bd.w-2*t, rh=bd.h-2*t;
+      ctx.fillStyle='#514a40'; ctx.fillRect(rx,ry,rw,rh);
+      ctx.fillStyle='rgba(0,0,0,.16)'; for(let sx=rx+26; sx<rx+rw; sx+=30) ctx.fillRect(sx,ry,2,rh);   // rooftop panel lines
+      ctx.strokeStyle='#3a352d'; ctx.lineWidth=2; ctx.strokeRect(rx+1,ry+1,rw-2,rh-2);
+    }
+  }
 }
 function drawMateArrow(f){   // friendly marker floating over a teammate in shootout
   const mx=f.x+DUEL_PS/2, my=f.y-18 + Math.sin(performance.now()/220)*2;
@@ -7457,7 +7468,8 @@ function drawMateArrow(f){   // friendly marker floating over a teammate in shoo
 }
 function drawTeamView(v){
   const z=v.z, VW=v.rw/z, VH=v.rh/z, me=v.me;
-  const camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,duel.W-VW)), camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,duel.H-VH));
+  const _lo=duelLookOff(VW,VH);   // directional vision: shift the view toward where you're looking
+  const camX=clamp(me.x+DUEL_PS/2+_lo.x-VW/2,0,Math.max(0,duel.W-VW)), camY=clamp(me.y+DUEL_PS/2+_lo.y-VH/2,0,Math.max(0,duel.H-VH));
   duel.camX=camX; duel.camY=camY; duel.zoom=z;
   ctx.save(); ctx.beginPath(); ctx.rect(v.rx,v.ry,v.rw,v.rh); ctx.clip();
   ctx.fillStyle='#252d3c'; ctx.fillRect(v.rx,v.ry,v.rw,v.rh);
@@ -7466,7 +7478,8 @@ function drawTeamView(v){
   ctx.restore();
   localGloom(v.rx,v.ry,v.rw,v.rh,0.4);
   { const mate=(duel.squadMate && !duel.squadMate.dead) ? duel.squadMate : duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // mark your commandable squadmate
-    if(mate) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE'); }
+    if(mate){ const md=Math.hypot(mate.x-me.x, mate.y-me.y); const msc=1 - Math.min(0.65, md/2600*0.65);   // marker shrinks the farther the squadmate is
+      drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE', msc); } }
   if(duel.war && !duel.driving && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
     let best=null,bd=1e9; const cx=me.x+DUEL_PS/2, cy=me.y+DUEL_PS/2;
     for(const vh of duel.vehicles){ if(vh.occupied||vh.wreck) continue; const d=Math.hypot(vh.x-cx,vh.y-cy); if(d<bd){bd=d;best=vh;} }
@@ -7717,8 +7730,9 @@ function duelPickups(dt){   // host only: hand a pickup to whoever steps on it, 
   }
 }
 function duelCam(){ const me=duel[duel.meKey]; duel.zoom=DUEL_ZOOM; const VW=W/DUEL_ZOOM, VH=H/DUEL_ZOOM;
-  duel.camX=clamp(me.x+DUEL_PS/2-VW/2,0,Math.max(0,DUEL_W-VW));
-  duel.camY=clamp(me.y+DUEL_PS/2-VH/2,0,Math.max(0,DUEL_H-VH)); }
+  duelAdvanceLook(me); const lo=duelLookOff(VW,VH);
+  duel.camX=clamp(me.x+DUEL_PS/2+lo.x-VW/2,0,Math.max(0,DUEL_W-VW));
+  duel.camY=clamp(me.y+DUEL_PS/2+lo.y-VH/2,0,Math.max(0,DUEL_H-VH)); }
 function updateDuelHost(dt){
   if(!duel) return; duel.t+=dt;
   if(!duel.over){
@@ -7923,7 +7937,7 @@ function drawDuelHUD(){
     ctx.fillText(me.permRifle ? 'RIFLE' : ((wpn==='rifle'?'RIFLE':'SHOTGUN')+'  ×'+me.wammo), 12, 46);
   }
   ctx.textAlign='center'; ctx.fillStyle='rgba(220,230,245,.5)'; ctx.font='11px '+CF;
-  ctx.fillText(duel.campaign5?'take down the gun-zombie · cover blocks shots':'hunt them down · grab weapons · cover blocks shots', W/2, H-8);
+  ctx.fillText(duel.campaign5?'take down the enemy soldier · cover blocks shots':'hunt them down · grab weapons · cover blocks shots', W/2, H-8);
 }
 function duelBar(x,y,label,hp,col,right){
   const w=150,h=14; ctx.fillStyle='rgba(0,0,0,.45)'; roundRectPath(x,y,w,h,5); ctx.fill();
