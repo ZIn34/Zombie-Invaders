@@ -6840,12 +6840,9 @@ function teamAI(f, dt){
   const base = aiTactical(f, foe, dt);
   const sp=Math.hypot(base.mvx,base.mvy)||1;   // keep the tactical move speed
   let action='hunt';
-  const activeCmd = (isAlly && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;
-  const squadWide = activeCmd==='retreat'||activeCmd==='allout'||activeCmd==='stay'||activeCmd==='coverme';   // these orders rally the WHOLE squad
-  const commanded = isAlly && f===duel.squadMate;         // your marked squadmate obeys every order
-  const obeys = commanded || (isAlly && squadWide);       // everyone else only obeys the squad-wide ones
-  const independent = isAlly && duel.war && !obeys;       // otherwise fight on their own & spread out
-  const cmd = obeys ? activeCmd : null;
+  const commanded = isAlly && f===duel.squadMate;         // ONLY your marked squadmate obeys orders
+  const independent = isAlly && duel.war && !commanded;   // the rest fight on their own & spread out
+  const cmd = (commanded && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;
   if(mate){
     const dx=mate.x-f.x, dy=mate.y-f.y, dd=Math.hypot(dx,dy)||1;
     const fx=foe.x-f.x, fy=foe.y-f.y, fd=Math.hypot(fx,fy)||1;
