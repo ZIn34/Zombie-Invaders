@@ -6833,9 +6833,10 @@ function teamAI(f, dt){
   const human = duel.humans && duel.humans.find(h=>!h.dead && h.team===f.team && h!==f);
   const isAlly=!!human;
   const mate = human || duel.fighters.find(g=>g!==f && g.team===f.team && !g.dead);   // who this bot coordinates with
-  // target: HARD focus-fires the weakest enemy (communication); otherwise nearest
+  // target: react to whoever's shooting you first; else HARD focus-fires the weakest, otherwise nearest
   let foe;
-  if(D===2){ foe=enemies.reduce((a,b)=> b.hp<a.hp?b:a); }
+  if(f._threat && !f._threat.dead && f._threat.team!==f.team && (f._threatT||0)>0){ foe=f._threat; }
+  else if(D===2){ foe=enemies.reduce((a,b)=> b.hp<a.hp?b:a); }
   else { foe=enemies[0]; let bd=Infinity; for(const g of enemies){ const d=Math.hypot(g.x-f.x,g.y-f.y); if(d<bd){bd=d;foe=g;} } }
   const base = aiTactical(f, foe, dt);
   const sp=Math.hypot(base.mvx,base.mvy)||1;   // keep the tactical move speed
@@ -7068,7 +7069,7 @@ function teamPickups(dt){
       if(Math.abs((f.x+DUEL_PS/2)-k.x)<30 && Math.abs((f.y+DUEL_PS/2)-k.y)<30){ f.weapon=k.type; f.wammo=(k.type==='shotgun')?30:100; k.taken=true; k.respawnT=18; Sound.power(); break; } }
   }
 }
-function teamTickFlash(dt){ for(const f of duel.fighters){ if(f.flash>0)f.flash-=dt; if(f.spawnProtT>0) f.spawnProtT-=dt; if(f._assistT>0) f._assistT-=dt; } }
+function teamTickFlash(dt){ for(const f of duel.fighters){ if(f.flash>0)f.flash-=dt; if(f.spawnProtT>0) f.spawnProtT-=dt; if(f._assistT>0) f._assistT-=dt; if(f._threatT>0) f._threatT-=dt; } }
 // enemy spawn barrier — an enemy fighter/vehicle can't cross into the opposing team's spawn zone
 function warBarrierY(){ return {yB1:(duel.H-330), yB2:330}; }
 function enemyBarrierBlocks(team, cy){
@@ -7259,6 +7260,7 @@ function updateTeamDuel(dt){
         if(b.shell){ b.dead=true; shellExplode(b); break; }   // tank shell → explode on contact
         if(f._behind && bulletShielded(f,b)){ b.dead=true; break; }   // STAY BEHIND ME: a teammate's body soaks the shot
         f.hp-=1; f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
+        if(f.bot && b.owner && !b.owner.dead){ f._threat=b.owner; f._threatT=2.6; }   // react to whoever's shooting you
         if(duel.war && f.hp>0 && b.owner===duel.humans[0]) f._assistT=4;   // you hurt them → assist window if a teammate finishes
         if(f.hp<=0){ f.dead=true;
           if(duel.war){ f.respawnT=5; awardKillCash(b.owner, f);   // WAR: score the kill (+cash if it's yours/assist), respawn in 5s, first to the goal wins
