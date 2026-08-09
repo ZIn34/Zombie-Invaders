@@ -5802,7 +5802,7 @@ function netShowResults(){ if(!net) return; net.ended=true; state=STATE.NETRESUL
 
 /* ===================== ONLINE SHOOTOUT (1v1 duel, large map) ===================== */
 let duel=null;
-const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.22, DUEL_BSPD=1280, DUEL_PS=44;
+const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.26, DUEL_BSPD=1080, DUEL_PS=44;
 const DUEL_ZOOM=0.85;   // slight zoom-out for a wider view
 const WAR_ZOOM=0.58;    // 10v10 war: zoom out more so you can see the battle & your squad
 const DUEL_MAG=7, DUEL_RELOAD=1.6;   // pistol: 7 shots per magazine, then a reload
@@ -6654,8 +6654,8 @@ function makeWarObs(WW,HH){
   return obs;
 }
 function makeWarVehicles(WW,HH){   // DRIVABLE vehicles — x,y is the CENTRE; angle is the facing
-  const T=(x,y)=>({kind:'tank', x:Math.round(x), y:Math.round(y), w:98, h:74, angle:-Math.PI/2, occupied:false, driver:null, wreck:false, hp:32, hpMax:32, cd:0});
-  const J=(x,y)=>({kind:'jeep', x:Math.round(x), y:Math.round(y), w:76, h:50, angle:-Math.PI/2, occupied:false, driver:null, wreck:false, hp:15, hpMax:15, cd:0});
+  const T=(x,y)=>({kind:'tank', x:Math.round(x), y:Math.round(y), w:98, h:74, angle:-Math.PI/2, occupied:false, driver:null, wreck:false, hp:30, hpMax:30, cd:0});   // 3 tank shells
+  const J=(x,y)=>({kind:'jeep', x:Math.round(x), y:Math.round(y), w:76, h:50, angle:-Math.PI/2, occupied:false, driver:null, wreck:false, hp:20, hpMax:20, cd:0});   // 2 tank shells
   const v=[];
   v.push(T(460, HH-420), J(760, HH-420));           // right next to YOUR spawn so one's always close
   for(let i=0;i<4;i++) v.push(T(rand(300,WW-300), rand(760,HH-760)));   // more scattered across the field
@@ -6955,9 +6955,9 @@ function drawDuelSplats(){
 }
 function teamDuelActor(f, inp, dt){
   if(f.dead) return;
-  const spd=DUEL_SPD*(f.bot?1:0.62);   // human players move slower in shootout
+  const spd=DUEL_SPD*0.56;   // everyone (bots + you) moves at the same, calmer pace
   const nx=f.x+inp.mvx*spd*dt; if(!duelBlocks(nx,f.y,DUEL_PS,DUEL_PS) && !fighterBlocks(f,nx,f.y) && !vehicleBlocks(f,nx,f.y)) f.x=nx;
-  const ny=f.y+inp.mvy*spd*dt; if(!duelBlocks(f.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(f,f.x,ny) && !vehicleBlocks(f,f.x,ny)) f.y=ny;
+  const ny=f.y+inp.mvy*spd*dt; if(!duelBlocks(f.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(f,f.x,ny) && !vehicleBlocks(f,f.x,ny) && !enemyBarrierBlocks(f.team,ny+DUEL_PS/2)) f.y=ny;
   f.moving=!!(inp.mvx||inp.mvy); if(f.moving) f.walkT+=dt*11;
   if(inp.aim!=null) f.aim=inp.aim;
   if(f.cd>0)f.cd-=dt; if(f.recoil>0)f.recoil-=dt*7;
@@ -6966,7 +6966,7 @@ function teamDuelActor(f, inp, dt){
   const cd=wpn==='shotgun'?0.5:wpn==='rifle'?0.09:DUEL_FIRE_CD;
   const hasAmmo=(wpn==='pistol')?(f.mag>0&&f.reloadT<=0):(f.wammo>0);
   if(inp.fire && f.cd<=0 && hasAmmo){
-    f.cd=cd; f.recoil=1;
+    f.cd=cd; f.recoil=1; f.spawnProtT=0;   // firing drops your spawn protection
     if(wpn==='shotgun')Sound.spread(); else if(wpn==='rifle')Sound.rifle(); else Sound.shoot();
     const m=duelMuzzle(f), cx=m.x, cy=m.y;
     if(wpn==='shotgun'){ for(const a of[-0.17,0,0.17]){ const ang=f.aim+a; duel.bullets.push({x:cx,y:cy,vx:Math.cos(ang)*DUEL_BSPD,vy:Math.sin(ang)*DUEL_BSPD,team:f.team,t:0}); } }
@@ -6981,19 +6981,34 @@ function teamPickups(dt){
       if(Math.abs((f.x+DUEL_PS/2)-k.x)<30 && Math.abs((f.y+DUEL_PS/2)-k.y)<30){ f.weapon=k.type; f.wammo=(k.type==='shotgun')?30:100; k.taken=true; k.respawnT=18; Sound.power(); break; } }
   }
 }
-function teamTickFlash(dt){ for(const f of duel.fighters){ if(f.flash>0)f.flash-=dt; } }
+function teamTickFlash(dt){ for(const f of duel.fighters){ if(f.flash>0)f.flash-=dt; if(f.spawnProtT>0) f.spawnProtT-=dt; } }
+// enemy spawn barrier — an enemy fighter/vehicle can't cross into the opposing team's spawn zone
+function warBarrierY(){ return {yB1:(duel.H-330), yB2:330}; }
+function enemyBarrierBlocks(team, cy){
+  if(!duel.war) return false; const b=warBarrierY();
+  if(team===2 && cy>b.yB1) return true;   // team-2 enemy kept out of team-1's spawn (bottom)
+  if(team===1 && cy<b.yB2) return true;   // team-1 enemy kept out of team-2's spawn (top)
+  return false;
+}
 function teamCheckOver(){
   if(duel.war) return;   // WAR ends on the kill score, not a wipe (teams respawn)
   const a1=duel.fighters.some(f=>f.team===1&&!f.dead), a2=duel.fighters.some(f=>f.team===2&&!f.dead);
   if((!a1||!a2) && !duel.over){ duel.over=true; duel.winner=a1?1:2; duel.overT=0; Sound.over(); }
 }
-function warRespawn(f){   // drop a fighter back in at its team's line with full health
+function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST spot away from enemies, with brief spawn protection
   const band = f.team===1 ? (duel.H-240) : 200;
-  let x=rand(220, duel.W-220-DUEL_PS), y=band + rand(-70,70);
-  for(let t=0;t<50 && duelBlocks(x,y,DUEL_PS,DUEL_PS); t++){ x=rand(220,duel.W-220-DUEL_PS); y=band+rand(-70,70); }
-  f.x=x; f.y=y; f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
+  let best=null, bestD=-1;
+  for(let t=0;t<26;t++){
+    const x=rand(200, duel.W-200-DUEL_PS), y=band + rand(-90,90);
+    if(duelBlocks(x,y,DUEL_PS,DUEL_PS)) continue;
+    let nd=1e9; for(const g of duel.fighters){ if(g.dead||g.team===f.team) continue; const d=Math.hypot(g.x-x, g.y-y); if(d<nd)nd=d; }   // nearest enemy
+    if(nd>bestD){ bestD=nd; best={x,y}; }
+  }
+  if(!best){ best={x:rand(200,duel.W-200-DUEL_PS), y:band}; }
+  f.x=best.x; f.y=best.y; f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
   f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
   f.aim = f.team===1 ? -Math.PI/2 : Math.PI/2;
+  f.spawnProtT = 3;   // invulnerable for ~3s after respawn (ends early if you shoot) — no spawn camping
 }
 // ---------- DRIVABLE VEHICLES (war mode) — anyone can drive; they blow up when wrecked ----------
 function vehRadius(v){ return Math.max(v.w,v.h)/2; }
@@ -7054,7 +7069,7 @@ function botDrive(f, dt){
   const spd=v.kind==='jeep'?DUEL_SPD*1.25:DUEL_SPD*0.7, hw=v.w/2, hh=v.h/2;
   const nx=v.x+mvx*spd*dt, ny=v.y+mvy*spd*dt;
   if(!duelBlocks(nx-hw,v.y-hh,v.w,v.h) && !vehicleVehBlocks(v,nx,v.y)) v.x=nx; else f.flankSign=-(f.flankSign||1);
-  if(!duelBlocks(v.x-hw,ny-hh,v.w,v.h) && !vehicleVehBlocks(v,v.x,ny)) v.y=ny;
+  if(!duelBlocks(v.x-hw,ny-hh,v.w,v.h) && !vehicleVehBlocks(v,v.x,ny) && !enemyBarrierBlocks(f.team,ny)) v.y=ny;
   f.x=v.x-DUEL_PS/2; f.y=v.y-DUEL_PS/2; f.aim=v.angle;
   v.cd-=dt;
   if(foe && fd<(v.kind==='tank'?1250:900) && v.cd<=0){ if(v.kind==='tank'){ tankFire(v,f.team); v.cd=1.35; } else { jeepFire(v,f.team); v.cd=0.14; } }
@@ -7065,12 +7080,14 @@ function jeepFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2+12), my=v.
   duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*DUEL_BSPD,vy:Math.sin(a)*DUEL_BSPD,team,t:0}); Sound.rifle(); }
 function shellExplode(b){
   if(duel.blasts) duel.blasts.push({x:b.x,y:b.y,t:0}); duelBlood(b.x,b.y,16); shake(9,.32);
-  for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle) continue;
-    if(Math.hypot((f.x+DUEL_PS/2)-b.x,(f.y+DUEL_PS/2)-b.y)<100){ f.hp-=6; f.flash=0.18;
-      if(f.hp<=0){ f.dead=true; if(duel.war){ f.respawnT=5; if(b.team===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
-        if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){duel.over=true;duel.winner=duel.score1>=duel.warGoal?1:2;duel.overT=0;Sound.over();} } duelSplat(f.x+DUEL_PS/2,f.y+DUEL_PS/2); } }
-  if(duel.vehicles) for(const v of duel.vehicles){ if(v.wreck||!v.driver||v.driver.team===b.team) continue;   // shells damage enemy vehicles too
-    if(Math.hypot(v.x-b.x,v.y-b.y)<115){ v.hp-=10; if(v.hp<=0) destroyVehicle(v, b.team); } } }
+  for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle||f.spawnProtT>0) continue;   // instant-kill foot soldiers in the blast
+    if(Math.hypot((f.x+DUEL_PS/2)-b.x,(f.y+DUEL_PS/2)-b.y)<100){ f.dead=true; f.flash=0.18;
+      if(duel.war){ f.respawnT=5; if(b.team===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
+        if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){duel.over=true;duel.winner=duel.score1>=duel.warGoal?1:2;duel.overT=0;Sound.over();} }
+      duelSplat(f.x+DUEL_PS/2,f.y+DUEL_PS/2); }
+  }
+  if(duel.vehicles) for(const v of duel.vehicles){ if(v.wreck||!v.driver||v.driver.team===b.team) continue;   // 10 dmg to enemy vehicles → 3 shells kill a tank (30hp), 2 a jeep (20hp)
+    if(Math.hypot(v.x-b.x,v.y-b.y)<115){ v.hp-=10; if(v.hp<=0) destroyVehicle(v, b.team); } }
 }
 function updateVehicles(dt){
   if(!duel.vehicles) return;
@@ -7083,7 +7100,7 @@ function updateVehicles(dt){
   const spd = v.kind==='jeep' ? DUEL_SPD*1.4 : DUEL_SPD*0.78;
   const hw=v.w/2, hh=v.h/2, nx=v.x+(inp.mvx||0)*spd*dt, ny=v.y+(inp.mvy||0)*spd*dt;
   if(!duelBlocks(nx-hw,v.y-hh,v.w,v.h) && !vehicleVehBlocks(v,nx,v.y)) v.x=nx;
-  if(!duelBlocks(v.x-hw,ny-hh,v.w,v.h) && !vehicleVehBlocks(v,v.x,ny)) v.y=ny;
+  if(!duelBlocks(v.x-hw,ny-hh,v.w,v.h) && !vehicleVehBlocks(v,v.x,ny) && !enemyBarrierBlocks(me.team,ny)) v.y=ny;
   if(inp.aim!=null) v.angle=inp.aim;
   me.x=v.x-DUEL_PS/2; me.y=v.y-DUEL_PS/2; me.aim=v.angle;   // camera + death logic track the vehicle
   v.cd-=dt;
@@ -7141,12 +7158,13 @@ function updateTeamDuel(dt){
   for(const b of duel.bullets){ if(b.dead) continue;
     b.x+=b.vx*dt; b.y+=b.vy*dt; b.t+=dt;
     if(duelBlocks(b.x-2,b.y-2,4,4)){ b.dead=true; if(b.shell) shellExplode(b); continue; }
+    if(enemyBarrierBlocks(b.team, b.y)){ b.dead=true; continue; }   // enemy fire can't cross into your spawn either
     if(duel.vehicles){ let vh=false; for(const v of duel.vehicles){ if(Math.abs(b.x-v.x)<vehRadius(v)+3 && Math.abs(b.y-v.y)<vehRadius(v)+3){
         b.dead=true;
         if(b.shell){ shellExplode(b); }   // shells detonate on the hull (AoE handles the damage)
         else if(!v.wreck && v.driver && v.driver.team!==b.team){ v.hp-=1; if(v.hp<=0) destroyVehicle(v, b.team); }
         vh=true; break; } } if(vh) continue; }
-    for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle) continue;
+    for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle||f.spawnProtT>0) continue;
       const hx=f.x+DUEL_PS/2, hy=f.y+DUEL_PS/2, HR=26;
       if(Math.abs(b.x-hx)<HR && Math.abs(b.y-hy)<HR){
         if(b.shell){ b.dead=true; shellExplode(b); break; }   // tank shell → explode on contact
@@ -7177,6 +7195,17 @@ function drawWarGround(x0,y0,x1,y1){
       ctx.strokeStyle='#6d5b40'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.stroke();
     } else if(d.t==='scorch'){ ctx.fillStyle='rgba(18,14,9,.5)'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.fill();
     } else if(d.t==='wire'){ drawBarbedWire(d); }
+  }
+  // spawn barriers — enemies can't cross into your team's spawn
+  const bb=warBarrierY(), pulse=0.55+0.3*Math.sin(performance.now()/280);
+  for(const s of [{y:bb.yB1,rgb:'106,208,106',down:true},{y:bb.yB2,rgb:'255,107,107',down:false}]){
+    if(s.y<y0-50||s.y>y1+50) continue;
+    const bandTop = s.down ? s.y : s.y-46;
+    const g=ctx.createLinearGradient(0, s.down?s.y:s.y, 0, s.down?s.y+46:s.y-46);
+    g.addColorStop(0,'rgba('+s.rgb+',0.20)'); g.addColorStop(1,'rgba('+s.rgb+',0)');
+    ctx.fillStyle=g; ctx.fillRect(x0, bandTop, (x1-x0), 46);
+    ctx.save(); ctx.globalAlpha=pulse; ctx.strokeStyle='rgba('+s.rgb+',1)'; ctx.lineWidth=3; ctx.setLineDash([22,14]);
+    ctx.beginPath(); ctx.moveTo(x0,s.y); ctx.lineTo(x1,s.y); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
   }
 }
 function drawBarbedWire(d){
@@ -7297,7 +7326,8 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
   for(const k of duel.pickups){ if(!k.taken) drawDuelPickup(k); }
   for(const b of duel.bullets){ if(b.shell){ ctx.fillStyle='#ffd24a'; ctx.beginPath(); ctx.arc(b.x,b.y,6,0,6.28); ctx.fill(); ctx.fillStyle='rgba(255,150,40,.5)'; ctx.beginPath(); ctx.arc(b.x,b.y,9,0,6.28); ctx.fill(); }
     else { ctx.fillStyle=b.team===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); } }
-  for(const f of duel.fighters){ if(f.dead||f._inVehicle) continue; drawDuelSoldier(f, f.team===1?'#6ad06a':'#ff6b6b', f===me); }
+  for(const f of duel.fighters){ if(f.dead||f._inVehicle) continue; drawDuelSoldier(f, f.team===1?'#6ad06a':'#ff6b6b', f===me);
+    if(f.spawnProtT>0){ ctx.save(); ctx.globalAlpha=0.3+0.25*Math.sin(performance.now()/110); ctx.strokeStyle='#7fe0ff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(f.x+DUEL_PS/2,f.y+DUEL_PS/2,DUEL_PS*0.72,0,6.28); ctx.stroke(); ctx.restore(); } }
   if(duel.blasts) for(const bl of duel.blasts){ if(bl.t<0) continue; const pr=bl.t/0.45, r=10+pr*72; ctx.globalAlpha=1-pr;
     ctx.fillStyle='rgba(255,150,40,'+(0.4*(1-pr))+')'; ctx.beginPath(); ctx.arc(bl.x,bl.y,r*0.62,0,6.28); ctx.fill();
     ctx.strokeStyle='#ffb04a'; ctx.lineWidth=5*(1-pr)+1; ctx.beginPath(); ctx.arc(bl.x,bl.y,r,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
@@ -7515,7 +7545,7 @@ function duelLocalInput(){
   return {mvx,mvy,aim,fire};
 }
 function duelActor(pl, inp, dt, spawn){
-  const spd=DUEL_SPD*(pl.bot?1:0.62);   // human players move slower in shootout
+  const spd=DUEL_SPD*0.56;   // everyone (bots + you) moves at the same, calmer pace
   const nx=pl.x+inp.mvx*spd*dt; if(!duelBlocks(nx,pl.y,DUEL_PS,DUEL_PS) && !fighterBlocks(pl,nx,pl.y)) pl.x=nx;
   const ny=pl.y+inp.mvy*spd*dt; if(!duelBlocks(pl.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(pl,pl.x,ny)) pl.y=ny;
   pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving) pl.walkT+=dt*11;
