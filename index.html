@@ -5845,12 +5845,11 @@ function warBuy(key){
   duel.cash-=it.cost; Sound.power();
   if(key==='rifle'){ me.weapon='rifle'; me.wammo=120; toast('🔫 RIFLE bought!'); }
   else if(key==='shotgun'){ me.weapon='shotgun'; me.wammo=40; toast('🔫 SHOTGUN bought!'); }
-  else { // spawn a vehicle right beside you
-    const kind=key, w=kind==='tank'?98:76, h=kind==='tank'?74:50;
-    let vx=me.x+DUEL_PS/2+90, vy=me.y+DUEL_PS/2;
-    if(duelBlocks(vx-w/2,vy-h/2,w,h)) vx=me.x+DUEL_PS/2-90;
-    duel.vehicles.push({kind, x:vx, y:vy, w, h, angle:me.aim||-Math.PI/2, occupied:false, driver:null, wreck:false, hp:kind==='tank'?30:20, hpMax:kind==='tank'?30:20, cd:0});
-    toast(kind==='tank'?'🚂 TANK delivered — hop in!':'🚙 JEEP delivered — hop in!');
+  else { // buy a vehicle and get straight in it (so a teammate can't grab it first)
+    const kind=key, v=spawnVehicleFor(me, kind);
+    if(!v){ duel.cash+=it.cost; toast('No room to drop it — move to open ground'); return; }
+    if(!me._inVehicle){ enterVehicle(me, v); duel.driving=v; }
+    toast(kind==='tank'?'🚂 TANK — you\'re in!':'🚙 JEEP — you\'re in!');
   }
 }
 const DUEL_MAG=7, DUEL_RELOAD=1.6;   // pistol: 7 shots per magazine, then a reload
