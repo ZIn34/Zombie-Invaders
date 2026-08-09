@@ -5812,6 +5812,7 @@ const DUEL_W=1800, DUEL_H=1800, DUEL_HP=8, DUEL_SPD=310, DUEL_FIRE_CD=0.26, DUEL
 const DUEL_ZOOM=0.85;   // slight zoom-out for a wider view
 const WAR_ZOOM=0.74;    // 10v10 war: tighter view (bots only engage within about this range too)
 const WAR_KILL_CASH=60;   // cash you earn per kill in the war
+const WAR_ASSIST_CASH=30; // cash for assisting a kill (you damaged them, someone else finished)
 const WAR_SHOP=[   // buy weapons & vehicles with your kill cash
   {key:'rifle',   label:'RIFLE',   cost:150, hot:'KeyR'},
   {key:'shotgun', label:'SHOTGUN', cost:120, hot:'KeyT'},
@@ -5819,9 +5820,12 @@ const WAR_SHOP=[   // buy weapons & vehicles with your kill cash
   {key:'tank',    label:'TANK',    cost:650, hot:'KeyH'},
 ];
 function warShopBtns(){ const bw=104, bh=34, gap=6, x=W-bw-10; return WAR_SHOP.map((it,i)=>({x, y:96+i*(bh+gap), w:bw, h:bh, it})); }
-function awardKillCash(owner){ if(!duel||!duel.war||!owner) return;
-  if(owner===duel.humans[0]) duel.cash=(duel.cash||0)+WAR_KILL_CASH;
-  else if(owner.bot) owner.cash=(owner.cash||0)+WAR_KILL_CASH; }
+function awardKillCash(owner, victim){ if(!duel||!duel.war) return;
+  const me=duel.humans[0];
+  if(owner===me){ if(me) duel.cash=(duel.cash||0)+WAR_KILL_CASH; }
+  else { if(owner && owner.bot) owner.cash=(owner.cash||0)+WAR_KILL_CASH;
+    if(victim && victim._assistT>0) duel.cash=(duel.cash||0)+WAR_ASSIST_CASH; }   // you damaged them → assist bonus
+}
 function spawnVehicleFor(f, kind){   // drop a bought vehicle beside a fighter
   const w=kind==='tank'?98:76, h=kind==='tank'?74:50;
   let vx=f.x+DUEL_PS/2+82, vy=f.y+DUEL_PS/2;
@@ -6689,7 +6693,7 @@ function startTeamShootout(opts){   // opts:{split, h1:{bot,ctrl}, h2:{bot,ctrl}
 function startTeamShootoutSolo(){ startTeamShootout({split:false, h1:{bot:false,ctrl:'kb'}, h2:{bot:true}}); }
 // ===== 10v10 WAR — a massive battlefield; you + 9 bot allies vs 10 enemy bots, and your radio orders command the whole squad =====
 function makeWarObs(WW,HH){
-  const obs=[]; const N=54;
+  const obs=[]; const N=Math.round(WW*HH/380000);   // scale prop count with the map size
   for(let i=0;i<N;i++){
     const r=Math.random(); let kind, w, h;
     if(r<0.42){ kind='sandbag'; const vert=Math.random()<0.5, long=rand(150,320); w=vert?46:long; h=vert?long:46; }
@@ -6700,6 +6704,26 @@ function makeWarObs(WW,HH){
     obs.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h),kind});
   }
   return obs;
+}
+function addBWall(walls, x,y,w,h,door){   // a building wall segment, split around a doorway gap
+  if(!door){ walls.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h),kind:'bwall'}); return; }
+  const G=96;   // door width
+  if(door==='h'){ const gs=w*rand(0.28,0.62); if(gs>4) walls.push({x:Math.round(x),y:Math.round(y),w:Math.round(gs),h:Math.round(h),kind:'bwall'}); const ge=gs+G; if(w-ge>4) walls.push({x:Math.round(x+ge),y:Math.round(y),w:Math.round(w-ge),h:Math.round(h),kind:'bwall'}); }
+  else { const gs=h*rand(0.28,0.62); if(gs>4) walls.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(gs),kind:'bwall'}); const ge=gs+G; if(h-ge>4) walls.push({x:Math.round(x),y:Math.round(y+ge),w:Math.round(w),h:Math.round(h-ge),kind:'bwall'}); }
+}
+function makeWarBuildings(WW,HH){   // hollow rooms with a doorway you can walk into
+  const buildings=[], walls=[], n=Math.max(6, Math.round(WW*HH/4200000));
+  for(let i=0;i<n;i++){
+    const bw=rand(300,560), bh=rand(260,480), t=26;
+    const x=rand(220, WW-220-bw), y=rand(480, HH-480-bh);
+    const door=Math.floor(Math.random()*4);
+    addBWall(walls, x, y, bw, t, door===0?'h':null);            // top
+    addBWall(walls, x, y+bh-t, bw, t, door===1?'h':null);       // bottom
+    addBWall(walls, x, y, t, bh, door===2?'v':null);            // left
+    addBWall(walls, x+bw-t, y, t, bh, door===3?'v':null);       // right
+    buildings.push({x:Math.round(x),y:Math.round(y),w:Math.round(bw),h:Math.round(bh)});
+  }
+  return {buildings, walls};
 }
 function makeWarVehicles(WW,HH){   // DRIVABLE vehicles — x,y is the CENTRE; angle is the facing
   const T=(x,y)=>({kind:'tank', x:Math.round(x), y:Math.round(y), w:98, h:74, angle:-Math.PI/2, occupied:false, driver:null, wreck:false, hp:30, hpMax:30, cd:0});   // 3 tank shells
@@ -6725,15 +6749,16 @@ function warPickups(WW,HH){
 function startBigWar(){
   try{ NetIO.cleanup(); }catch(e){}
   mode='duel'; explore=null; coop=null; net=null; codef=null; netShowCodeInput(false);
-  const WW=6000, HH=6000, N=10, fighters=[];   // a much larger battlefield — you + your buddy hunt the enemy across it
+  const WW=8500, HH=8500, N=10, fighters=[];   // a huge battlefield — you + your buddy hunt the enemy across it
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=HH-240 - (i%2)*80;
     fighters.push(mkFighter(x, y, -Math.PI/2, 1, i!==0, i===0?'kb':null)); }   // i=0 is you, rest are bot allies
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=180 + (i%2)*80;
     fighters.push(mkFighter(x, y, Math.PI/2, 2, true, null)); }
+  const bld=makeWarBuildings(WW,HH);
   duel={ W:WW, H:HH, camX:0, camY:0, bullets:[], over:false, winner:0, overT:0, t:0, team:true, split:false, war:true, paused:false,
     warGoal:100, score1:0, score2:0, driving:null, blasts:[], cash:0,
     fighters, humans:fighters.filter(f=>!f.bot),
-    pickups:[], obs:makeWarObs(WW,HH), vehicles:[], decals:makeWarDecals(WW,HH) };   // no auto-spawn vehicles or pickups — buy them with kill cash
+    pickups:[], obs:makeWarObs(WW,HH).concat(bld.walls), buildings:bld.buildings, vehicles:[], decals:makeWarDecals(WW,HH) };   // no auto-spawn vehicles or pickups — buy them with kill cash
   duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // only this ally follows your orders; the rest fight on their own
   clearDuelSpawns();
   padPrev=[{},{}];
@@ -7046,7 +7071,7 @@ function teamPickups(dt){
       if(Math.abs((f.x+DUEL_PS/2)-k.x)<30 && Math.abs((f.y+DUEL_PS/2)-k.y)<30){ f.weapon=k.type; f.wammo=(k.type==='shotgun')?30:100; k.taken=true; k.respawnT=18; Sound.power(); break; } }
   }
 }
-function teamTickFlash(dt){ for(const f of duel.fighters){ if(f.flash>0)f.flash-=dt; if(f.spawnProtT>0) f.spawnProtT-=dt; } }
+function teamTickFlash(dt){ for(const f of duel.fighters){ if(f.flash>0)f.flash-=dt; if(f.spawnProtT>0) f.spawnProtT-=dt; if(f._assistT>0) f._assistT-=dt; } }
 // enemy spawn barrier — an enemy fighter/vehicle can't cross into the opposing team's spawn zone
 function warBarrierY(){ return {yB1:(duel.H-330), yB2:330}; }
 function enemyBarrierBlocks(team, cy){
@@ -7099,7 +7124,7 @@ function destroyVehicle(v, killerTeam, killerOwner){
   const d=v.driver;
   if(d){ d._inVehicle=false; d._veh=null; if(duel.driving===v) duel.driving=null;
     d.dead=true;
-    if(duel.war){ d.respawnT=5; awardKillCash(killerOwner); if(killerTeam===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
+    if(duel.war){ d.respawnT=5; awardKillCash(killerOwner, d); if(killerTeam===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
       if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){ duel.over=true; duel.winner=duel.score1>=duel.warGoal?1:2; duel.overT=0; Sound.over(); } }
   }
   v.driver=null; v.occupied=false;
@@ -7148,7 +7173,7 @@ function shellExplode(b){
   if(duel.blasts) duel.blasts.push({x:b.x,y:b.y,t:0}); duelBlood(b.x,b.y,16); shake(9,.32);
   for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle||f.spawnProtT>0) continue;   // instant-kill foot soldiers in the blast
     if(Math.hypot((f.x+DUEL_PS/2)-b.x,(f.y+DUEL_PS/2)-b.y)<100){ f.dead=true; f.flash=0.18;
-      if(duel.war){ f.respawnT=5; awardKillCash(b.owner); if(b.team===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
+      if(duel.war){ f.respawnT=5; awardKillCash(b.owner, f); if(b.team===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
         if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){duel.over=true;duel.winner=duel.score1>=duel.warGoal?1:2;duel.overT=0;Sound.over();} }
       duelSplat(f.x+DUEL_PS/2,f.y+DUEL_PS/2); }
   }
@@ -7237,8 +7262,9 @@ function updateTeamDuel(dt){
         if(b.shell){ b.dead=true; shellExplode(b); break; }   // tank shell → explode on contact
         if(f._behind && bulletShielded(f,b)){ b.dead=true; break; }   // STAY BEHIND ME: a teammate's body soaks the shot
         f.hp-=1; f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
+        if(duel.war && f.hp>0 && b.owner===duel.humans[0]) f._assistT=4;   // you hurt them → assist window if a teammate finishes
         if(f.hp<=0){ f.dead=true;
-          if(duel.war){ f.respawnT=5; awardKillCash(b.owner);   // WAR: score the kill (+cash if it's yours), respawn in 5s, first to the goal wins
+          if(duel.war){ f.respawnT=5; awardKillCash(b.owner, f);   // WAR: score the kill (+cash if it's yours/assist), respawn in 5s, first to the goal wins
             if(b.team===1) duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
             if(!duel.over && (duel.score1>=duel.warGoal || duel.score2>=duel.warGoal)){ duel.over=true; duel.winner=duel.score1>=duel.warGoal?1:2; duel.overT=0; Sound.over(); }
           } else teamCheckOver();
@@ -7290,6 +7316,15 @@ function drawBarbedWire(d){
 }
 function drawWarProp(o){
   const k=o.kind||'sandbag';
+  if(k==='bwall'){   // building wall — concrete blocks
+    ctx.fillStyle='#7a736a'; ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.fillStyle='rgba(255,255,255,.08)'; ctx.fillRect(o.x,o.y,o.w,Math.max(3,o.h*0.28));
+    ctx.strokeStyle='#4c473f'; ctx.lineWidth=2; ctx.strokeRect(o.x+1,o.y+1,o.w-2,o.h-2);
+    ctx.strokeStyle='rgba(50,46,40,.5)'; ctx.lineWidth=1;
+    if(o.w>=o.h){ for(let bx=o.x+22;bx<o.x+o.w-4;bx+=24){ ctx.beginPath(); ctx.moveTo(bx,o.y+2); ctx.lineTo(bx,o.y+o.h-2); ctx.stroke(); } }
+    else { for(let by=o.y+22;by<o.y+o.h-4;by+=24){ ctx.beginPath(); ctx.moveTo(o.x+2,by); ctx.lineTo(o.x+o.w-2,by); ctx.stroke(); } }
+    return;
+  }
   if(k==='sandbag'){
     ctx.fillStyle='#8a7a4e'; roundRectPath(o.x,o.y,o.w,o.h,7); ctx.fill();
     ctx.fillStyle='rgba(255,240,200,.12)'; roundRectPath(o.x+2,o.y+2,o.w-4,Math.max(3,o.h*0.32),5); ctx.fill();
@@ -7377,6 +7412,9 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
   const x0=cx-10,y0=cy-10,x1=cx+VW+10,y1=cy+VH+10;
   if(duel.war){
     drawWarGround(x0,y0,x1,y1);
+    if(duel.buildings) for(const bd of duel.buildings){ if(bd.x>x1||bd.x+bd.w<x0||bd.y>y1||bd.y+bd.h<y0) continue;   // interior floor
+      ctx.fillStyle='#413b33'; ctx.fillRect(bd.x, bd.y, bd.w, bd.h);
+      ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; for(let fx=bd.x+28; fx<bd.x+bd.w; fx+=34){ ctx.beginPath(); ctx.moveTo(fx,bd.y); ctx.lineTo(fx,bd.y+bd.h); ctx.stroke(); } }
     ctx.strokeStyle='#2a2016'; ctx.lineWidth=10; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
     for(const o of duel.obs){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue; drawWarProp(o); }
   } else {
