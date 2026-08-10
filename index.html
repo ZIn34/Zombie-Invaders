@@ -3776,7 +3776,8 @@ function drawExploreUI(ex){
   ctx.textAlign='center'; ctx.font='bold 14px '+CF; ctx.shadowColor='rgba(0,0,0,.75)'; ctx.shadowBlur=4;
   if(ex.reached){ const left=zombies.filter(z=>z.alive).length;
     ctx.fillStyle='#7dffa0'; ctx.fillText('CLEAR THE ZOMBIES — '+left+' left', W/2, 30); }
-  else { ctx.fillStyle='#ffe14b'; ctx.fillText('REACH THE MARKER (no firing yet)', W/2, 30); }
+  else { const feet=player?Math.round(Math.hypot((player.x+player.w/2)-ex.marker.x,(player.y+player.h/2)-ex.marker.y)/10):0;   // 10px = 1 foot
+    ctx.fillStyle='#ffe14b'; ctx.fillText('FOLLOW THE CRYSTAL — '+feet+' ft', W/2, 30); }
   ctx.shadowBlur=0;
   // off-screen marker arrow while heading there
   if(!ex.reached){
@@ -3797,10 +3798,10 @@ function drawCrystalRunUI(ex){
     ctx.font='bold 15px '+CF; ctx.fillStyle=player.ammo<=4?'#ff5b5b':'#ffe14b';
     const atxt=magText(player); ctx.fillText(atxt, W-14, 44); drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 39); ctx.shadowBlur=0; drawMagCount(player, W-14, 59); }
   // objective banner + distance
-  const dist=Math.round(Math.hypot((player.x+player.w/2)-m.x, (player.y+player.h/2)-m.y));
+  const feet=Math.round(Math.hypot((player.x+player.w/2)-m.x, (player.y+player.h/2)-m.y)/10);   // 10px = 1 foot
   ctx.textAlign='center'; ctx.font='bold 14px '+CF; ctx.shadowColor='rgba(0,0,0,.8)'; ctx.shadowBlur=4;
   ctx.fillStyle= ex.phase===1 ? '#ffe14b' : '#7dffa0';
-  ctx.fillText(ex.phase===1 ? ('RUN TO THE FOREST — '+dist+' px') : ('GET BACK TO BASE — '+dist+' px'), W/2, 30);
+  ctx.fillText(ex.phase===1 ? ('RUN TO THE FOREST — '+feet+' ft') : ('GET BACK TO BASE — '+feet+' ft'), W/2, 30);
   ctx.shadowBlur=0;
   // off-screen arrow to the active marker
   const sx=m.x-ex.camX, sy=m.y-ex.camY;
@@ -8453,7 +8454,7 @@ function drawDuelOver(){
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
   ctx.fillStyle=meWon?'#7ee06a':'#ff7a7a'; ctx.font='bold 36px '+CF;
-  ctx.fillText(duel.campaign5 ? (meWon?'ZOMBIE DESTROYED! ':'YOU DIED') : (meWon?'YOU WIN! ':'YOU LOSE'), W/2, H/2-10); ctx.shadowBlur=0;
+  ctx.fillText(duel.campaign5 ? (meWon?'ENEMY DESTROYED!':'YOU DIED') : (meWon?'YOU WIN!':'YOU LOSE'), W/2, H/2-10); ctx.shadowBlur=0;
   ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
   ctx.fillStyle='#e6f2df'; ctx.font='bold 16px '+CF; ctx.fillText(duel.campaign5?(meWon?'+20 coins':'tap to retry'):'tap to leave', W/2, H/2+30); ctx.globalAlpha=1;
 }
