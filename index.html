@@ -190,11 +190,13 @@ function applyViewport(){
   if(canvas.width!==d.w || canvas.height!==d.h){ canvas.width=d.w; canvas.height=d.h; }
   W=d.w; H=d.h;
   if(typeof layoutBuildBar==='function'){ layoutBuildBar(); }
+  if(typeof layoutMenu==='function'){ layoutMenu(); }
   document.body.classList.toggle('landscape', _landActive);
   fit();
 }
+function landscapeUI(){ return state===STATE.MENU; }   // screens allowed to use the wide landscape canvas (besides gameplay)
 function syncViewport(){
-  const want = isAimState() && (settings.forceLandscape || (window.innerWidth > window.innerHeight));
+  const want = (isAimState() || landscapeUI()) && (window.innerWidth > window.innerHeight);
   if(want!==_landActive){ _landActive=want; applyViewport(); }
 }
 window.addEventListener('resize', ()=>{ syncViewport(); fit(); }); fit();
@@ -519,7 +521,6 @@ function canvasTap(p, pid){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
     else if(inRect(p, menuLeaderBtn)) enterLeader('defense', STATE.MENU);   // leaderboard
     else if(inRect(p, menuAcctBtn)) enterAccount();   // account sign-in / cloud sync
-    else if(inRect(p, menuLandBtn)){ settings.forceLandscape=!settings.forceLandscape; saveSettings(); Sound.hit(); toast(settings.forceLandscape?'LANDSCAPE PLAY ON — hold your phone sideways':'LANDSCAPE PLAY OFF — follows your phone'); }
     else if(inRect(p, tutBtn)){ tutPage=0; state=STATE.TUTORIAL; }   // how-to-play
     else if(inRect(p, campBtn)) enterCampaign(); // story mode — jump straight into the cutscene
     else if(inRect(p, coopBtn)) state=STATE.ONLINEPICK;  // choose Versus or Co-op
@@ -692,7 +693,7 @@ function netPadTargets(){
 }
 function padTargets(){
   switch(state){
-    case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, targetBtn, menuLeaderBtn, menuAcctBtn, menuLandBtn, gearBtn];
+    case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, targetBtn, menuLeaderBtn, menuAcctBtn, gearBtn];
     case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
     case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, splitOpenBtn, splitWarBtn, backBtn];
     case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, shoot1v2Btn, shootWarBtn, shootPUBtn, backBtn];
@@ -1053,7 +1054,7 @@ let defPendingCoop=false;// which defense the setup screen will launch
 let defWon=false;        // solo defense: reached the kill limit
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
-let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', fireBtnPos:null, forceLandscape:false, padMap:null};
+let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', fireBtnPos:null, padMap:null};
 function applyStickLayout(){ try{ document.body.classList.toggle('swapsticks', !!settings.swapSticks); }catch(e){} }   // left/right-handed on-screen joysticks
 function applyFireBtnPos(){   // custom-placed FIRE button (button-aim scheme): position #tfire over the canvas at the saved spot
   try{ const fb=document.getElementById('tfire'); if(!fb) return;
@@ -1092,7 +1093,6 @@ function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settin
   if(typeof s.swapSticks==='boolean')  settings.swapSticks=s.swapSticks;
   if(s.aimStick==='tap'||s.aimStick==='auto'||s.aimStick==='button') settings.aimStick=s.aimStick;
   if(s.fireBtnPos && typeof s.fireBtnPos.x==='number' && typeof s.fireBtnPos.y==='number') settings.fireBtnPos={x:s.fireBtnPos.x, y:s.fireBtnPos.y};
-  if(typeof s.forceLandscape==='boolean') settings.forceLandscape=s.forceLandscape;
   if(s.padMap && typeof s.padMap==='object') settings.padMap=s.padMap;   // restore custom controller bindings
 } }catch(e){} }
 loadSettings();
@@ -4587,7 +4587,27 @@ const backBtn={x:12, y:12, w:74, h:32};
 const gearBtn={x:W-58, y:H-58, w:44, h:44};                 // settings gear, bottom-right of the menu
 const menuLeaderBtn={x:14, y:H-58, w:44, h:44};             // leaderboard, bottom-left of the menu
 const menuAcctBtn={x:66, y:H-58, w:44, h:44};               // account (sign in / sync), next to the leaderboard
-const menuLandBtn={x:118, y:H-58, w:44, h:44};              // landscape (sideways) play toggle
+// Reposition the home-menu buttons for the current orientation. In portrait the
+// classic single vertical stack; in landscape (wide 760×430) a two-column layout:
+// title + big PLAY on the left, the smaller buttons stacked on the right.
+function layoutMenu(){
+  if(_landActive){
+    const rx=W*0.71;                                   // right column: center x for the small buttons
+    let y=64;
+    for(const b of [tutBtn,targetBtn,campBtn,coopBtn,storeBtn]){ b.x=rx-b.w/2; b.y=y; y+=b.h+13; }
+    playBtn.x=W*0.29-playBtn.w/2; playBtn.y=286;        // big PLAY on the left, under the title
+  } else {
+    tutBtn.x=W/2-92;    tutBtn.y=281;
+    targetBtn.x=W/2-104; targetBtn.y=322;
+    campBtn.x=W/2-104;  campBtn.y=359;
+    coopBtn.x=W/2-104;  coopBtn.y=397;
+    storeBtn.x=W/2-104; storeBtn.y=435;
+    playBtn.x=W/2-108;  playBtn.y=476;
+  }
+  gearBtn.x=W-58;       gearBtn.y=H-58;
+  menuLeaderBtn.x=14;   menuLeaderBtn.y=H-58;
+  menuAcctBtn.x=66;     menuAcctBtn.y=H-58;
+}
 // SCREEN SHAKE — separate toggles for basic zombies and the boss
 const setShakeBasicBtn={x:75,  y:206, w:120, h:44};
 const setShakeBossBtn ={x:235, y:206, w:120, h:44};
@@ -4674,16 +4694,18 @@ function drawMenu(){
   titleT+=0.016;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  // title (raised)
+  // title (raised) — centered in portrait, over the left column in landscape
+  const tx = _landActive ? W*0.29 : W/2;
   ctx.font='bold 50px "Comic Sans MS","Comic Neue",system-ui,sans-serif';
-  ctx.fillStyle='#0a2a06'; ctx.fillText('ZOMBIE', W/2+3, 150+3);
-  ctx.fillStyle='#eafff0'; ctx.fillText('ZOMBIE', W/2, 150);
-  ctx.fillStyle='#0a2a06'; ctx.fillText('INVADERS', W/2+3, 202+3);
-  ctx.fillStyle='#ffe14b'; ctx.fillText('INVADERS', W/2, 202);
+  ctx.fillStyle='#0a2a06'; ctx.fillText('ZOMBIE', tx+3, 150+3);
+  ctx.fillStyle='#eafff0'; ctx.fillText('ZOMBIE', tx, 150);
+  ctx.fillStyle='#0a2a06'; ctx.fillText('INVADERS', tx+3, 202+3);
+  ctx.fillStyle='#ffe14b'; ctx.fillText('INVADERS', tx, 202);
   ctx.shadowBlur=0;
 
   // HOW TO PLAY, TARGET PRACTICE, CAMPAIGN, ONLINE, STORE, and big PLAY buttons
-  drawTutorialButton(300);
+  // (cy derived from each rect so both orientations stay aligned — see layoutMenu)
+  drawTutorialButton(tutBtn.y+tutBtn.h/2);
   { const b=targetBtn;   // TARGET PRACTICE
     const g=ctx.createLinearGradient(0,b.y,0,b.y+b.h); g.addColorStop(0,'#c98b3a'); g.addColorStop(1,'#9c6316');
     ctx.save(); ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=5;
@@ -4691,30 +4713,16 @@ function drawMenu(){
     ctx.lineWidth=2.5; ctx.strokeStyle='#ffd98a'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
     ctx.fillStyle='#fff6e6'; ctx.font='bold 16px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('TARGET PRACTICE', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; ctx.restore(); }
-  drawCampaignButton(380);
-  drawCoopButton(418);
-  drawStoreButton(456);
-  drawPlayButton(502, 1+Math.sin(titleT*3)*0.03);
+  drawCampaignButton(campBtn.y+campBtn.h/2);
+  drawCoopButton(coopBtn.y+coopBtn.h/2);
+  drawStoreButton(storeBtn.y+storeBtn.h/2);
+  drawPlayButton(playBtn.y+playBtn.h/2, 1+Math.sin(titleT*3)*0.03);
   if(hi>0){ ctx.textAlign='center'; ctx.fillStyle='#fff'; ctx.font='bold 12px '+CF;
     ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-    ctx.fillText('BEST: '+String(hi).padStart(6,'0'), W/2, 236); ctx.shadowBlur=0; }
+    ctx.fillText('BEST: '+String(hi).padStart(6,'0'), tx, 236); ctx.shadowBlur=0; }
   drawGearButton();
   drawMenuLeaderButton();
   drawMenuAcctButton();
-  drawMenuLandButton();
-}
-function drawMenuLandButton(){   // toggle landscape (sideways) play — handy if your phone is rotation-locked
-  const b=menuLandBtn, on=!!settings.forceLandscape, cx=b.x+b.w/2, cy=b.y+b.h/2;
-  ctx.save();
-  ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=8; ctx.shadowOffsetY=3;
-  ctx.fillStyle=on?'rgba(24,44,30,.9)':'rgba(20,26,20,.85)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.fill();
-  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-  ctx.lineWidth=2.5; ctx.strokeStyle=on?'#4fd07a':'#3a4a5c'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
-  // wide "landscape phone" glyph
-  ctx.lineWidth=2.5; ctx.strokeStyle=on?'#7ee0a0':'#9fb0c9';
-  roundRectPath(cx-13, cy-9, 26, 18, 4); ctx.stroke();
-  ctx.fillStyle=on?'#7ee0a0':'#9fb0c9'; ctx.beginPath(); ctx.arc(cx+9, cy, 1.6, 0, 6.28); ctx.fill();
-  ctx.restore();
 }
 function drawMenuAcctButton(){   // person icon, bottom-left → account sign-in / sync
   const b=menuAcctBtn, cx=b.x+b.w/2, cy=b.y+b.h/2;
