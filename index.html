@@ -6844,6 +6844,7 @@ function duelAvoid(f, dx, dy){
 // The ally also calls out what it's doing to the player.
 function teamAI(f, dt){
   const D=difficulty;
+  f._age=(f._age||0)+dt;   // time since this fighter spawned — used to ramp enemy cohesion
   f._holding=false; f._behind=false;
   const enemies=duel.fighters.filter(g=>!g.dead && g.team!==f.team);
   if(!enemies.length) return {mvx:0,mvy:0,aim:f.aim,fire:false};
@@ -6858,9 +6859,9 @@ function teamAI(f, dt){
   const base = aiTactical(f, foe, dt);
   const sp=Math.hypot(base.mvx,base.mvy)||1;   // keep the tactical move speed
   let action='hunt';
-  const commanded = isAlly && f===duel.squadMate;         // ONLY your marked squadmate obeys orders
-  const independent = isAlly && duel.war && !commanded;   // the rest fight on their own & spread out
-  const cmd = (commanded && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;
+  const commanded = isAlly && f===duel.squadMate;         // your marked squadmate (used for idle battle-buddy behavior)
+  const cmd = (isAlly && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;   // an active radio order controls EVERY teammate
+  const independent = isAlly && duel.war && !commanded && !cmd;   // no order active → the rest fight on their own & spread out
   if(mate){
     const dx=mate.x-f.x, dy=mate.y-f.y, dd=Math.hypot(dx,dy)||1;
     const fx=foe.x-f.x, fy=foe.y-f.y, fd=Math.hypot(fx,fy)||1;
@@ -6912,13 +6913,13 @@ function teamAI(f, dt){
       if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1; base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; }
       else { base.mvx=-fx/fd*1.6+dx/dd*0.5; base.mvy=-fy/fd*1.6+dy/dd*0.5; }
       base.fire=(fd<620 && !teamLineBlocked(f,foe)); action='regroup';
-    } else if(!isAlly){   // ENEMY bots: hunt on their own and push off nearby teammates so the team fans out instead of clumping up
-      let sx=0,sy=0,cnt=0;
-      for(const g of duel.fighters){ if(g===f||g.dead||g.team!==f.team) continue;
-        const gx=f.x-g.x, gy=f.y-g.y, gd=Math.hypot(gx,gy)||1;
-        if(gd<440){ const w=1-gd/440; sx+=gx/gd*w; sy+=gy/gd*w; cnt++; } }
-      if(cnt){ const sl=Math.hypot(sx,sy)||1; base.mvx += sx/sl*1.25; base.mvy += sy/sl*1.25; }
-      action='hunt';
+    } else if(!isAlly){   // ENEMY bots: spawn fanned out, then draw together — cohesion ramps up over the first ~7s of life
+      const coh=Math.min(1, (f._age||0)/7);
+      let cx=0,cy=0,cnt=0;
+      for(const g of duel.fighters){ if(g===f||g.dead||g.team!==f.team) continue; cx+=g.x; cy+=g.y; cnt++; }
+      if(cnt && coh>0){ cx/=cnt; cy/=cnt; const gx=cx-f.x, gy=cy-f.y, gd=Math.hypot(gx,gy)||1;
+        if(gd>150){ base.mvx += gx/gd*1.5*coh; base.mvy += gy/gd*1.5*coh; } }
+      action=coh>0.5?'stick':'hunt';
     } else if(commanded){   // your battle buddy: naturally stick with you and fight alongside
       if(dd>260){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; }                                   // too far → close on you
       else if(dd>150){ base.mvx=(base.mvx+dx/dd*1.2)*0.55; base.mvy=(base.mvy+dy/dd*1.2)*0.55; action='stick'; }   // drift back while fighting
@@ -7102,6 +7103,7 @@ function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST sp
   f.x=best.x; f.y=best.y; f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
   f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
   f.aim = f.team===1 ? -Math.PI/2 : Math.PI/2;
+  f._age = 0;   // fresh spawn: start fanned out, cohesion ramps in over the next few seconds
   f.spawnProtT = 3;   // invulnerable for ~3s after respawn (ends early if you shoot) — no spawn camping
 }
 // ---------- DRIVABLE VEHICLES (war mode) — anyone can drive; they blow up when wrecked ----------
