@@ -4592,10 +4592,9 @@ const menuAcctBtn={x:66, y:H-58, w:44, h:44};               // account (sign in 
 // title + big PLAY on the left, the smaller buttons stacked on the right.
 function layoutMenu(){
   if(_landActive){
-    const rx=W*0.71;                                   // right column: center x for the small buttons
-    let y=64;
-    for(const b of [tutBtn,targetBtn,campBtn,coopBtn,storeBtn]){ b.x=rx-b.w/2; b.y=y; y+=b.h+13; }
-    playBtn.x=W*0.29-playBtn.w/2; playBtn.y=286;        // big PLAY on the left, under the title
+    const rx=W*0.71;                                   // right column: the full button stack, PLAY at the bottom
+    let y=60;
+    for(const b of [tutBtn,targetBtn,campBtn,coopBtn,storeBtn,playBtn]){ b.x=rx-b.w/2; b.y=y; y+=b.h+10; }
   } else {
     tutBtn.x=W/2-92;    tutBtn.y=281;
     targetBtn.x=W/2-104; targetBtn.y=322;
@@ -4647,7 +4646,7 @@ function roundRectPath(x,y,w,h,r){
   ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
 }
 function drawPlayButton(cy, pulse){
-  const w=playBtn.w*pulse, h=playBtn.h*pulse, x=W/2-w/2, y=cy-h/2;
+  const w=playBtn.w*pulse, h=playBtn.h*pulse, x=playBtn.x+playBtn.w/2-w/2, y=cy-h/2;
   ctx.save();
   // drop shadow
   ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=12; ctx.shadowOffsetY=5;
