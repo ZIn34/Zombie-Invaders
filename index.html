@@ -6541,6 +6541,7 @@ function startAIDuel(){
     obs:duelMapPick(),
     aiWander:0, aiStrafe:1, aiStrafeT:0 };
   duel.meKey='p1'; duel.foeKey='p2'; duel.p2.bot=true;   // you are p1, the bot is p2
+  duel.p1.team=1; duel.p2.team=2;   // team 2 → the bot draws with the enemy-soldier sprite
   clearDuelSpawns();
   state=STATE.DUEL; toast('SHOOTOUT vs AI — hunt it down!');
 }
