@@ -194,7 +194,7 @@ function applyViewport(){
   fit();
 }
 function syncViewport(){
-  const want = isAimState() && (window.innerWidth > window.innerHeight);
+  const want = isAimState() && (settings.forceLandscape || (window.innerWidth > window.innerHeight));
   if(want!==_landActive){ _landActive=want; applyViewport(); }
 }
 window.addEventListener('resize', ()=>{ syncViewport(); fit(); }); fit();
@@ -519,6 +519,7 @@ function canvasTap(p, pid){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
     else if(inRect(p, menuLeaderBtn)) enterLeader('defense', STATE.MENU);   // leaderboard
     else if(inRect(p, menuAcctBtn)) enterAccount();   // account sign-in / cloud sync
+    else if(inRect(p, menuLandBtn)){ settings.forceLandscape=!settings.forceLandscape; saveSettings(); Sound.hit(); toast(settings.forceLandscape?'LANDSCAPE PLAY ON — hold your phone sideways':'LANDSCAPE PLAY OFF — follows your phone'); }
     else if(inRect(p, tutBtn)){ tutPage=0; state=STATE.TUTORIAL; }   // how-to-play
     else if(inRect(p, campBtn)) enterCampaign(); // story mode — jump straight into the cutscene
     else if(inRect(p, coopBtn)) state=STATE.ONLINEPICK;  // choose Versus or Co-op
@@ -691,7 +692,7 @@ function netPadTargets(){
 }
 function padTargets(){
   switch(state){
-    case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, targetBtn, menuLeaderBtn, gearBtn];
+    case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, targetBtn, menuLeaderBtn, menuAcctBtn, menuLandBtn, gearBtn];
     case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
     case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, splitOpenBtn, splitWarBtn, backBtn];
     case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, shoot1v2Btn, shootWarBtn, shootPUBtn, backBtn];
@@ -1052,7 +1053,7 @@ let defPendingCoop=false;// which defense the setup screen will launch
 let defWon=false;        // solo defense: reached the kill limit
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
-let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', fireBtnPos:null, padMap:null};
+let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', fireBtnPos:null, forceLandscape:false, padMap:null};
 function applyStickLayout(){ try{ document.body.classList.toggle('swapsticks', !!settings.swapSticks); }catch(e){} }   // left/right-handed on-screen joysticks
 function applyFireBtnPos(){   // custom-placed FIRE button (button-aim scheme): position #tfire over the canvas at the saved spot
   try{ const fb=document.getElementById('tfire'); if(!fb) return;
@@ -1091,6 +1092,7 @@ function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settin
   if(typeof s.swapSticks==='boolean')  settings.swapSticks=s.swapSticks;
   if(s.aimStick==='tap'||s.aimStick==='auto'||s.aimStick==='button') settings.aimStick=s.aimStick;
   if(s.fireBtnPos && typeof s.fireBtnPos.x==='number' && typeof s.fireBtnPos.y==='number') settings.fireBtnPos={x:s.fireBtnPos.x, y:s.fireBtnPos.y};
+  if(typeof s.forceLandscape==='boolean') settings.forceLandscape=s.forceLandscape;
   if(s.padMap && typeof s.padMap==='object') settings.padMap=s.padMap;   // restore custom controller bindings
 } }catch(e){} }
 loadSettings();
@@ -1147,7 +1149,8 @@ let campaignWon=false;
 let lastMissionCoins=0;
 let replaying=false;               // replaying an already-cleared mission → no coins
 // purchased upgrade levels (spent coins in the campaign shop)
-const upg={hp:0, firerate:0, rarity:0, amount:0};
+const upg={hp:0, firerate:0, rarity:0, amount:0, damage:0};
+function dmgUp(){ return upg.damage||0; }   // BULLET DAMAGE upgrade → +1 damage per level (campaign)
 let ownedSkins=['default'], equippedSkin='default';   // STORE state (persisted)
 let ownedZombieSkins=['classic'], equippedZombieSkin='classic';   // zombie skin (classic = default)
 let ownedBossSkins=['classic'], equippedBossSkin='classic';       // boss skin (classic = default)
@@ -1156,7 +1159,8 @@ const CAMPAIGN_UPGRADES=[
   {key:'firerate', name:'TRIGGER SPEED',    desc:'shoot noticeably faster',      max:4, costs:[40,75,110,145]},
   {key:'rarity',   name:'POWER-UP QUALITY', desc:'better power-ups (+10% each)',  max:4, costs:[40,50,60,70]},
   {key:'amount',   name:'POWER-UP SUPPLY',  desc:'more power-ups (+10% each)',    max:5, costs:[50,70,90,110,150]},
-  {key:'ammocap',  name:'AMMO CAPACITY',    desc:'+4 starting ammo each',        max:4, costs:[35,55,80,110]},
+  {key:'ammocap',  name:'AMMO CAPACITY',    desc:'+1 starting magazine each',    max:4, costs:[35,55,80,110]},
+  {key:'damage',   name:'BULLET DAMAGE',    desc:'+1 damage per shot each',      max:3, costs:[50,90,140]},
 ];
 function upgCost(u){ const lvl=upg[u.key]||0; return lvl>=u.max ? null : u.costs[lvl]; }
 
@@ -1622,14 +1626,15 @@ function makePlayer(){
   if(mode==='campaign'){ p.fireCut=(upg.firerate||0)*0.035;  // TRIGGER SPEED upgrade
     if(campaignMission>=3) p.permRapid=true;                 // Mission 4 onward: keep the RIFLE power-up
   }
+  p.mags = Math.min(MAG_MAX, p.mags + (upg.ammocap||0));   // AMMO CAPACITY upgrade → +1 starting reserve magazine each level
   p.ammo=magSizeFor(p);   // start with a full magazine for the current weapon
   return p;
 }
 // ---- universal 7-round MAGAZINE with a STACKED RESERVE (all modes except shootout, which has its own) ----
 // p.ammo = rounds in the current magazine; p.mags = spare magazines in reserve.
 // Empty the current mag fully, then a reload (shootout speed) consumes one reserve mag. Every 2 kills earns +1 reserve mag.
-const MAG_SIZE=7, MAG_RELOAD=1.6, MAG_MAX=20;
-function magSizeFor(p){ if(p && (p.rapidT>0||p.permRapid)) return 30; if(p && p.weapon==='spread') return 5; return MAG_SIZE; }   // rifle 30, shotgun 5, pistol 7
+const MAG_SIZE=12, MAG_RELOAD=1.6, MAG_MAX=20;
+function magSizeFor(p){ if(p && (p.rapidT>0||p.permRapid)) return 30; if(p && p.weapon==='spread') return 5; return MAG_SIZE; }   // rifle 30, shotgun 5, pistol 12
 function magReload(p, dt){
   if(!p) return;
   if(p.mags==null) p.mags=0;
@@ -2271,15 +2276,16 @@ function fire(p){
   const m=playerMuzzle(p), cx=m.tipX, by=m.tipY;
   spawnParticles(m.tipX, m.tipY, '#ffe14b', 3, 180);  // muzzle sparks
   spawnParticles(m.tipX, m.tipY, '#fff2b0', 2, 90);
+  const du=dmgUp();
   if(p.weapon==='spread'){
     Sound.spread();
-    [-1,0,1].forEach(d=>bullets.push({x:cx-3+d*4,y:by,w:6,h:14,vy:-980,vx:d*85,col:'#ffe14b',dmg:1}));
+    [-1,0,1].forEach(d=>bullets.push({x:cx-3+d*4,y:by,w:6,h:14,vy:-980,vx:d*85,col:'#ffe14b',dmg:1+du}));
   } else if(p.weapon==='laser'){
     Sound.laser();
-    bullets.push({x:cx-4,y:by-6,w:8,h:26,vy:-1250,col:'#ffe14b',dmg:2,pierce:true});
+    bullets.push({x:cx-4,y:by-6,w:8,h:26,vy:-1250,col:'#ffe14b',dmg:2+du,pierce:true});
   } else {
     if(p.rapidT>0) Sound.rifle(); else Sound.shoot();   // rifle = rapid-fire, its own recorded sound
-    bullets.push({x:cx-3,y:by,w:6,h:16,vy:-1050,col:'#ffe14b',dmg:1});
+    bullets.push({x:cx-3,y:by,w:6,h:16,vy:-1050,col:'#ffe14b',dmg:1+du});
   }
 }
 
@@ -2462,7 +2468,7 @@ function applyPower(type){
   switch(type){
     case 'rapid': p.rapidT=7; p.weapon='gun'; p.weaponT=0; p.ammo=magSizeFor(p); p.reloadT=0; break;      // rifle: full 30-round mag
     case 'spread': p.weapon='spread'; p.weaponT=10; p.rapidT=0; p.ammo=magSizeFor(p); p.reloadT=0; break; // shotgun: full 5-round mag
-    case 'ammo': p.mags=Math.min(MAG_MAX,(p.mags||0)+2); break; // +2 reserve magazines
+    case 'ammo': p.mags=Math.min(MAG_MAX,(p.mags||0)+3); break; // +3 reserve magazines
     case 'shield': p.shieldT=8+(p.shieldBonus||0); break;
     case 'life': lives=Math.min(7,lives+1); break; // max 7 hearts
     case 'nuke':
@@ -2664,8 +2670,9 @@ function exploreFire(p){
   // always shoot exactly where the player is aiming — no auto-targeting
   if(p.aim!=null){ vx=Math.cos(p.aim); vy=Math.sin(p.aim); }
   const sp=740;
-  if(p.weapon==='spread'){ Sound.spread(); for(const a of [-0.2,0,0.2]){ const c=Math.cos(a),s=Math.sin(a); bullets.push({x:cx,y:cy,w:8,h:8,vx:(vx*c-vy*s)*sp,vy:(vx*s+vy*c)*sp,col:'#ffe14b',dmg:1,t:0,owner:p}); } }
-  else { ((p.rapidT>0||p.permRapid)?Sound.rifle():Sound.shoot()); bullets.push({x:cx,y:cy,w:8,h:8,vx:vx*sp,vy:vy*sp,col:'#ffe14b',dmg:1,t:0,owner:p}); }
+  const du=dmgUp();
+  if(p.weapon==='spread'){ Sound.spread(); for(const a of [-0.2,0,0.2]){ const c=Math.cos(a),s=Math.sin(a); bullets.push({x:cx,y:cy,w:8,h:8,vx:(vx*c-vy*s)*sp,vy:(vx*s+vy*c)*sp,col:'#ffe14b',dmg:1+du,t:0,owner:p}); } }
+  else { ((p.rapidT>0||p.permRapid)?Sound.rifle():Sound.shoot()); bullets.push({x:cx,y:cy,w:8,h:8,vx:vx*sp,vy:vy*sp,col:'#ffe14b',dmg:1+du,t:0,owner:p}); }
   spawnParticles(cx,cy,'#ffe14b',3,180);
 }
 function updateExplore(dt){
@@ -4579,6 +4586,7 @@ const backBtn={x:12, y:12, w:74, h:32};
 const gearBtn={x:W-58, y:H-58, w:44, h:44};                 // settings gear, bottom-right of the menu
 const menuLeaderBtn={x:14, y:H-58, w:44, h:44};             // leaderboard, bottom-left of the menu
 const menuAcctBtn={x:66, y:H-58, w:44, h:44};               // account (sign in / sync), next to the leaderboard
+const menuLandBtn={x:118, y:H-58, w:44, h:44};              // landscape (sideways) play toggle
 // SCREEN SHAKE — separate toggles for basic zombies and the boss
 const setShakeBasicBtn={x:75,  y:206, w:120, h:44};
 const setShakeBossBtn ={x:235, y:206, w:120, h:44};
@@ -4610,7 +4618,7 @@ const shopContinueBtn={x:W/2-115, y:H-62, w:230, h:50};
 function missionRowRect(i){ return {x:22, y:92+i*48, w:W-44, h:42}; }
 function missionAt(pt){ for(let i=0;i<MISSIONS.length;i++){ if(inRect(pt, missionRowRect(i))) return i; } return -1; }
 const campShopBtn={x:W/2-115, y:H-64, w:230, h:50};
-function shopRowRect(i){ return {x:16, y:86+i*76, w:W-32, h:66}; }
+function shopRowRect(i){ return {x:16, y:84+i*68, w:W-32, h:64}; }
 function shopRowAt(pt){ for(let i=0;i<CAMPAIGN_UPGRADES.length;i++){ if(inRect(pt, shopRowRect(i))) return CAMPAIGN_UPGRADES[i].key; } return null; }
 function roundRectPath(x,y,w,h,r){
   ctx.beginPath();
@@ -4692,6 +4700,20 @@ function drawMenu(){
   drawGearButton();
   drawMenuLeaderButton();
   drawMenuAcctButton();
+  drawMenuLandButton();
+}
+function drawMenuLandButton(){   // toggle landscape (sideways) play — handy if your phone is rotation-locked
+  const b=menuLandBtn, on=!!settings.forceLandscape, cx=b.x+b.w/2, cy=b.y+b.h/2;
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=8; ctx.shadowOffsetY=3;
+  ctx.fillStyle=on?'rgba(24,44,30,.9)':'rgba(20,26,20,.85)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.fill();
+  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.lineWidth=2.5; ctx.strokeStyle=on?'#4fd07a':'#3a4a5c'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
+  // wide "landscape phone" glyph
+  ctx.lineWidth=2.5; ctx.strokeStyle=on?'#7ee0a0':'#9fb0c9';
+  roundRectPath(cx-13, cy-9, 26, 18, 4); ctx.stroke();
+  ctx.fillStyle=on?'#7ee0a0':'#9fb0c9'; ctx.beginPath(); ctx.arc(cx+9, cy, 1.6, 0, 6.28); ctx.fill();
+  ctx.restore();
 }
 function drawMenuAcctButton(){   // person icon, bottom-left → account sign-in / sync
   const b=menuAcctBtn, cx=b.x+b.w/2, cy=b.y+b.h/2;
