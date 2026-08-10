@@ -554,11 +554,11 @@ function canvasTap(p, pid){
     if(inRect(p, mapRandomBtn)){ mapPickLaunch(-1); return; }
   } else if(state===STATE.SPLITPICK){
     if(inRect(p, backBtn)) state=STATE.PLAYPICK;
-    else if(inRect(p, shootPUBtn)){ shootPU=!shootPU; Sound.hit(); }
     else if(inRect(p, splitCoopBtn)){ defPendingCoop=true; state=STATE.DEFSETUP; }
     else if(inRect(p, splitDuelBtn)) openMapPick(startLocalDuel);
     else if(inRect(p, splitShootCoopBtn)) openMapPick(startTeamShootoutCoop);
     else if(inRect(p, splitOpenBtn)) startLocalOpenWorld();
+    else if(inRect(p, splitWarBtn)) startWarSplit();
   } else if(state===STATE.DEFSETUP){
     if(inRect(p, backBtn)) state=defPendingCoop?STATE.SPLITPICK:STATE.PLAYPICK;
     else if(inRect(p, defLeaderBtn)) enterLeader(defPendingCoop?'coopdef':'defense', STATE.DEFSETUP);
@@ -655,7 +655,7 @@ function padTargets(){
   switch(state){
     case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, targetBtn, menuLeaderBtn, gearBtn];
     case STATE.PLAYPICK: return [playNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
-    case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, splitOpenBtn, shootPUBtn, backBtn];
+    case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, splitOpenBtn, splitWarBtn, backBtn];
     case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, shoot1v2Btn, shootWarBtn, shootPUBtn, backBtn];
     case STATE.MAPPICK: return [...mapPickBtns, mapRandomBtn, backBtn];
     case STATE.DEFSETUP: return defLimitBtns.concat(diffBtns, [defStartBtn, defLeaderBtn, backBtn]);
@@ -5560,10 +5560,11 @@ const playOpenBtn    = {x:W/2-150, y:172, w:300, h:66};
 const playDefenseBtn = {x:W/2-150, y:244, w:300, h:66};
 const playAIBtn      = {x:W/2-150, y:316, w:300, h:66};
 const playSplitBtn   = {x:W/2-150, y:388, w:300, h:66};   // 2 controllers, split screen, one device
-const splitCoopBtn      = {x:W/2-150, y:104, w:300, h:80};   // split-screen: co-op defense
-const splitDuelBtn      = {x:W/2-150, y:192, w:300, h:80};   // split-screen: 1v1 shootout (PvP)
-const splitShootCoopBtn = {x:W/2-150, y:280, w:300, h:80};   // split-screen: 2v2 co-op shootout vs bots
-const splitOpenBtn      = {x:W/2-150, y:368, w:300, h:80};   // split-screen: co-op open-world survival
+const splitCoopBtn      = {x:W/2-150, y:92,  w:300, h:68};   // split-screen: co-op defense
+const splitDuelBtn      = {x:W/2-150, y:170, w:300, h:68};   // split-screen: 1v1 shootout (PvP)
+const splitShootCoopBtn = {x:W/2-150, y:248, w:300, h:68};   // split-screen: 2v2 co-op shootout vs bots
+const splitOpenBtn      = {x:W/2-150, y:326, w:300, h:68};   // split-screen: co-op open-world survival
+const splitWarBtn       = {x:W/2-150, y:404, w:300, h:68};   // split-screen: 1-per-team WAR, bots fill the rest
 const shoot1v1Btn = {x:W/2-150, y:126, w:300, h:82};   // solo shootout: 1v1 vs a bot
 const shoot2v2Btn = {x:W/2-150, y:218, w:300, h:82};   // solo shootout: 2v2 (you + bot ally vs 2 bots)
 const shoot1v2Btn = {x:W/2-150, y:298, w:300, h:74};   // solo shootout: 1v2 (you vs 2 bots)
@@ -6763,25 +6764,32 @@ function warPickups(WW,HH){
   const arr=[]; for(let i=0;i<8;i++){ arr.push({type:(i%2?'rifle':'shotgun'), x:rand(200,WW-200), y:rand(500,HH-500), taken:false, respawnT:0}); }
   return arr;
 }
-function startBigWar(){
-  try{ NetIO.cleanup(); }catch(e){}
-  mode='duel'; explore=null; coop=null; net=null; codef=null; netShowCodeInput(false);
-  const WW=8500, HH=8500, N=10, fighters=[];   // a huge battlefield — you + your buddy hunt the enemy across it
+// opts: { split, team1:[{ctrl}], team2:[{ctrl}], net }  — humans fill listed slots on each team, the rest are bots.
+// No opts → classic solo: you (kb) + 9 bot allies vs 10 enemy bots.
+function startBigWar(opts){
+  opts = opts || {};
+  if(!opts.net){ try{ NetIO.cleanup(); }catch(e){} net=null; }
+  mode='duel'; explore=null; coop=null; codef=null; netShowCodeInput(false);
+  const WW=8500, HH=8500, N=10, fighters=[];   // a huge battlefield
+  const t1 = opts.team1 || [{ctrl:'kb'}];   // default: one local human on team 1
+  const t2 = opts.team2 || [];              // default: team 2 is all bots
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=HH-240 - (i%2)*80;
-    fighters.push(mkFighter(x, y, -Math.PI/2, 1, i!==0, i===0?'kb':null)); }   // i=0 is you, rest are bot allies
+    const h=t1[i]; fighters.push(mkFighter(x, y, -Math.PI/2, 1, !h, h?h.ctrl:null)); }
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=180 + (i%2)*80;
-    fighters.push(mkFighter(x, y, Math.PI/2, 2, true, null)); }
+    const h=t2[i]; fighters.push(mkFighter(x, y, Math.PI/2, 2, !h, h?h.ctrl:null)); }
   const bld=makeWarBuildings(WW,HH);
-  duel={ W:WW, H:HH, camX:0, camY:0, bullets:[], over:false, winner:0, overT:0, t:0, team:true, split:false, war:true, paused:false,
+  duel={ W:WW, H:HH, camX:0, camY:0, bullets:[], over:false, winner:0, overT:0, t:0, team:true, split:!!opts.split, war:true, paused:false,
     warGoal:100, score1:0, score2:0, driving:null, blasts:[], cash:0,
     fighters, humans:fighters.filter(f=>!f.bot),
     pickups:[], obs:makeWarObs(WW,HH).concat(bld.walls), buildings:bld.buildings, vehicles:[], decals:makeWarDecals(WW,HH) };   // no auto-spawn vehicles or pickups — buy them with kill cash
-  duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // only this ally follows your orders; the rest fight on their own
+  duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // only this ally follows your radio orders
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
-  toast('10v10 WAR — first to 100 kills! 📻');
+  if(opts.split) toast('SPLIT-SCREEN WAR — P1 vs P2, bots fill the ranks!');
+  else toast('10v10 WAR — first to 100 kills! 📻');
 }
+function startWarSplit(){ startBigWar({ split:true, team1:[{ctrl:0}], team2:[{ctrl:1}] }); }   // 1 human per team, local split screen
 function startShootout1v2(){   // you alone vs two bots
   try{ NetIO.cleanup(); }catch(e){}
   mode='duel'; explore=null; coop=null; net=null; codef=null; netShowCodeInput(false);
@@ -6887,13 +6895,19 @@ function teamAI(f, dt){
         const tx=spotX-f.x, ty=spotY-f.y, td=Math.hypot(tx,ty)||1;
         if(td>16){ base.mvx=tx/td*2.0; base.mvy=ty/td*2.0; } else { base.mvx=0; base.mvy=0; f._holding=true; }
         base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<800 && !teamLineBlocked(f,foe)); action='stick'; }
-      else if(cmd==='coverme'){   // take cover, then lean out to get a real shot (don't just fire into the wall)
-        const cov=duelCoverSpot(f, foe, false), clear=!teamLineBlocked(f,foe);
-        if(cov && !clear){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1;
-          if(td>50){ base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; }                                   // still moving to cover
-          else { if(f.flankSign==null)f.flankSign=Math.random()<0.5?1:-1; base.mvx=-fy/fd*f.flankSign*1.3; base.mvy=fx/fd*f.flankSign*1.3; }   // at cover but blocked → lean out sideways
-        } else { base.mvx=0; base.mvy=0; }                                                        // clear line → hold and fire
-        base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<1050 && !teamLineBlocked(f,foe)); action='coverme'; }
+      else if(cmd==='coverme'){   // find the nearest wall, move to it, then shoot at the enemy from there (never just freeze)
+        const clear=!teamLineBlocked(f,foe);
+        if(!f._cmSpot || (f._cmT=(f._cmT||0)-dt)<=0){ f._cmSpot=duelCoverSpot(f, foe, false); f._cmT=2.2; }   // lock a cover spot, refresh occasionally
+        const cov=f._cmSpot;
+        if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1;
+          if(td>46){ base.mvx=tx/td*1.7; base.mvy=ty/td*1.7; }                                    // head to the wall
+          else if(!clear){ if(f.flankSign==null)f.flankSign=Math.random()<0.5?1:-1; base.mvx=-fy/fd*f.flankSign*1.25; base.mvy=fx/fd*f.flankSign*1.25; }   // at the wall but blocked → lean out to the side for a shot
+          else { base.mvx=0; base.mvy=0; }                                                        // at the wall with a clear shot → hold and fire
+        } else {   // no wall found nearby → don't freeze: sidestep toward a firing angle
+          if(!clear){ if(f.flankSign==null)f.flankSign=Math.random()<0.5?1:-1; base.mvx=-fy/fd*f.flankSign*1.1; base.mvy=fx/fd*f.flankSign*1.1; }
+          else { base.mvx=0; base.mvy=0; }
+        }
+        base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<1100 && clear); action='coverme'; }
       else if(cmd==='coveryou'){   // move up to a RANDOM forward cover spot and lay down fire so the player can advance to us
         if(!f._covSpot || (f._covSpotT=(f._covSpotT||0)-dt)<=0){ f._covSpot=duelCoverSpot(f, foe, true); f._covSpotT=4; }
         const cov=f._covSpot;
@@ -6975,7 +6989,7 @@ function duelHasAlly(){ return !!(duel && duel.team && duel.humans && duel.human
 function sendAllyCmd(c){
   if(!duel) return;
   duel.allyCmd={type:c.cmd, t:9};
-  toast('🎖️ YOU: '+c.you);
+  toast('📻 SENT');
   const me=duel.humans&&duel.humans[0];
   const ally=me&&duel.fighters.find(g=>g.bot&&!g.dead&&g.team===me.team);
   if(c.cmd==='hold' && ally) duel.allyCmd.hold={x:ally.x, y:ally.y};  // lock the spot they're standing on
@@ -8022,9 +8036,10 @@ function drawSplitPick(){
     'team up vs 2 bots', 'both of you on one team');
   drawVersusModeButton(splitOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD',
     'endless survival together', 'shared lives · roam & shoot');
-  drawPUToggle();
+  drawVersusModeButton(splitWarBtn, '#c0392b','#7a1f14','#ff8a6a','⚔ WAR 1v1',
+    'you vs partner · bots fill both armies', 'first to 100 kills on a huge map');
   ctx.fillStyle='rgba(220,230,245,.55)'; ctx.font='11px '+CF;
-  ctx.fillText('plug in 2 controllers before you start', W/2, H-14);
+  ctx.fillText('plug in 2 controllers before you start', W/2, H-12);
 }
 function drawShootPick(){
   panelBg(); drawBackBtn();
