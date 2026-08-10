@@ -182,6 +182,7 @@ function fit(){
   canvas.style.height = (H*scale)+'px';
   if(controls) controls.style.height = _landActive ? '' : (ctrlH+'px');
   stage.style.width = (W*scale)+'px';
+  if(typeof applyFireBtnPos==='function') applyFireBtnPos();   // keep a custom-placed fire button aligned to the canvas
 }
 // switch to a wide landscape canvas when the phone is sideways during twin-stick play
 function applyViewport(){
@@ -524,6 +525,9 @@ function canvasTap(p, pid){
     else if(inRect(p, storeBtn)) state=STATE.STORE;
     else if(inRect(p, playBtn)) state=STATE.PLAYPICK;   // choose Normal or Open World
     else if(inRect(p, targetBtn)) setupTargetPractice();
+  } else if(state===STATE.PLACEFIRE){
+    if(inRect(p, backBtn)){ state=placeFireReturn||STATE.SETTINGS; return; }   // cancel — keep the current/default spot
+    setFireBtnAt(p.x, p.y);
   } else if(state===STATE.ACCOUNT){
     if(inRect(p, backBtn)){ leaveAccount(); return; }
     if(acct){ if(inRect(p, acctLogoutBtn)) acctLogout(); }
@@ -541,8 +545,9 @@ function canvasTap(p, pid){
   } else if(state===STATE.SETTINGS){
     if(inRect(p, setMusicBtn)){ settings.music=!settings.music; saveSettings(); Music.refresh(); Music.start(); Sound.hit(); }
     else if(inRect(p, setSwapBtn)){ settings.swapSticks=!settings.swapSticks; saveSettings(); applyStickLayout(); Sound.hit(); toast(settings.swapSticks?'STICKS SWAPPED — move on the right':'STICKS NORMAL — move on the left'); }
-    else if(inRect(p, setAimCycleBtn)){ const order=['tap','auto','button']; settings.aimStick=order[(order.indexOf(settings.aimStick||'tap')+1)%3]; saveSettings(); Sound.hit();
-      toast(settings.aimStick==='auto'?'AIM STICK SHOOTS':settings.aimStick==='button'?'AIM STICK TURNS · FIRE BUTTON':'TAP TO SHOOT (look stick)'); }
+    else if(inRect(p, setAimCycleBtn)){ const order=['tap','auto','button']; settings.aimStick=order[(order.indexOf(settings.aimStick||'tap')+1)%3]; saveSettings(); applyFireBtnPos(); Sound.hit();
+      if(settings.aimStick==='button'){ enterPlaceFire(); }   // choosing button mode → place the fire button
+      else toast(settings.aimStick==='auto'?'AIM STICK SHOOTS':'TAP TO SHOOT (look stick)'); }
     else if(inRect(p, setPadCfgBtn)){ padBindWait=null; Pad.focus=0; state=STATE.PADCFG; Sound.hit(); }
     else if(inRect(p, setShakeBasicBtn)){ settings.shakeBasic=!settings.shakeBasic; saveSettings(); Sound.hit(); }
     else if(inRect(p, setShakeBossBtn)){ settings.shakeBoss=!settings.shakeBoss; saveSettings(); Sound.hit(); }
@@ -885,7 +890,7 @@ const chance=p=>Math.random()<p;
 function rectHit(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
 
 /* ============================ STATE =================================== */
-const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28, SPLITPICK:29, SHOOTPICK:30, DEFSETUP:31, LEADER:32, PADCFG:33, MAPPICK:34, ACCOUNT:35};
+const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28, SPLITPICK:29, SHOOTPICK:30, DEFSETUP:31, LEADER:32, PADCFG:33, MAPPICK:34, ACCOUNT:35, PLACEFIRE:36};
 /* ===== ONLINE LEADERBOARD (Firebase Realtime Database) =====
    Paste your Firebase Realtime Database URL below to make the board shared across ALL players.
    e.g. const LB_URL='https://zombie-invaders-default-rtdb.firebaseio.com';
@@ -1015,6 +1020,29 @@ function acctShowInputs(show){ const e=document.getElementById('acctEmail'), p=d
   if(!show){ try{ e&&e.blur(); p&&p.blur(); }catch(_){} } }
 function enterAccount(){ acctMsg=''; state=STATE.ACCOUNT; acctShowInputs(!acct); }
 function leaveAccount(){ acctShowInputs(false); state=STATE.MENU; }
+// ---- place-the-fire-button screen (button aim scheme) ----
+let placeFireReturn=STATE.SETTINGS;
+function enterPlaceFire(){ placeFireReturn=state; state=STATE.PLACEFIRE; }
+function setFireBtnAt(px, py){   // px,py in canvas coords → store as a fraction of the play area
+  settings.fireBtnPos={ x:Math.max(0.04,Math.min(0.96, px/W)), y:Math.max(0.06,Math.min(0.96, py/H)) };
+  saveSettings(); applyFireBtnPos(); Sound.power(); toast('FIRE BUTTON PLACED'); state=placeFireReturn||STATE.SETTINGS;
+}
+function drawPlaceFire(){
+  ctx.fillStyle='rgba(6,10,10,.72)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 22px '+CF; ctx.fillText('PLACE YOUR FIRE BUTTON', W/2, H/2-40);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='#eafff0'; ctx.font='bold 15px '+CF; ctx.fillText('tap anywhere — that’s where FIRE goes', W/2, H/2);
+  ctx.fillStyle='#9fb0c9'; ctx.font='bold 12px '+CF; ctx.fillText('(you can change it again in Settings → AIM)', W/2, H/2+30);
+  // preview ring at the current / default spot
+  const fx=settings.fireBtnPos?settings.fireBtnPos.x*W:W*0.5, fy=settings.fireBtnPos?settings.fireBtnPos.y*H:H-60;
+  ctx.save(); ctx.globalAlpha=0.4+0.25*Math.abs(Math.sin(performance.now()/300));
+  ctx.fillStyle='#c0392b'; ctx.beginPath(); ctx.arc(fx, fy, 40, 0, 6.28); ctx.fill();
+  ctx.fillStyle='#ffd8cf'; ctx.font='bold 15px '+CF; ctx.textBaseline='middle'; ctx.fillText('FIRE', fx, fy+1); ctx.restore();
+  ctx.textBaseline='alphabetic';
+  drawBackBtn();
+}
 const acctLoginBtn ={x:W/2-152, y:322, w:146, h:52};
 const acctSignupBtn={x:W/2+6,   y:322, w:146, h:52};
 const acctLogoutBtn={x:W/2-95,  y:300, w:190, h:52};
@@ -1023,8 +1051,17 @@ let defPendingCoop=false;// which defense the setup screen will launch
 let defWon=false;        // solo defense: reached the kill limit
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
-let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', padMap:null};
+let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', fireBtnPos:null, padMap:null};
 function applyStickLayout(){ try{ document.body.classList.toggle('swapsticks', !!settings.swapSticks); }catch(e){} }   // left/right-handed on-screen joysticks
+function applyFireBtnPos(){   // custom-placed FIRE button (button-aim scheme): position #tfire over the canvas at the saved spot
+  try{ const fb=document.getElementById('tfire'); if(!fb) return;
+    const custom = (settings.aimStick==='button') && settings.fireBtnPos;
+    if(custom){ const cv=document.getElementById('c'), r=cv.getBoundingClientRect();
+      fb.style.position='fixed'; fb.style.left=(r.left+settings.fireBtnPos.x*r.width)+'px'; fb.style.top=(r.top+settings.fireBtnPos.y*r.height)+'px';
+      fb.style.right='auto'; fb.style.bottom='auto'; fb.style.transform='translate(-50%,-50%)'; }
+    else { fb.style.position=''; fb.style.left=''; fb.style.top=''; fb.style.right=''; fb.style.bottom=''; fb.style.transform=''; }
+  }catch(e){}
+}
 // ---- CONTROLLER BUTTON REMAPPING ----
 // Every remappable action + its built-in default button index(es). A custom binding in
 // settings.padMap overrides the defaults with a single chosen button.
@@ -1052,10 +1089,12 @@ function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settin
   if(typeof s.blood==='number'){ settings.bloodBasic=s.blood; settings.bloodBoss=s.blood; }
   if(typeof s.swapSticks==='boolean')  settings.swapSticks=s.swapSticks;
   if(s.aimStick==='tap'||s.aimStick==='auto'||s.aimStick==='button') settings.aimStick=s.aimStick;
+  if(s.fireBtnPos && typeof s.fireBtnPos.x==='number' && typeof s.fireBtnPos.y==='number') settings.fireBtnPos={x:s.fireBtnPos.x, y:s.fireBtnPos.y};
   if(s.padMap && typeof s.padMap==='object') settings.padMap=s.padMap;   // restore custom controller bindings
 } }catch(e){} }
 loadSettings();
 applyStickLayout();
+applyFireBtnPos();
 let state = STATE.MENU;
 let pauseReturn = STATE.PLAY;   // where RESUME sends you back to
 const resumeBtn = {x:W/2-110, y:H/2-6,  w:220, h:56};
@@ -2015,6 +2054,8 @@ function update(dt){
     if(pressed['Escape']) state=STATE.MENU;
   } else if(state===STATE.ACCOUNT){
     if(pressed['Escape']) leaveAccount();
+  } else if(state===STATE.PLACEFIRE){
+    if(pressed['Escape']) state=placeFireReturn||STATE.SETTINGS;
   } else if(state===STATE.COOPDEF){
     if(codef && codef.local){
       if(pressed['Escape']) coopDefEnd(codef?codef.kills:0);
@@ -3795,6 +3836,7 @@ function render(){
   if(state===STATE.MENU){ drawMenu(); ctx.restore(); drawToast(); return; }
   if(state===STATE.SETTINGS){ drawSettings(); ctx.restore(); drawToast(); return; }
   if(state===STATE.ACCOUNT){ drawAccount(); ctx.restore(); drawToast(); return; }
+  if(state===STATE.PLACEFIRE){ drawPlaceFire(); ctx.restore(); drawToast(); return; }
   if(state===STATE.PADCFG){ drawPadCfg(); ctx.restore(); drawToast(); return; }
   if(state===STATE.STORE){ drawStore(); ctx.restore(); drawToast(); return; }
 
