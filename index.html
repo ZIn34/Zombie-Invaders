@@ -472,7 +472,7 @@ function canvasTap(p, pid){
     for(const bb of buildBtns){ if(inRect(p,bb)){ touchBuild={type:bb.type}; Sound.hit(); return; } }   // switch the pending build
     return;   // swallow taps while confirming
   }
-  if(state===STATE.DUEL && duel && duel.war && !duel.over && !duel.paused){   // war: vehicle + shop (touch)
+  if(state===STATE.DUEL && duel && duel.war && !duel.split && !duel.over && !duel.paused){   // war: vehicle + shop (touch, solo/online)
     if(inRect(p, driveBtn) && (duel.driving || nearestVehicle(duel.humans[0]))){ toggleVehicle(); return; }
     for(const b of warShopBtns()){ if(inRect(p,b)){ warBuy(b.it.key); return; } }
   }
@@ -5617,14 +5617,38 @@ const PEEROPT = { debug:0, config:{ iceServers:[
   { urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'], username:'openrelayproject', credential:'openrelayproject' }
 ] } };
 const NetIO = {
-  peer:null, conn:null,
-  cleanup(){ try{ if(this.conn) this.conn.close(); }catch(e){} try{ if(this.peer) this.peer.destroy(); }catch(e){} this.conn=null; this.peer=null; },
+  peer:null, conn:null, conns:[],
+  cleanup(){ try{ if(this.conn) this.conn.close(); }catch(e){} for(const c of this.conns){ try{ if(c) c.close(); }catch(e){} } try{ if(this.peer) this.peer.destroy(); }catch(e){} this.conn=null; this.conns=[]; this.peer=null; },
   send(o){ try{ if(this.conn && this.conn.open) this.conn.send(o); }catch(e){} },
+  broadcast(o){ if(this.conns.length){ for(const c of this.conns){ try{ if(c && c.open) c.send(o); }catch(e){} } } else { this.send(o); } },   // multi-guest host → everyone; falls back to the single link
   _bind(conn){ this.conn=conn;
     conn.on('open', ()=>{ if(!net) return; net.connected=true; net.lobby='connected'; net.status='connected!'; Sound.power(); netShowCodeInput(false); });
     conn.on('data', d=>netOnMessage(d));
     conn.on('close', ()=>netOnDisconnect());
     conn.on('error', ()=>netOnDisconnect());
+  },
+  // ---- MULTI-GUEST host (up to N players): accept several connections, assign each a slot ----
+  hostMulti(maxPlayers){
+    if(typeof Peer==='undefined'){ net.status='network library still loading — try again'; return; }
+    const code=netGenCode(); net.role='host'; net.code=code; net.lobby='hosting'; net.status='starting room…';
+    net.maxPlayers=maxPlayers; net.joined=1; this.conns=[];
+    const peer=new Peer('zinvv1-'+code, PEEROPT); this.peer=peer;
+    peer.on('open', ()=>{ if(net) net.status='waiting for players… (share the code)'; });
+    peer.on('connection', c=>this._bindGuestSlot(c));
+    peer.on('error', e=>{ const t=(e&&e.type)||'';
+      if(t==='unavailable-id' && net.hostRetry<4){ net.hostRetry++; this.cleanup(); this.hostMulti(maxPlayers); }
+      else if(net) net.status='error: '+netErr(e); });
+  },
+  _bindGuestSlot(conn){
+    if(!net || this.conns.length >= (net.maxPlayers-1)){ try{ conn.close(); }catch(e){} return; }   // room full
+    const slot = this.conns.length + 1;   // host is 0; guests are 1..maxPlayers-1
+    conn._slot = slot; this.conns.push(conn);
+    conn.on('open', ()=>{ if(!net) return; net.connected=true; net.lobby='connected'; net.joined=this.conns.length+1;
+      net.status=net.joined+'/'+net.maxPlayers+' players'; Sound.power();
+      try{ conn.send({t:'welcome', slot, count:net.joined, max:net.maxPlayers}); }catch(e){} });
+    conn.on('data', d=>netOnMessage(d, conn._slot));
+    conn.on('close', ()=>{ this.conns=this.conns.filter(c=>c!==conn); if(net){ net.joined=this.conns.length+1; if(net.lobby!=='choose'&&state===STATE.NETLOBBY) net.status=net.joined+'/'+net.maxPlayers+' players'; } });
+    conn.on('error', ()=>{});
   },
   host(){
     if(typeof Peer==='undefined'){ net.status='network library still loading — try again'; return; }
@@ -5711,7 +5735,7 @@ function netLobbyTap(p){
   if(net.lobby==='choose'){
     if(!net.coop && inRect(p, netModeBtn)){ netToggleMode(); return; }   // pick HORDE or SHOOTOUT before you host/quick-match
     if(inRect(p, netQuickBtn)) NetIO.quickMatch();
-    else if(inRect(p, netHostBtn)) NetIO.host();
+    else if(inRect(p, netHostBtn)){ if(net.coop) NetIO.hostMulti(4); else NetIO.host(); }   // co-op defense hosts a room for up to 4
     else if(inRect(p, netJoinBtn)){ net.lobby='joining'; net.status=''; netShowCodeInput(true); }
   } else if(net.lobby==='joining'){
     if(inRect(p, netConnectBtn)){ const c=netReadCodeInput(); if(c.length>=3){ NetIO.join(c); } else toast('type the room code'); }
@@ -5720,23 +5744,27 @@ function netLobbyTap(p){
     if(!net.coop && inRect(p, netAdvBtn)) net.adv=!net.adv;
   } else if(net.lobby==='connected'){
     if(net.role==='host'){
-      if(inRect(p, netStartBtn)){ const mi=Math.floor(Math.random()*DUEL_MAPS.length); NetIO.send({t:'begin', adv:net.adv, gtype:net.gtype, map:mi}); netBeginMatch(net.adv, net.gtype, mi); }
+      if(inRect(p, netStartBtn)){ const mi=Math.floor(Math.random()*DUEL_MAPS.length);
+        if(net.coop && (net.joined||1)<2){ toast('waiting for players to join…'); return; }
+        if(net.coop){ net.playerCount=net.joined||2; NetIO.broadcast({t:'begin', adv:net.adv, gtype:'coop', map:mi, count:net.playerCount}); netBeginMatch(net.adv, 'coop', mi); }
+        else { NetIO.send({t:'begin', adv:net.adv, gtype:net.gtype, map:mi}); netBeginMatch(net.adv, net.gtype, mi); } }
       else if(!net.coop && inRect(p, netModeBtn)) netToggleMode();
       else if(!net.coop && inRect(p, netAdvBtn)) net.adv=!net.adv;
     }
   }
 }
 
-function netOnMessage(d){ if(!net||!d||!d.t) return;
+function netOnMessage(d, slot){ if(!net||!d||!d.t) return;
   switch(d.t){
-    case 'begin': netBeginMatch(!!d.adv, d.gtype||'horde', d.map||0); break;
+    case 'welcome': net.mySlot=d.slot; net.playerCount=d.count; net.maxPlayers=d.max; net.connected=true; net.lobby='connected'; net.status='joined — waiting for host to start…'; Sound.power(); netShowCodeInput(false); break;
+    case 'begin': if(d.gtype==='coop'){ net.playerCount=d.count||net.playerCount||2; netBeginMatch(!!d.adv, 'coop', d.map||0); } else netBeginMatch(!!d.adv, d.gtype||'horde', d.map||0); break;
     case 'spawn': if(net.iAmDefender) netSpawnFromAttacker(d); break;
     case 'st': if(!net.iAmDefender){ net.snapshot=d; netApplySnapshot(d); } break;
     case 'roundEnd': netOnOpponentRoundEnd(d); break;
     case 'din': if(duel && net.role==='host'){ net.guestInput={mvx:d.mvx||0,mvy:d.mvy||0,aim:(d.aim==null?null:d.aim),fire:!!d.fire}; } break;
     case 'dst': if(duel && net.role==='guest'){ duel._snap=d; } break;
-    case 'cin': if(codef && net.role==='host'){ net.guestInput={mvx:d.mvx||0,mvy:d.mvy||0,aim:(d.aim==null?null:d.aim),fire:!!d.fire}; } break;
-    case 'cbuild': if(codef && net.role==='host'){ net.pendingBuild=d.bt; } break;
+    case 'cin': if(codef && net.role==='host'){ const i=slot||1; if(net.inputs) net.inputs[i]={mvx:d.mvx||0,mvy:d.mvy||0,aim:(d.aim==null?null:d.aim),fire:!!d.fire}; } break;
+    case 'cbuild': if(codef && net.role==='host'){ const i=slot||1; if(net.pendingBuilds) net.pendingBuilds[i]=d.bt; } break;
     case 'cst': if(codef && net.role==='guest'){ codef._snap=d; } break;
     case 'cover': if(codef && net.role==='guest'){ coopDefEnd(d.ki); } break;
     case 'bye': netOnDisconnect(); break;
@@ -5838,10 +5866,9 @@ const WAR_SHOP=[   // buy weapons & vehicles with your kill cash
 ];
 function warShopBtns(){ const bw=104, bh=34, gap=6, x=W-bw-10; return WAR_SHOP.map((it,i)=>({x, y:96+i*(bh+gap), w:bw, h:bh, it})); }
 function awardKillCash(owner, victim){ if(!duel||!duel.war) return;
-  const me=duel.humans[0];
-  if(owner===me){ if(me) duel.cash=(duel.cash||0)+WAR_KILL_CASH; }
-  else { if(owner && owner.bot) owner.cash=(owner.cash||0)+WAR_KILL_CASH;
-    if(victim && victim._assistT>0) duel.cash=(duel.cash||0)+WAR_ASSIST_CASH; }   // you damaged them → assist bonus
+  if(owner){ owner.cash=(owner.cash||0)+WAR_KILL_CASH; }                                   // the killer (human or bot) earns
+  if(victim && victim._assistBy && victim._assistBy!==owner && (victim._assistT||0)>0){    // whoever softened them up gets an assist
+    victim._assistBy.cash=(victim._assistBy.cash||0)+WAR_ASSIST_CASH; }
 }
 function spawnVehicleFor(f, kind){   // drop a bought vehicle beside a fighter
   const w=kind==='tank'?98:76, h=kind==='tank'?74:50;
@@ -5859,17 +5886,17 @@ function botBuy(f){   // bots save their kill cash and buy a vehicle when they c
   else if(c>=650){ const v=spawnVehicleFor(f,'tank'); if(v){ f.cash=c-650; enterVehicle(f,v); Sound.power(); return true; } }
   return false;
 }
-function warBuy(key){
-  const me=duel.humans[0]; if(!me||me.dead) return;
+function warBuy(key, buyer){
+  const me=buyer||duel.humans[0]; if(!me||me.dead) return;
   const it=WAR_SHOP.find(s=>s.key===key); if(!it) return;
-  if((duel.cash||0)<it.cost){ Sound.empty&&Sound.empty(); return; }
-  duel.cash-=it.cost; Sound.power();
+  if((me.cash||0)<it.cost){ Sound.empty&&Sound.empty(); return; }
+  me.cash-=it.cost; Sound.power();
   if(key==='rifle'){ me.weapon='rifle'; me.wammo=120; toast('RIFLE bought!'); }
   else if(key==='shotgun'){ me.weapon='shotgun'; me.wammo=40; toast('SHOTGUN bought!'); }
   else { // buy a vehicle and get straight in it (so a teammate can't grab it first)
     const kind=key, v=spawnVehicleFor(me, kind);
-    if(!v){ duel.cash+=it.cost; toast('No room to drop it — move to open ground'); return; }
-    if(!me._inVehicle){ enterVehicle(me, v); duel.driving=v; }
+    if(!v){ me.cash+=it.cost; toast('No room to drop it — move to open ground'); return; }
+    if(!me._inVehicle){ enterVehicle(me, v); if(me===duel.humans[0]) duel.driving=v; }
     toast(kind==='tank'?'🚂 TANK — you\'re in!':'🚙 JEEP — you\'re in!');
   }
 }
@@ -5965,23 +5992,25 @@ function fighterBlocks(self, x, y){
   return false;
 }
 /* ===================== ONLINE CO-OP DEFENSE ===================== */
-function netStartCoopDefense(){
+function netStartCoopDefense(count){
   mode='net'; coop=null; duel=null;
-  const p1=makePlayer(), p2=makePlayer();
-  p1.x=-70; p1.y=110; p1.aim=null; p1.ammo=14;
-  p2.x=70;  p2.y=110; p2.aim=null; p2.ammo=14;
+  count = Math.max(2, Math.min(4, count || (net&&net.playerCount) || 2));   // 2–4 players
+  const spots=[[-70,110],[70,110],[-70,-40],[70,-40]];
+  const players=[];
+  for(let i=0;i<count;i++){ const pl=makePlayer(); pl.x=spots[i][0]; pl.y=spots[i][1]; pl.aim=null; pl.ammo=14; players.push(pl); }
   codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
     cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:7, ammoRegen:0, reloadT:0, killAcc:0, mags:3, killLimit:defKillLimit,
     flag:(function(){ const fh=Math.round(700*DIFF[difficulty].flagHp); return {x:0,y:0,r:46,hp:fh,hpMax:fh}; })(),
-    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
-  codef.meKey =(net.role==='host')?'p1':'p2';
-  codef.foeKey=(net.role==='host')?'p2':'p1';
-  player=codef[codef.meKey];   // globals that helpers reference point at the local player
+    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, players };
+  codef.meIdx = (net.role==='host') ? 0 : (net.mySlot||1);   // host is slot 0; guests get their slot from the lobby
+  codef.p1=players[0]; codef.p2=players[1]||players[0];      // aliases kept for any shared helpers
+  player=players[codef.meIdx] || players[0];                 // globals that helpers reference point at the local player
   explore=codef;               // reuse camera / zombie-rotation / aim plumbing
   zombies=[]; bullets=[]; ebullets=[]; particles=[]; bloodPools=[]; boss=null;
-  net.guestInput={mvx:0,mvy:0,aim:null,fire:false}; net.snapT=0; net.inT=0; net.pendingBuild=null;
+  net.inputs=players.map(()=>({mvx:0,mvy:0,aim:null,fire:false})); net.pendingBuilds=players.map(()=>null);
+  net.snapT=0; net.inT=0;
   if(net.role==='host') coopSpawn(5);
-  state=STATE.COOPDEF; toast('CO-OP DEFENSE — protect the flag together!');
+  state=STATE.COOPDEF; toast(count+'-PLAYER CO-OP DEFENSE — protect the flag together!');
 }
 function codefBlocks(x,y,w,h,forZombie){ const cd=codef; if(!cd) return false; const H2=DEF_HALF;
   if(x<-H2||x+w>H2||y<-H2||y+h>H2) return true;
@@ -6011,7 +6040,7 @@ function coopSpawnBoss(){ const cd=codef; cd.bossCount=(cd.bossCount||0)+1;
 function coopBuild(pl,type){ if(codef) doBuild(codef, pl, type, true); }
 function coopBuildRequest(type){
   if(!net||!codef) return;
-  if(net.role==='host') coopBuild(codef[codef.meKey], type);
+  if(net.role==='host') coopBuild(codef.players[codef.meIdx], type);
   else NetIO.send({t:'cbuild', bt:type});
 }
 function coopLocalInput(pl){
@@ -6056,7 +6085,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
       if(t.cd<=0){ const vx=Math.cos(t.aim),vy=Math.sin(t.aim),sp=760;
         bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:7,h:7,vx:vx*sp,vy:vy*sp,col:(t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true}); t.cd=t.fireCd||0.5; } }
   }
-  const players=[cd.p1,cd.p2];
+  const players=cd.players||[cd.p1,cd.p2];   // online uses a players[] array; local split-screen uses p1/p2
   for(const z of zombies){
     if(z.dying){ tickDying(z,dt,1.05); continue; }
     if(!z.alive) continue;
@@ -6114,20 +6143,22 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
 }
 function updateCoopHost(dt){
   const cd=codef; if(!cd) return; cd.elapsed+=dt;
-  coopActor(cd.p1, (cd.meKey==='p1'?coopLocalInput(cd.p1):(net.guestInput||{mvx:0,mvy:0,aim:null,fire:false})), dt, true);
-  coopActor(cd.p2, (cd.meKey==='p2'?coopLocalInput(cd.p2):(net.guestInput||{mvx:0,mvy:0,aim:null,fire:false})), dt, true);
-  if(net.pendingBuild){ coopBuild(cd[cd.foeKey], net.pendingBuild); net.pendingBuild=null; }
-  const me=cd[cd.meKey];
+  for(let i=0;i<cd.players.length;i++){
+    const inp = (i===cd.meIdx) ? coopLocalInput(cd.players[i]) : (net.inputs[i] || {mvx:0,mvy:0,aim:null,fire:false});
+    coopActor(cd.players[i], inp, dt, true);
+  }
+  for(let i=0;i<cd.players.length;i++){ if(net.pendingBuilds[i]){ coopBuild(cd.players[i], net.pendingBuilds[i]); net.pendingBuilds[i]=null; } }
+  const me=cd.players[cd.meIdx];
   cd.zoom=EXPLORE_ZOOM; const VW=W/cd.zoom, VH=H/cd.zoom;
   cd.camX=clamp(me.x+me.w/2-VW/2, -DEF_HALF-30, DEF_HALF-VW+30);
   cd.camY=clamp(me.y+me.h/2-VH/2, -DEF_HALF-30, DEF_HALF-VH+30);
   coopSimWorld(dt);
-  net.snapT-=dt; if(net.snapT<=0){ net.snapT=1/15; NetIO.send(coopSnapshot()); }
-  if(cd.over || cd.flag.hp<=0){ try{NetIO.send({t:'cover', ki:cd.kills});}catch(e){} coopDefEnd(cd.kills); }
+  net.snapT-=dt; if(net.snapT<=0){ net.snapT=1/15; NetIO.broadcast(coopSnapshot()); }
+  if(cd.over || cd.flag.hp<=0){ try{NetIO.broadcast({t:'cover', ki:cd.kills});}catch(e){} coopDefEnd(cd.kills); }
 }
 function updateCoopGuest(dt){
   const cd=codef; if(!cd) return; cd.elapsed+=dt;
-  const me=cd[cd.meKey];
+  const me=cd.players[cd.meIdx];
   const inp=coopLocalInput(me);
   coopActor(me, inp, dt, false);   // predict my own movement/aim; host is authoritative for the world
   net.inT-=dt; if(net.inT<=0){ net.inT=1/30; NetIO.send({t:'cin', mvx:inp.mvx, mvy:inp.mvy, aim:inp.aim, fire:inp.fire}); }
@@ -6145,7 +6176,7 @@ function coopSnapshot(){
   const sk=(cd.spikes||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),Math.round(s.hpMax)]);
   const bs=cd.bosses.filter(b=>!b.dead).map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.hp),Math.round(b.hpMax),+(b.face||0).toFixed(2)]);
   return { t:'cst', ca:Math.floor(cd.cash), lv:cd.lives, ki:cd.kills, ov:cd.over?1:0, fh:Math.max(0,Math.round(cd.flag.hp)),
-    am:Math.floor(cd.ammo||0), wo:cd.won?1:0, p1:encP(cd.p1), p2:encP(cd.p2), zs, tu, wl, sk, bs };
+    am:Math.floor(cd.ammo||0), wo:cd.won?1:0, ps:cd.players.map(encP), zs, tu, wl, sk, bs };
 }
 function coopApplySnapshot(s){
   const cd=codef;
@@ -6156,11 +6187,10 @@ function coopApplySnapshot(s){
   cd.spikes  = (s.sk||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[5]||240}));
   cd.bosses  = (s.bs||[]).map(a=>({x:a[0],y:a[1],w:96,h:96,hp:a[2],hpMax:a[3],face:a[4],flash:0,dead:false}));
   cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1; if(s.am!=null)cd.ammo=s.am; if(s.wo)cd.won=true;
-  const sMe = (cd.meKey==='p1')?s.p1:s.p2, sFoe=(cd.foeKey==='p1')?s.p1:s.p2;
-  const me=cd[cd.meKey], foe=cd[cd.foeKey];
-  foe.x=sFoe[0]; foe.y=sFoe[1]; foe.aim=sFoe[2]; foe.ammo=sFoe[3]; foe.moving=sFoe[4]===1;
-  me.ammo=sMe[3];
-  me.x+=(sMe[0]-me.x)*0.2; me.y+=(sMe[1]-me.y)*0.2;   // gently reconcile drift
+  const ps=s.ps||[];
+  for(let i=0;i<cd.players.length && i<ps.length;i++){ const a=ps[i], pl=cd.players[i];
+    if(i===cd.meIdx){ pl.ammo=a[3]; pl.x+=(a[0]-pl.x)*0.2; pl.y+=(a[1]-pl.y)*0.2; }   // reconcile my own drift gently
+    else { pl.x=a[0]; pl.y=a[1]; pl.aim=a[2]; pl.ammo=a[3]; pl.moving=a[4]===1; } }    // other players: follow the host exactly
   if(cd.over) coopDefEnd(s.ki);
 }
 function coopCheckWin(){ const cd=codef; if(cd && cd.killLimit>0 && cd.kills>=cd.killLimit && !cd.over){ cd.over=true; cd.won=true; } }
@@ -6179,9 +6209,9 @@ function drawCoopDef(){
   drawDefenseGround(cd); drawDefenseArena(); drawBloodPools();
   drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd);
   drawZombies(); drawDefenseBoss(cd); drawBullets();
-  drawPlayerObj(cd.p1, true); drawPlayerObj(cd.p2, true);
+  for(const pl of cd.players) drawPlayerObj(pl, true);
   drawParticles();
-  { const me=cd[cd.meKey]; const gt = touchBuild?touchBuild.type : (Pad.connected?BUILD_BAR[(me.buildSel||0)].type:hoverBuildType); if(gt) drawBuildGhost(cd, me, gt, true); }
+  { const me=cd.players[cd.meIdx]; const gt = touchBuild?touchBuild.type : (Pad.connected?BUILD_BAR[(me.buildSel||0)].type:hoverBuildType); if(gt) drawBuildGhost(cd, me, gt, true); }
   ctx.restore();
   drawGloom();
   drawCoopUI(cd);
@@ -6250,7 +6280,10 @@ function readController(idx){
     start: A_start!=null ? edge(A_start) : (edge(9) || (std && edge(8))),      // Options / Start
     back:  A_back !=null ? edge(A_back)  : (std ? edge(1) : edge(2)),          // B / Circle
     cycle: A_cyc  !=null ? edge(A_cyc)   : (edge(4) || (std && (edge(15)||edge(14)))), // L1 or D-pad
-    place: A_place!=null ? edge(A_place) : (edge(3) || (std && edge(2))) };    // Y·Triangle · X
+    place: A_place!=null ? edge(A_place) : (edge(3) || (std && edge(2))),      // Y·Triangle · X
+    shopL: std?edge(14):false, shopR: std?edge(15):false,   // D-pad ◀ ▶ — split-war shop select
+    buy:   std?edge(3):false,                               // Y/Triangle — split-war buy
+    veh:   std?edge(1):false };                             // B/Circle — split-war enter/exit vehicle
 }
 function ctrlToInput(c){
   const aimLeft = false;   // right stick always aims (aim-stick toggle removed)
@@ -6669,7 +6702,7 @@ function drawDuelLocalOver(){
 /* ================= TEAM SHOOTOUT (2v2): humans + bots, two teams ================= */
 function mkFighter(x,y,aim,team,bot,ctrl){
   return {x,y,aim,hp:DUEL_HP,cd:0,recoil:0,flash:0,walkT:0,moving:false,weapon:'pistol',mag:DUEL_MAG,wammo:0,reloadT:0,
-    team,bot:!!bot,ctrl:(ctrl===undefined?null:ctrl),dead:false, aiWander:0,aiStrafe:1,aiStrafeT:0};
+    team,bot:!!bot,ctrl:(ctrl===undefined?null:ctrl),dead:false, cash:0, aiWander:0,aiStrafe:1,aiStrafeT:0};
 }
 // same spawn checker target practice uses: nudge any fighter that spawned inside a wall out to the nearest clear spot (keeps it near its intended side)
 function clearDuelSpawns(){
@@ -6703,6 +6736,7 @@ function startTeamShootout(opts){   // opts:{split, h1:{bot,ctrl}, h2:{bot,ctrl}
     pickups:shootPicks(),
     obs:duelMapPick() };
   duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // the one ally your radio orders control
+  for(const h of duel.humans) h._squad = duel.fighters.find(f=>f.bot && f.team===h.team && f!==h);
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
@@ -6783,6 +6817,7 @@ function startBigWar(opts){
     fighters, humans:fighters.filter(f=>!f.bot),
     pickups:[], obs:makeWarObs(WW,HH).concat(bld.walls), buildings:bld.buildings, vehicles:[], decals:makeWarDecals(WW,HH) };   // no auto-spawn vehicles or pickups — buy them with kill cash
   duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // only this ally follows your radio orders
+  for(const h of duel.humans) h._squad = duel.fighters.find(f=>f.bot && f.team===h.team && f!==h);   // each player marks a squadmate on their OWN team
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
@@ -7149,10 +7184,10 @@ function destroyVehicle(v, killerTeam, killerOwner){
   }
   v.driver=null; v.occupied=false;
 }
-function toggleVehicle(){
-  const me=duel.humans[0]; if(!me||me.dead) return;
-  if(me._inVehicle){ exitVehicle(me); Sound.hit(); }
-  else { const v=nearestVehicle(me); if(v){ enterVehicle(me,v); duel.driving=v; Sound.power(); toast(v.kind==='tank'?'🚂 TANK — cannon ready!':'🚙 JEEP — floor it!'); } }
+function toggleVehicle(f){
+  const me=f||duel.humans[0]; if(!me||me.dead) return;
+  if(me._inVehicle){ exitVehicle(me); if(me===duel.humans[0]) duel.driving=null; Sound.hit(); }
+  else { const v=nearestVehicle(me); if(v){ enterVehicle(me,v); if(me===duel.humans[0]) duel.driving=v; Sound.power(); toast(v.kind==='tank'?'🚂 TANK — cannon ready!':'🚙 JEEP — floor it!'); } }
 }
 // bot vehicle behaviour: on foot → grab a nearby vehicle; inside → drive it toward the enemy and fire
 function botVehicleStep(f, dt){
@@ -7205,17 +7240,20 @@ function updateVehicles(dt){
   if(duel.blasts){ for(const bl of duel.blasts) bl.t+=dt; duel.blasts=duel.blasts.filter(bl=>bl.t<0.45); }
   for(const vv of duel.vehicles){ if(vv.wreck && vv.wreckT!=null) vv.wreckT-=dt; }   // burnt wrecks clear away after a while
   if(duel.vehicles.some(vv=>vv.wreck && vv.wreckT<=0)) duel.vehicles=duel.vehicles.filter(vv=>!(vv.wreck && vv.wreckT<=0));
-  const v=duel.driving; if(!v) return;
-  const me=duel.humans[0]; if(!me || me.dead || v.wreck || me._veh!==v){ duel.driving=null; return; }
-  const inp = me.ctrl==='kb' ? humanDuelInputFor(me) : ctrlToInput(readController(me.ctrl));
-  const spd = v.kind==='jeep' ? DUEL_SPD*1.4 : DUEL_SPD*0.78;
-  const hw=v.w/2, hh=v.h/2, nx=v.x+(inp.mvx||0)*spd*dt, ny=v.y+(inp.mvy||0)*spd*dt;
-  if(!duelBlocks(nx-hw,v.y-hh,v.w,v.h) && !vehicleVehBlocks(v,nx,v.y)) v.x=nx;
-  if(!duelBlocks(v.x-hw,ny-hh,v.w,v.h) && !vehicleVehBlocks(v,v.x,ny) && !enemyBarrierBlocks(me.team,ny)) v.y=ny;
-  if(inp.aim!=null) v.angle=inp.aim;
-  me.x=v.x-DUEL_PS/2; me.y=v.y-DUEL_PS/2; me.aim=v.angle;   // camera + death logic track the vehicle
-  v.cd-=dt;
-  if(inp.fire && v.cd<=0){ if(v.kind==='tank'){ tankFire(v,me.team); v.cd=1.15; } else { jeepFire(v,me.team); v.cd=0.11; } }
+  for(const me of duel.humans){   // every human drives their OWN occupied vehicle
+    const v=me._veh;
+    if(!me._inVehicle || !v || me.dead || v.wreck || v.driver!==me){ if(me===duel.humans[0]) duel.driving=null; continue; }
+    if(me===duel.humans[0]) duel.driving=v;
+    const inp = me.ctrl==='kb' ? humanDuelInputFor(me) : ctrlToInput(readController(me.ctrl));
+    const spd = v.kind==='jeep' ? DUEL_SPD*1.4 : DUEL_SPD*0.78;
+    const hw=v.w/2, hh=v.h/2, nx=v.x+(inp.mvx||0)*spd*dt, ny=v.y+(inp.mvy||0)*spd*dt;
+    if(!duelBlocks(nx-hw,v.y-hh,v.w,v.h) && !vehicleVehBlocks(v,nx,v.y)) v.x=nx;
+    if(!duelBlocks(v.x-hw,ny-hh,v.w,v.h) && !vehicleVehBlocks(v,v.x,ny) && !enemyBarrierBlocks(me.team,ny)) v.y=ny;
+    if(inp.aim!=null) v.angle=inp.aim;
+    me.x=v.x-DUEL_PS/2; me.y=v.y-DUEL_PS/2; me.aim=v.angle;   // camera + death logic track the vehicle
+    v.cd-=dt;
+    if(inp.fire && v.cd<=0){ if(v.kind==='tank'){ tankFire(v,me.team); v.cd=1.15; } else { jeepFire(v,me.team); v.cd=0.11; } }
+  }
 }
 function duelAdvanceLook(me){   // smooth a "look" vector toward wherever the player is facing — shifts the camera that way
   if(!duel) return;
@@ -7253,6 +7291,14 @@ function updateTeamDuel(dt){
     teamTickFlash(dt); return;
   }
   if(duel.paused){ if(split && (c0.back||c1.back)) teamDuelEnd(); return; }
+  if(duel.war && split){   // split-screen war: each controller runs its own shop + vehicle
+    for(const h of duel.humans){ const c=(h.ctrl===0)?c0:(h.ctrl===1)?c1:null; if(!c||!c.connected||h.dead) continue;
+      if(c.shopL){ h._shopSel=(((h._shopSel||0)-1+WAR_SHOP.length)%WAR_SHOP.length); Sound.hit(); }
+      if(c.shopR){ h._shopSel=(((h._shopSel||0)+1)%WAR_SHOP.length); Sound.hit(); }
+      if(c.buy) warBuy(WAR_SHOP[h._shopSel||0].key, h);
+      if(c.veh) toggleVehicle(h);
+    }
+  }
   duel.t+=dt;
   for(const f of duel.fighters){
     let inp;
@@ -7294,7 +7340,7 @@ function updateTeamDuel(dt){
         if(f._behind && bulletShielded(f,b)){ b.dead=true; break; }   // STAY BEHIND ME: a teammate's body soaks the shot
         f.hp-=1; f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
         if(f.bot && b.owner && !b.owner.dead){ f._threat=b.owner; f._threatT=2.6; }   // react to whoever's shooting you
-        if(duel.war && f.hp>0 && b.owner===duel.humans[0]) f._assistT=4;   // you hurt them → assist window if a teammate finishes
+        if(duel.war && f.hp>0 && b.owner){ f._assistBy=b.owner; f._assistT=4; }   // remember who hurt them → assist window if a teammate finishes
         if(f.hp<=0){ f.dead=true;
           if(duel.war){ f.respawnT=5; awardKillCash(b.owner, f);   // WAR: score the kill (+cash if it's yours/assist), respawn in 5s, first to the goal wins
             if(b.team===1) duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
@@ -7500,14 +7546,30 @@ function drawTeamView(v){
   drawDuelSceneWorld(camX,camY,VW,VH,me);
   ctx.restore();
   localGloom(v.rx,v.ry,v.rw,v.rh,0.4);
-  { const mate=(duel.squadMate && !duel.squadMate.dead) ? duel.squadMate : duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // mark your commandable squadmate
+  { const mate=(me._squad && !me._squad.dead && me._squad.team===me.team) ? me._squad : duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // YOUR own-team squadmate
     if(mate){ const md=Math.hypot(mate.x-me.x, mate.y-me.y); const msc=1 - Math.min(0.65, md/2600*0.65);   // marker shrinks the farther the squadmate is
       drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE', msc); } }
-  if(duel.war && !duel.driving && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
+  if(duel.war && !me._inVehicle && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
     let best=null,bd=1e9; const cx=me.x+DUEL_PS/2, cy=me.y+DUEL_PS/2;
     for(const vh of duel.vehicles){ if(vh.occupied||vh.wreck) continue; const d=Math.hypot(vh.x-cx,vh.y-cy); if(d<bd){bd=d;best=vh;} }
     if(best) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:best.x-DUEL_PS/2,y:best.y-DUEL_PS/2,w:DUEL_PS,h:DUEL_PS}, '#ffd24a', 0, best.kind.toUpperCase()); }
-  if(duel.split) drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-12);
+  if(duel.split){ drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-12); if(duel.war) drawWarSplitHUD(v, me); }
+}
+function drawWarSplitHUD(v, me){   // per-player money + compact shop inside one split half
+  const rx=v.rx, ry=v.ry, rw=v.rw, rh=v.rh;
+  ctx.save(); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 15px '+CF; ctx.fillText('$'+(me.cash||0), rx+10, ry+38); ctx.shadowBlur=0;
+  const n=WAR_SHOP.length, gap=6, bw=Math.min(94,(rw-20-gap*(n-1))/n), bh=28, y=ry+rh-bh-30, x0=rx+10;
+  me._shopBtns=[];
+  ctx.textAlign='center';
+  for(let i=0;i<n;i++){ const it=WAR_SHOP[i], bx=x0+i*(bw+gap), afford=(me.cash||0)>=it.cost, sel=(me._shopSel||0)===i;
+    ctx.globalAlpha=afford?1:0.55; ctx.fillStyle=sel?'rgba(40,70,40,.95)':'rgba(18,26,18,.85)'; roundRectPath(bx,y,bw,bh,6); ctx.fill();
+    ctx.lineWidth=sel?2.5:1.5; ctx.strokeStyle=sel?'#ffe14b':(afford?'#7fe0a0':'#5a6a5a'); roundRectPath(bx,y,bw,bh,6); ctx.stroke();
+    ctx.fillStyle='#eafff0'; ctx.font='bold 10px '+CF; ctx.fillText(it.label, bx+bw/2, y+12);
+    ctx.fillStyle=afford?'#ffe14b':'#9a9a6a'; ctx.font='bold 9px '+CF; ctx.fillText('$'+it.cost, bx+bw/2, y+23); ctx.globalAlpha=1;
+    me._shopBtns.push({x:bx,y:y,w:bw,h:bh,key:it.key}); }
+  ctx.fillStyle='#bfe0c0'; ctx.font='bold 9px '+CF; ctx.fillText('LB/RB pick · L-trigger buy · B vehicle', rx+rw/2, y+bh+11);
+  ctx.restore();
 }
 function drawTeamDuel(){
   if(!duel) return;
@@ -7583,12 +7645,14 @@ function drawTeamHUD(){
       ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.fillText(duel.driving?'🚪 EXIT':'🚗 DRIVE', b.x+b.w/2, b.y+b.h/2+1); ctx.restore(); }
     if(me && me.dead) {} else if(me && duel.driving){ ctx.save(); ctx.textAlign='left'; ctx.fillStyle='#ffd8a0'; ctx.font='bold 12px '+CF; ctx.fillText(duel.driving.kind==='tank'?'TANK — fire the cannon!':'JEEP — mounted gun', 12, 66); ctx.restore(); }
     else if(!duel.split && me) drawTeamWeaponLine(me, 12, 46);
-    // cash + buy shop
+    // cash + buy shop (solo/online only — split-screen draws its own per-player shop inside each half)
+    if(!duel.split){
+    const myCash=(me&&me.cash)||0;
     ctx.save(); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
-    ctx.fillStyle='#ffe14b'; ctx.font='bold 16px '+CF; ctx.fillText('$'+(duel.cash||0), 12, H-16); ctx.shadowBlur=0;
+    ctx.fillStyle='#ffe14b'; ctx.font='bold 16px '+CF; ctx.fillText('$'+myCash, 12, H-16); ctx.shadowBlur=0;
     { ctx.textAlign='center'; ctx.textBaseline='middle'; const sb=warShopBtns();
       ctx.font='bold 10px '+CF; ctx.fillStyle='#9fb0a0'; ctx.fillText('SHOP', sb[0].x+sb[0].w/2, sb[0].y-9);
-      sb.forEach((b,i)=>{ const afford=(duel.cash||0)>=b.it.cost, sel=Pad.connected && (Pad.shopSel||0)===i;
+      sb.forEach((b,i)=>{ const afford=myCash>=b.it.cost, sel=Pad.connected && (Pad.shopSel||0)===i;
         ctx.globalAlpha=afford?1:0.5; ctx.fillStyle=sel?'rgba(40,70,40,.95)':'rgba(20,30,20,.9)'; roundRectPath(b.x,b.y,b.w,b.h,7); ctx.fill();
         ctx.lineWidth=sel?3:2; ctx.strokeStyle=sel?'#ffe14b':(afford?'#7fe0a0':'#5a6a5a'); roundRectPath(b.x,b.y,b.w,b.h,7); ctx.stroke();
         // gun sprite icon on weapon buttons (the sprites you provided)
@@ -7603,6 +7667,7 @@ function drawTeamHUD(){
       if(Pad.connected){ ctx.fillStyle='#cfe0ff'; ctx.font='bold 10px '+CF; ctx.fillText('◀ ▶ · LB buy', sb[0].x+sb[0].w/2, sb[sb.length-1].y+sb[sb.length-1].h+12); }
     }
     ctx.restore();
+    }
     return;
   }
   const t1=duel.fighters.filter(f=>f.team===1).length, t2=duel.fighters.filter(f=>f.team===2).length;
