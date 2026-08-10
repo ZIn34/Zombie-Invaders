@@ -6912,6 +6912,13 @@ function teamAI(f, dt){
       if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1; base.mvx=tx/td*1.6; base.mvy=ty/td*1.6; }
       else { base.mvx=-fx/fd*1.6+dx/dd*0.5; base.mvy=-fy/fd*1.6+dy/dd*0.5; }
       base.fire=(fd<620 && !teamLineBlocked(f,foe)); action='regroup';
+    } else if(!isAlly){   // ENEMY bots: hunt on their own and push off nearby teammates so the team fans out instead of clumping up
+      let sx=0,sy=0,cnt=0;
+      for(const g of duel.fighters){ if(g===f||g.dead||g.team!==f.team) continue;
+        const gx=f.x-g.x, gy=f.y-g.y, gd=Math.hypot(gx,gy)||1;
+        if(gd<440){ const w=1-gd/440; sx+=gx/gd*w; sy+=gy/gd*w; cnt++; } }
+      if(cnt){ const sl=Math.hypot(sx,sy)||1; base.mvx += sx/sl*1.25; base.mvy += sy/sl*1.25; }
+      action='hunt';
     } else if(commanded){   // your battle buddy: naturally stick with you and fight alongside
       if(dd>260){ base.mvx=dx/dd; base.mvy=dy/dd; action='regroup'; }                                   // too far → close on you
       else if(dd>150){ base.mvx=(base.mvx+dx/dd*1.2)*0.55; base.mvy=(base.mvy+dy/dd*1.2)*0.55; action='stick'; }   // drift back while fighting
