@@ -6283,7 +6283,9 @@ function readController(idx){
     place: A_place!=null ? edge(A_place) : (edge(3) || (std && edge(2))),      // Y·Triangle · X
     shopL: std?edge(14):false, shopR: std?edge(15):false,   // D-pad ◀ ▶ — split-war shop select
     buy:   std?edge(3):false,                               // Y/Triangle — split-war buy
-    veh:   std?edge(1):false };                             // B/Circle — split-war enter/exit vehicle
+    veh:   std?edge(1):false,                               // B/Circle — split-war enter/exit vehicle
+    cmdU:  std?edge(12):false, cmdD: std?edge(13):false,    // D-pad ▲ ▼ — split-war order select
+    send:  std?edge(2):false };                             // X/Square — split-war send order
 }
 function ctrlToInput(c){
   const aimLeft = false;   // right stick always aims (aim-stick toggle removed)
@@ -6903,7 +6905,8 @@ function teamAI(f, dt){
   const sp=Math.hypot(base.mvx,base.mvy)||1;   // keep the tactical move speed
   let action='hunt';
   const commanded = isAlly && f===duel.squadMate;         // your marked squadmate (used for idle battle-buddy behavior)
-  const cmd = (isAlly && duel.allyCmd && duel.allyCmd.t>0) ? duel.allyCmd.type : null;   // an active radio order controls EVERY teammate
+  const teamCmd = duel.cmd && duel.cmd[f.team];   // orders are per-team: each player commands their own army
+  const cmd = (isAlly && teamCmd && teamCmd.t>0) ? teamCmd.type : null;   // an active radio order controls EVERY teammate
   const independent = isAlly && duel.war && !commanded && !cmd;   // no order active → the rest fight on their own & spread out
   if(mate){
     const dx=mate.x-f.x, dy=mate.y-f.y, dd=Math.hypot(dx,dy)||1;
@@ -6955,7 +6958,7 @@ function teamAI(f, dt){
         if(f.hp<=3 || f.reloadT>0){ const cov=duelCoverSpot(f, foe, false); if(cov){ const tx=cov.x-f.x, ty=cov.y-f.y, td=Math.hypot(tx,ty)||1; base.mvx=tx/td*1.4; base.mvy=ty/td*1.4; } }
         else { base.mvx += -fy/fd*f.flankSign*1.1 + fx/fd*0.55; base.mvy += fx/fd*f.flankSign*1.1 + fy/fd*0.55; if(fd<300){ base.mvx-=fx/fd*0.9; base.mvy-=fy/fd*0.9; } }
         action='flank'; }
-      else if(cmd==='hold'){ const hp=duel.allyCmd.hold; if(hp){ const hx=hp.x-f.x, hy=hp.y-f.y, hdd=Math.hypot(hx,hy)||1; if(hdd>100){ base.mvx=hx/hdd*1.6; base.mvy=hy/hdd*1.6; } else { base.mvx=0; base.mvy=0; f._holding=true; } } action='stick'; }
+      else if(cmd==='hold'){ const hp=teamCmd&&teamCmd.hold; if(hp){ const hx=hp.x-f.x, hy=hp.y-f.y, hdd=Math.hypot(hx,hy)||1; if(hdd>100){ base.mvx=hx/hdd*1.6; base.mvy=hy/hdd*1.6; } else { base.mvx=0; base.mvy=0; f._holding=true; } } action='stick'; }
       else if(cmd==='allout'){ base.mvx+=fx/fd*2.1; base.mvy+=fy/fd*2.1; if(fd<1000 && !teamLineBlocked(f,foe)) base.fire=true; action='push'; }   // go fully in — no retreat
     } else if(f.hp<=2){   // low on health (no order overriding) → break off and fall back to cover instead of trading shots
       const cov=duelCoverSpot(f, foe, false);
@@ -7021,13 +7024,16 @@ const ALLY_CMDS=[
   {cmd:'protect', label:'PROTECT ME',         you:'Protect me — stay between us!'},
 ];
 function duelHasAlly(){ return !!(duel && duel.team && duel.humans && duel.humans[0] && duel.fighters && duel.fighters.some(g=>g.bot && !g.dead && g.team===duel.humans[0].team)); }
-function sendAllyCmd(c){
+function sendAllyCmd(c, team){
   if(!duel) return;
-  duel.allyCmd={type:c.cmd, t:9};
+  team = team || ((duel.humans&&duel.humans[0]) ? duel.humans[0].team : 1);   // whose army this order is for
+  if(!duel.cmd) duel.cmd={};
+  duel.cmd[team]={type:c.cmd, t:9};
+  duel.allyCmd=duel.cmd[team];   // keep the alias the solo comms UI reads
   toast('📻 SENT');
-  const me=duel.humans&&duel.humans[0];
-  const ally=me&&duel.fighters.find(g=>g.bot&&!g.dead&&g.team===me.team);
-  if(c.cmd==='hold' && ally) duel.allyCmd.hold={x:ally.x, y:ally.y};  // lock the spot they're standing on
+  const cmdr=duel.humans&&duel.humans.find(h=>h.team===team);
+  const ally=cmdr&&duel.fighters.find(g=>g.bot&&!g.dead&&g.team===team);
+  if(c.cmd==='hold' && ally) duel.cmd[team].hold={x:ally.x, y:ally.y};  // lock the spot they're standing on
   duel.commsOpen=false;
 }
 const commsBtn={x:12, y:62, w:118, h:30};
@@ -7272,7 +7278,7 @@ function teamCam(){ if(duel.split) return; const me=duel.humans[0]; if(!me) retu
   duel.camY=clamp(me.y+DUEL_PS/2+lo.y-VH/2,0,Math.max(0,duel.H-VH)); }
 function updateTeamDuel(dt){
   if(!duel) return;
-  if(duel.allyCmd && duel.allyCmd.t>0) duel.allyCmd.t-=dt;   // player order fades after a few seconds
+  if(duel.cmd){ for(const k in duel.cmd){ if(duel.cmd[k] && duel.cmd[k].t>0) duel.cmd[k].t-=dt; } }   // each team's order fades after a few seconds
   // keyboard hotkeys: number keys send that radio command straight to the ally; C toggles the full command page
   if(duelHasAlly() && !duel.over){
     const DK=['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0'];
@@ -7291,12 +7297,15 @@ function updateTeamDuel(dt){
     teamTickFlash(dt); return;
   }
   if(duel.paused){ if(split && (c0.back||c1.back)) teamDuelEnd(); return; }
-  if(duel.war && split){   // split-screen war: each controller runs its own shop + vehicle
+  if(duel.war && split){   // split-screen war: each controller runs its own shop, vehicle + radio orders
     for(const h of duel.humans){ const c=(h.ctrl===0)?c0:(h.ctrl===1)?c1:null; if(!c||!c.connected||h.dead) continue;
       if(c.shopL){ h._shopSel=(((h._shopSel||0)-1+WAR_SHOP.length)%WAR_SHOP.length); Sound.hit(); }
       if(c.shopR){ h._shopSel=(((h._shopSel||0)+1)%WAR_SHOP.length); Sound.hit(); }
       if(c.buy) warBuy(WAR_SHOP[h._shopSel||0].key, h);
       if(c.veh) toggleVehicle(h);
+      if(c.cmdU){ h._cmdSel=(((h._cmdSel||0)-1+ALLY_CMDS.length)%ALLY_CMDS.length); Sound.hit(); }
+      if(c.cmdD){ h._cmdSel=(((h._cmdSel||0)+1)%ALLY_CMDS.length); Sound.hit(); }
+      if(c.send) sendAllyCmd(ALLY_CMDS[h._cmdSel||0], h.team);   // order YOUR own army
     }
   }
   duel.t+=dt;
@@ -7568,7 +7577,14 @@ function drawWarSplitHUD(v, me){   // per-player money + compact shop inside one
     ctx.fillStyle='#eafff0'; ctx.font='bold 10px '+CF; ctx.fillText(it.label, bx+bw/2, y+12);
     ctx.fillStyle=afford?'#ffe14b':'#9a9a6a'; ctx.font='bold 9px '+CF; ctx.fillText('$'+it.cost, bx+bw/2, y+23); ctx.globalAlpha=1;
     me._shopBtns.push({x:bx,y:y,w:bw,h:bh,key:it.key}); }
-  ctx.fillStyle='#bfe0c0'; ctx.font='bold 9px '+CF; ctx.fillText('LB/RB pick · L-trigger buy · B vehicle', rx+rw/2, y+bh+11);
+  ctx.fillStyle='#bfe0c0'; ctx.font='bold 9px '+CF; ctx.fillText('◀▶ pick · Y buy · B vehicle', rx+rw/2, y+bh+11);
+  // radio-order chip (top-right of this half): D-pad ▲▼ selects, X sends to your army
+  const oc=ALLY_CMDS[me._cmdSel||0], ow=176, oh=26, ox=rx+rw-ow-10, oy=ry+30;
+  ctx.fillStyle='rgba(24,40,64,.9)'; roundRectPath(ox,oy,ow,oh,7); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(ox,oy,ow,oh,7); ctx.stroke();
+  ctx.textAlign='left'; ctx.fillStyle='#8fd0ff'; ctx.font='bold 10px '+CF; ctx.fillText('📻▲▼', ox+7, oy+oh/2+4);
+  ctx.textAlign='center'; ctx.fillStyle='#eef4ff'; ctx.font='bold 10px '+CF; ctx.fillText(oc.label, ox+ow/2+10, oy+oh/2+4);
+  ctx.textAlign='right'; ctx.fillStyle='#ffe14b'; ctx.font='bold 9px '+CF; ctx.fillText('X▶', ox+ow-7, oy+oh/2+4);
   ctx.restore();
 }
 function drawTeamDuel(){
