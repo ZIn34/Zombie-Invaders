@@ -75,6 +75,11 @@
   body.swapsticks #tfire,body.swapsticks #aimjoy{right:auto;left:26px;}
   body.landscape.swapsticks #joy{left:auto;right:26px;}
   body.landscape.swapsticks #tfire,body.landscape.swapsticks #aimjoy{right:auto;left:26px;}
+  /* AIM-STICK + FIRE-BUTTON scheme: park the fire button bottom-centre so it never overlaps the aim stick */
+  body.aimbtnmode #tfire{width:86px;height:86px;left:50%;right:auto;top:auto;bottom:6px;transform:translateX(-50%);}
+  body.landscape.aimbtnmode #tfire{width:86px;height:86px;left:50%;right:auto;top:auto;bottom:20px;transform:translateX(-50%);}
+  body.aimbtnmode #tpause{top:8px;bottom:auto;transform:translateX(-50%);}
+  body.landscape.aimbtnmode #tpause{top:8px;bottom:auto;transform:translateX(-50%);}
 </style>
 </head>
 <body>
@@ -142,16 +147,18 @@ let _aimLbl = 'AIM';
 function syncControls(){   // only show the joystick/pause/fire bar during actual play
   const show = ((state===STATE.PLAY && !(explore&&explore.coop&&explore.split)) || state===STATE.CHASE || state===STATE.PAUSE || state===STATE.DEATH || (state===STATE.DUEL && !(duel&&(duel.local || (duel.team&&duel.split)))) || (state===STATE.COOPDEF && !(codef&&codef.local)));
   if(show!==_ctrlShown){ _ctrlShown=show; if(controlsBar) controlsBar.style.display = show ? '' : 'none'; fit(); }
-  // Mission 3 (explore) and online duels use a twin-stick layout: swap the FIRE button for the AIM stick
+  // Mission 3 (explore) and online duels use a twin-stick layout: show the AIM stick.
   const aimMode = !!explore || state===STATE.DUEL || state===STATE.COOPDEF;
-  if(aimMode!==_aimShown){
-    _aimShown=aimMode;
-    const fb=document.getElementById('tfire'), aj=document.getElementById('aimjoy');
-    if(fb) fb.style.display = aimMode ? 'none' : '';
-    if(aj) aj.style.display = aimMode ? 'flex' : 'none';
-  }
-  const aj2=document.getElementById('aimjoy');   // the aim stick becomes a LOOK stick in shootout modes
-  if(aj2){ const want=(state===STATE.DUEL)?'LOOK':'AIM'; if(want!==_aimLbl){ _aimLbl=want; const l=aj2.querySelector('.aimlbl'); if(l) l.textContent=want; } }
+  const duelScheme = (state===STATE.DUEL) ? (settings.aimStick||'tap') : null;
+  const btnMode = duelScheme==='button';                 // shootout 'button' scheme → aim stick AND a fire button
+  const showAim = aimMode;
+  const showFire = !aimMode || btnMode;                  // fire button hidden in twin-stick modes, except 'button' scheme
+  const fb=document.getElementById('tfire'), aj=document.getElementById('aimjoy');
+  if(fb && fb.__shown!==showFire){ fb.__shown=showFire; fb.style.display = showFire ? '' : 'none'; }
+  if(aj && aj.__shown!==showAim){ aj.__shown=showAim; aj.style.display = showAim ? 'flex' : 'none'; }
+  try{ document.body.classList.toggle('aimbtnmode', !!btnMode); }catch(e){}   // reposition the fire button so it doesn't cover the aim stick
+  if(aj){ const want=(state!==STATE.DUEL)?'AIM':(duelScheme==='tap'?'LOOK':(duelScheme==='button'?'TURN':'AIM'));
+    if(want!==_aimLbl){ _aimLbl=want; const l=aj.querySelector('.aimlbl'); if(l) l.textContent=want; } }
 }
 
 /* ---------- Fit stage to viewport while keeping aspect ratio ---------- */
@@ -377,7 +384,7 @@ window.addEventListener('keydown', e=>{
 window.addEventListener('keyup', e=>{ keys[e.code]=false; });
 
 // Touch controls: analog joystick (move) + fire button
-const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false, gaim:0, gaimActive:false, lookx:0,looky:0,lookActive:false};
+const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false, aimTurn:false, gaim:0, gaimActive:false, lookx:0,looky:0,lookActive:false};
 // tap/click anywhere on the play field to aim there (open world, duel, mission 3)
 const tapAim = {active:false, id:null, x:0, y:0};
 function isAimState(){ return (state===STATE.PLAY && explore) || state===STATE.DUEL || state===STATE.COOPDEF; }
@@ -416,13 +423,16 @@ const DIFF=[
     if(d>R){ dx=dx/d*R; dy=dy/d*R; }
     aimThumb.style.transform='translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)+'px)';
     const mag=Math.sqrt(dx*dx+dy*dy), dead=R*0.28;
-    const lookOnly=(state===STATE.DUEL);   // shootout: this stick only pans your view — tap the screen to aim + fire
+    // shootout: right-stick behaviour is a SETTING — 'tap' look-only (tap to shoot), 'auto' aim+fire, 'button' aim/turn + fire button.
+    const scheme = (state===STATE.DUEL) ? (settings.aimStick||'tap') : 'auto';
     if(mag>dead){
-      if(lookOnly){ touch.lookx=dx; touch.looky=dy; touch.lookActive=true; touch.aimx=0; touch.aimy=0; touch.aimActive=false; }
-      else { touch.aimx=dx; touch.aimy=dy; touch.aimActive=true; touch.lookActive=false; }
-    } else { touch.aimx=0; touch.aimy=0; touch.aimActive=false; touch.lookx=0; touch.looky=0; touch.lookActive=false; }
+      touch.lookActive=false; touch.aimActive=false; touch.aimTurn=false;
+      if(scheme==='tap'){ touch.lookx=dx; touch.looky=dy; touch.lookActive=true; }
+      else if(scheme==='button'){ touch.aimx=dx; touch.aimy=dy; touch.aimTurn=true; }   // aim only — fire from the button
+      else { touch.aimx=dx; touch.aimy=dy; touch.aimActive=true; }                      // 'auto' — aim + auto-fire
+    } else { touch.aimx=0; touch.aimy=0; touch.aimActive=false; touch.aimTurn=false; touch.lookx=0; touch.looky=0; touch.lookActive=false; }
   }
-  function resetAim(){ aimId=null; touch.aimx=0; touch.aimy=0; touch.aimActive=false; touch.lookx=0; touch.looky=0; touch.lookActive=false; aimThumb.style.transform='translate(0,0)'; }
+  function resetAim(){ aimId=null; touch.aimx=0; touch.aimy=0; touch.aimActive=false; touch.aimTurn=false; touch.lookx=0; touch.looky=0; touch.lookActive=false; aimThumb.style.transform='translate(0,0)'; }
   aimJoy.addEventListener('pointerdown', e=>{ e.preventDefault(); aimId=e.pointerId; try{aimJoy.setPointerCapture(e.pointerId);}catch(_){} setAim(e.clientX,e.clientY); maybeStart(); });
   window.addEventListener('pointermove', e=>{ if(e.pointerId===aimId) setAim(e.clientX,e.clientY); });
   window.addEventListener('pointerup', e=>{ if(e.pointerId===aimId) resetAim(); });
@@ -519,6 +529,8 @@ function canvasTap(p, pid){
   } else if(state===STATE.SETTINGS){
     if(inRect(p, setMusicBtn)){ settings.music=!settings.music; saveSettings(); Music.refresh(); Music.start(); Sound.hit(); }
     else if(inRect(p, setSwapBtn)){ settings.swapSticks=!settings.swapSticks; saveSettings(); applyStickLayout(); Sound.hit(); toast(settings.swapSticks?'STICKS SWAPPED — move on the right':'STICKS NORMAL — move on the left'); }
+    else if(inRect(p, setAimCycleBtn)){ const order=['tap','auto','button']; settings.aimStick=order[(order.indexOf(settings.aimStick||'tap')+1)%3]; saveSettings(); Sound.hit();
+      toast(settings.aimStick==='auto'?'AIM STICK SHOOTS':settings.aimStick==='button'?'AIM STICK TURNS · FIRE BUTTON':'TAP TO SHOOT (look stick)'); }
     else if(inRect(p, setPadCfgBtn)){ padBindWait=null; Pad.focus=0; state=STATE.PADCFG; Sound.hit(); }
     else if(inRect(p, setShakeBasicBtn)){ settings.shakeBasic=!settings.shakeBasic; saveSettings(); Sound.hit(); }
     else if(inRect(p, setShakeBossBtn)){ settings.shakeBoss=!settings.shakeBoss; saveSettings(); Sound.hit(); }
@@ -673,7 +685,7 @@ function padTargets(){
     case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn, backBtn];
     case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn, backBtn];
     case STATE.STORE: return coinPackBtns.concat(skinActBtns, [backBtn]);
-    case STATE.SETTINGS: return [setShakeBasicBtn, setShakeBossBtn, setMusicBtn, setSwapBtn, setPadCfgBtn, setBBasicOff, setBBasicNorm, setBBasicMore, setBBossOff, setBBossNorm, setBBossMore, setBackBtn];
+    case STATE.SETTINGS: return [setShakeBasicBtn, setShakeBossBtn, setMusicBtn, setSwapBtn, setAimCycleBtn, setPadCfgBtn, setBBasicOff, setBBasicNorm, setBBasicMore, setBBossOff, setBBossNorm, setBBossMore, setBackBtn];
     case STATE.PADCFG: return padCfgRowSet.concat([padCfgResetBtn, padCfgDoneBtn]);
     case STATE.PAUSE: return [resumeBtn, homeBtn];
     case STATE.OVER: case STATE.WIN: return [overRetryBtn, overHomeBtn];
@@ -910,7 +922,7 @@ let defPendingCoop=false;// which defense the setup screen will launch
 let defWon=false;        // solo defense: reached the kill limit
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
-let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, padMap:null};
+let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', padMap:null};
 function applyStickLayout(){ try{ document.body.classList.toggle('swapsticks', !!settings.swapSticks); }catch(e){} }   // left/right-handed on-screen joysticks
 // ---- CONTROLLER BUTTON REMAPPING ----
 // Every remappable action + its built-in default button index(es). A custom binding in
@@ -938,6 +950,7 @@ function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settin
   if(typeof s.shake==='boolean'){ settings.shakeBasic=s.shake; settings.shakeBoss=s.shake; } // migrate old single toggle
   if(typeof s.blood==='number'){ settings.bloodBasic=s.blood; settings.bloodBoss=s.blood; }
   if(typeof s.swapSticks==='boolean')  settings.swapSticks=s.swapSticks;
+  if(s.aimStick==='tap'||s.aimStick==='auto'||s.aimStick==='button') settings.aimStick=s.aimStick;
   if(s.padMap && typeof s.padMap==='object') settings.padMap=s.padMap;   // restore custom controller bindings
 } }catch(e){} }
 loadSettings();
@@ -1993,7 +2006,7 @@ function updatePlay(dt){
   if(p.shieldT>0) p.shieldT-=dt;
   if(p.invuln>0) p.invuln-=dt;
   if(p.cd>0) p.cd-=dt;
-  if(p.recoil>0) p.recoil-=dt*7;   // shooting recoil eases back
+  if(p.recoil>0) p.recoil-=dt*6;   // shooting recoil eases back
 
 // ---- ammo regen: +1 every 2 seconds ----
   magReload(p, dt);
@@ -2362,7 +2375,7 @@ function updateChase(dt){
   if(p.shieldT>0) p.shieldT-=dt;
   if(p.invuln>0) p.invuln-=dt;
   if(p.cd>0) p.cd-=dt;
-  if(p.recoil>0) p.recoil-=dt*7;
+  if(p.recoil>0) p.recoil-=dt*6;
   magReload(p, dt);
   // movement
   let mvx=0,mvy=0;
@@ -2516,7 +2529,7 @@ function updateExplore(dt){
   if(ex.crystalRun){ updateCrystalRun(dt); return; }
   if(p.invuln>0) p.invuln-=dt;
   if(p.cd>0) p.cd-=dt;
-  if(p.recoil>0) p.recoil-=dt*7;
+  if(p.recoil>0) p.recoil-=dt*6;
   if(p.rapidT>0) p.rapidT-=dt;
   if(p.weaponT>0){ p.weaponT-=dt; if(p.weaponT<=0) p.weapon='gun'; }
   // free 2D movement
@@ -2625,7 +2638,7 @@ function setupCrystalRun(){
 }
 function updateCrystalRun(dt){
   const p=player, ex=explore; if(!p||!ex) return;
-  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*7;
+  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*6;
   // free movement
   let mvx=0,mvy=0;
   if(keys['ArrowLeft']||keys['KeyA'])mvx-=1; if(keys['ArrowRight']||keys['KeyD'])mvx+=1;
@@ -2752,7 +2765,7 @@ function drawEndlessObstacles(ex){
 function updateEndless(dt){
   const p=player, ex=explore; if(!p||!ex) return;
   ex.elapsed+=dt;
-  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*7;
+  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*6;
   if(p.rapidT>0)p.rapidT-=dt; if(p.shieldT>0)p.shieldT-=dt;
   if(p.weaponT>0){ p.weaponT-=dt; if(p.weaponT<=0) p.weapon=p.permSpread?'spread':'gun'; }
   // free unbounded movement
@@ -2844,7 +2857,7 @@ function openCoopDropPower(){ if(!powerupsAllowed()) return;
   dropPower(pl.x+pl.w/2+Math.cos(a)*r, pl.y+pl.h/2+Math.sin(a)*r); }
 function openCoopActor(pl, inp, dt){
   if(pl.down){ pl.x+=(inp.mvx||0)*pl.speed*1.3*dt; pl.y+=(inp.mvy||0)*pl.speed*1.3*dt; return; }   // downed → free spectator camera
-  if(pl.invuln>0)pl.invuln-=dt; if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*7;
+  if(pl.invuln>0)pl.invuln-=dt; if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*6;
   if(pl.rapidT>0)pl.rapidT-=dt; if(pl.shieldT>0)pl.shieldT-=dt;
   if(pl.weaponT>0){ pl.weaponT-=dt; if(pl.weaponT<=0) pl.weapon=pl.permSpread?'spread':'gun'; }
   endlessMove(pl, inp.mvx||0, inp.mvy||0, dt, pl.speed);
@@ -3212,7 +3225,7 @@ function currentGhostType(){
 function updateDefense(dt){
   const p=player, ex=explore; if(!p||!ex) return;
   ex.elapsed+=dt;
-  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*7;
+  if(p.invuln>0)p.invuln-=dt; if(p.cd>0)p.cd-=dt; if(p.recoil>0)p.recoil-=dt*6;
   if(p.rapidT>0)p.rapidT-=dt; if(p.shieldT>0)p.shieldT-=dt;
   if(p.weaponT>0){ p.weaponT-=dt; if(p.weaponT<=0) p.weapon=p.permSpread?'spread':'gun'; }
   // movement (blocked by arena, flag, structures)
@@ -4428,6 +4441,7 @@ const setBBossNorm={x:174, y:440, w:82, h:38};
 const setBBossMore={x:262, y:440, w:82, h:38};
 const setMusicBtn={x:322, y:262, w:96, h:34};
 const setSwapBtn={x:322, y:306, w:96, h:34};   // swap the on-screen joysticks (left/right-handed)
+const setAimCycleBtn={x:16, y:306, w:196, h:34};   // shootout aim-stick scheme: tap / stick-fires / turn+button
 const setPadCfgBtn={x:16, y:262, w:190, h:34};  // opens the full button-remap screen (left slot so controller nav can reach it)
 const setBackBtn={x:W/2-70, y:492, w:140, h:46};
 // full controller remap screen: a SET button per action + reset/done
@@ -4684,9 +4698,17 @@ function drawSettings(){
   drawToggle(setMusicBtn, settings.music);
 
   // ---- SWAP STICKS (left/right-handed on-screen joysticks) ----
-  ctx.fillStyle='#7ee0a0'; ctx.font='bold 15px '+CF; ctx.textAlign='right'; ctx.textBaseline='middle';
-  ctx.fillText('↔ SWAP STICKS', setSwapBtn.x-12, setSwapBtn.y+setSwapBtn.h/2+1); ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#7ee0a0'; ctx.font='bold 14px '+CF; ctx.textAlign='right'; ctx.textBaseline='middle';
+  ctx.fillText('↔ SWAP', setSwapBtn.x-10, setSwapBtn.y+setSwapBtn.h/2+1); ctx.textBaseline='alphabetic';
   drawToggle(setSwapBtn, settings.swapSticks);
+
+  // ---- SHOOTOUT AIM STICK scheme (cycling) ----
+  { const b=setAimCycleBtn, sc=settings.aimStick||'tap';
+    const label = sc==='auto' ? 'AIM: STICK FIRES' : sc==='button' ? 'AIM: TURN + FIRE BTN' : 'AIM: TAP TO SHOOT';
+    ctx.fillStyle='rgba(126,224,160,.14)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#7ee0a0'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
+    ctx.fillStyle='#eafff0'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('🎯 '+label+'  ⟳', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
 
   // ---- CONFIGURE BUTTONS (opens the full remap screen) ----
   { const b=setPadCfgBtn;
@@ -6116,7 +6138,7 @@ function coopActor(pl, inp, dt, host){
   codefMove(pl, inp.mvx||0, inp.mvy||0, dt, pl.speed);
   pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving) pl.walkT+=dt*11;
   if(inp.aim!=null){ pl.aim=inp.aim; pl.aimManual=true; } else pl.aimManual=false;
-  if(pl.invuln>0)pl.invuln-=dt; if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*7;
+  if(pl.invuln>0)pl.invuln-=dt; if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*6;
   if(host && inp.fire && pl.cd<=0){   // shared ammo pool (codef.ammo), no cap
     if(codef && codef.ammo>0){ exploreFire(pl); codef.ammo--; pl.cd=0.26; } else pl.cd=0.25;
   }
@@ -7199,6 +7221,7 @@ function humanDuelInputFor(f){
   let aim=null, fire=false;
   if(touch.gaimActive){ aim=touch.gaim; }
   else if(touch.aimActive){ aim=Math.atan2(touch.aimy,touch.aimx); fire=true; }
+  else if(touch.aimTurn){ aim=Math.atan2(touch.aimy,touch.aimx); }   // stick turns the player; fire from the button
   else if(tapAim.active){ const z=duel.zoom||1; aim=Math.atan2((duel.camY+tapAim.y/z)-(f.y+DUEL_PS/2),(duel.camX+tapAim.x/z)-(f.x+DUEL_PS/2)); fire=true; }
   if(keys['Space']||touch.fire) fire=true;
   return {mvx,mvy,aim,fire};
@@ -7261,7 +7284,7 @@ function teamDuelActor(f, inp, dt){
   const ny=f.y+inp.mvy*spd*dt; if(!duelBlocks(f.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(f,f.x,ny) && !vehicleBlocks(f,f.x,ny) && !enemyBarrierBlocks(f.team,ny+DUEL_PS/2)) f.y=ny;
   f.moving=!!(inp.mvx||inp.mvy); if(f.moving) f.walkT+=dt*11;
   if(inp.aim!=null) f.aim=inp.aim;
-  if(f.cd>0)f.cd-=dt; if(f.recoil>0)f.recoil-=dt*7;
+  if(f.cd>0)f.cd-=dt; if(f.recoil>0)f.recoil-=dt*6;
   if(f.reloadT>0){ f.reloadT-=dt; if(f.reloadT<=0) f.mag=DUEL_MAG; }
   const wpn=f.weapon||'pistol';
   const cd=wpn==='shotgun'?0.5:wpn==='rifle'?0.09:DUEL_FIRE_CD;
@@ -7947,6 +7970,7 @@ function duelLocalInput(){
   let aim=null, fire=false;
   if(touch.gaimActive){ aim=touch.gaim; }   // gamepad: left stick aims, right trigger fires
   else if(touch.aimActive){ aim=Math.atan2(touch.aimy,touch.aimx); fire=true; }   // aim stick aims + fires
+  else if(touch.aimTurn){ aim=Math.atan2(touch.aimy,touch.aimx); }   // stick turns the player; fire from the button
   else if(tapAim.active && duel){ const me=duel[duel.meKey], z=duel.zoom||1;    // tap the screen to aim + fire there
     aim=Math.atan2((duel.camY+tapAim.y/z)-(me.y+DUEL_PS/2), (duel.camX+tapAim.x/z)-(me.x+DUEL_PS/2)); fire=true; }
   if(keys['Space']||touch.fire) fire=true;
@@ -7958,7 +7982,7 @@ function duelActor(pl, inp, dt, spawn){
   const ny=pl.y+inp.mvy*spd*dt; if(!duelBlocks(pl.x,ny,DUEL_PS,DUEL_PS) && !fighterBlocks(pl,pl.x,ny)) pl.y=ny;
   pl.moving=!!(inp.mvx||inp.mvy); if(pl.moving) pl.walkT+=dt*11;
   if(inp.aim!=null) pl.aim=inp.aim;
-  if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*7;
+  if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*6;
   if(pl.reloadT>0){ pl.reloadT-=dt; if(pl.reloadT<=0 && spawn) pl.mag=DUEL_MAG; }
   const wpn=pl.weapon||'pistol';
   const cd  = wpn==='shotgun'?0.5 : wpn==='rifle'?0.09 : DUEL_FIRE_CD;
