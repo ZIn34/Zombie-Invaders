@@ -677,7 +677,7 @@ let mouseW={x:0,y:0,on:false};   // last mouse position in canvas coords
 let hoverBuildType=null;    // build tile the mouse is hovering → show its ghost
 let touchBuild=null;        // pending touch placement awaiting YES/NO confirm: { type }
 function buildConfirmBtns(){ return { yes:{x:W/2-108,y:54,w:100,h:42}, no:{x:W/2+8,y:54,w:100,h:42} }; }
-window.addEventListener('gamepadconnected', ()=>{ Pad.connected=true; toast('🎮 CONTROLLER CONNECTED'); });
+window.addEventListener('gamepadconnected', ()=>{ Pad.connected=true; toast('CONTROLLER CONNECTED'); });
 function firstGamepad(){ const gs=navigator.getGamepads?navigator.getGamepads():[]; for(const g of gs){ if(g) return g; } return null; }
 function netPadTargets(){
   if(!net) return [backBtn];
@@ -1617,7 +1617,7 @@ function makePlayer(){
     walkT:0, moving:false,
     ammo:7, ammoRegen:0, reloadT:0, killAcc:0, mags:2,
     fireCut:0, permRapid:false, permSpread:false, shieldBonus:0,
-    face:'🪖'
+    face:''
   };
   if(mode==='campaign'){ p.fireCut=(upg.firerate||0)*0.035;  // TRIGGER SPEED upgrade
     if(campaignMission>=3) p.permRapid=true;                 // Mission 4 onward: keep the RIFLE power-up
@@ -1655,10 +1655,10 @@ function drawMagCount(pl,x,y){   // magazine icon + xN (x is the right edge)
 /* ============================ ZOMBIES ================================= */
 // types: walker, runner, brute, spitter, boss
 const ZTYPE = {
-  walker:{hp:2, pts:10, emoji:'🧟', w:44, h:44, spd:1.0,  color:'#7bd66a'},
-  runner:{hp:1, pts:20, emoji:'🧟‍♂️', w:38, h:38, spd:1.8,  color:'#9be86a'},
-  brute :{hp:3, pts:40, emoji:'🧟‍♀️', w:52, h:52, spd:0.6,  color:'#57b34a'},
-  spitter:{hp:2, pts:35, emoji:'🤢', w:42, h:42, spd:1.15, color:'#c7ff6a'},
+  walker:{hp:2, pts:10, emoji:'', w:44, h:44, spd:1.0,  color:'#7bd66a'},
+  runner:{hp:1, pts:20, emoji:'', w:38, h:38, spd:1.8,  color:'#9be86a'},
+  brute :{hp:3, pts:40, emoji:'', w:52, h:52, spd:0.6,  color:'#57b34a'},
+  spitter:{hp:2, pts:35, emoji:'', w:42, h:42, spd:1.15, color:'#c7ff6a'},
 };
 
 function buildWave(n, opts){
@@ -1672,7 +1672,7 @@ function buildWave(n, opts){
   if(isBoss){
     boss = {
       x:W/2-55, y:-120, w:110, h:96, hpMax:60+n*12, hp:60+n*12,
-      vx:80+n*5, t:0, shootCd:0, face:'👹', flash:0, dead:false, chew:0
+      vx:80+n*5, t:0, shootCd:0, face:'', flash:0, dead:false, chew:0
     };
     Sound.bossRoar(); bossRoarT=3.5; // entrance roar
   }
@@ -1729,12 +1729,12 @@ function spawnPop(x,y,text,color){
 
 const DROP_POOL = ['rapid','spread','shield','ammo']; // common power-ups that can drop
 const POWER_INFO = {
-  rapid :{emoji:'⚡', color:'#ffe14b', label:'RIFLE'},
-  spread:{emoji:'🔱', color:'#5cc9ff', label:'SHOTGUN'},
-  ammo  :{emoji:'📦', color:'#d8973c', label:'AMMO CRATE'},
-  shield:{emoji:'🛡️', color:'#5dff6a', label:'SHIELD'},
-  life  :{emoji:'❤️', color:'#ff4b4b', label:'+1 LIFE'},
-  nuke  :{emoji:'💥', color:'#ff9a3d', label:'AIR STRIKE'},
+  rapid :{emoji:'', color:'#ffe14b', label:'RIFLE'},
+  spread:{emoji:'', color:'#5cc9ff', label:'SHOTGUN'},
+  ammo  :{emoji:'', color:'#d8973c', label:'AMMO CRATE'},
+  shield:{emoji:'', color:'#5dff6a', label:'SHIELD'},
+  life  :{emoji:'', color:'#ff4b4b', label:'+1 LIFE'},
+  nuke  :{emoji:'', color:'#ff9a3d', label:'AIR STRIKE'},
 };
 function powerupsAllowed(){
   if(mode==='coop') return false;  // versus uses guaranteed drops (advanced) instead of random ones
@@ -1893,7 +1893,7 @@ function startCoopDefense(){
   for(const it of coop.placing){
     if(it.boss){
       boss={ x:clamp(it.x-55,6,W-116), y:-96-40, w:110, h:96,
-             hpMax:42, hp:42, t:0, flash:0, dead:false, chew:0, face:'👹' };
+             hpMax:42, hp:42, t:0, flash:0, dead:false, chew:0, face:'' };
     } else {
       // enter from the top of the screen at the placed column; placed lower = a head start (arrives sooner)
       const depth=clamp((it.y-COOP_FIELD.y)/COOP_FIELD.h, 0, 1);
@@ -3095,7 +3095,7 @@ function drawOpenCoop(){
   ctx.strokeStyle='rgba(120,180,90,.35)'; ctx.lineWidth=1; roundRectPath(bx,by,bw,bh,9); ctx.stroke();
   ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
   ctx.textAlign='left'; ctx.fillStyle='#eafff0'; ctx.font='bold 16px '+CF; ctx.fillText('SCORE '+score, bx+10, by+19);
-  ctx.textAlign='right'; ctx.fillStyle='#ffd6d6'; ctx.fillText('P1 ♥'+Math.max(0,ex.p1.lives||0)+'  P2 ♥'+Math.max(0,ex.p2.lives||0), bx+bw-10, by+19);
+  ctx.textAlign='right'; ctx.fillStyle='#ffd6d6'; ctx.fillText('P1 ×'+Math.max(0,ex.p1.lives||0)+'  P2 ×'+Math.max(0,ex.p2.lives||0), bx+bw-10, by+19);
   ctx.textAlign='center'; ctx.fillStyle='#9fe27f'; ctx.font='9px '+CF; ctx.fillText('own hearts · kills '+ex.kills, W/2, by+bh+9);
   ctx.shadowBlur=0;
   drawAudioHint();
@@ -3108,11 +3108,11 @@ function drawOpenCoop(){
 function drawOpenCoopHalfHUD(hv){
   const pl=hv.pl, bx=hv.rx+10, by=hv.ry+hv.rh-12;
   ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.85)'; ctx.shadowBlur=3;
-  ctx.fillStyle=hv.col; ctx.font='bold 13px '+CF; ctx.fillText(hv.tag+'  ♥'+Math.max(0,pl.lives||0), bx, by);
+  ctx.fillStyle=hv.col; ctx.font='bold 13px '+CF; ctx.fillText(hv.tag+'  ×'+Math.max(0,pl.lives||0), bx, by);
   ctx.fillStyle=pl.ammo<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF;
   const atxt=magText(pl); ctx.fillText(atxt, bx+72, by); drawWeaponAmmoIcon(pl, bx+52, by-6);
   ctx.textAlign='left'; drawMagCount(pl, bx+92, by);
-  if(pl.shieldT>0){ ctx.fillStyle='#5dff6a'; ctx.fillText('🛡', bx+130, by); }
+  if(pl.shieldT>0){ ctx.fillStyle='#5dff6a'; ctx.fillText('', bx+130, by); }
   ctx.shadowBlur=0;
 }
 // the same cold wash + vignette that gives Normal play its gloomy mood — overlaid in screen space
@@ -3277,7 +3277,7 @@ function defSpawnBoss(){
   const ex=explore; if(!ex) return;
   ex.bossCount=(ex.bossCount||0)+1;
   ex.bosses.push(makeBoss(ex.bossCount));
-  toast('⚠ BOSS INCOMING!'); shake(12,.4); Sound.power();
+  toast('BOSS INCOMING!'); shake(12,.4); Sound.power();
 }
 function drawOneBoss(bo){
   if(!bo||bo.dead) return;
@@ -3400,15 +3400,15 @@ function updateDefense(dt){
   if((ex.mission6||ex.mission7) && !ex.orbActive && ex.kills>=(ex.mission7?1000:100)){
     ex.orbActive=true; ex.turrets=[]; ex.walls=[]; ex.spikes=[];
     Sound.power(); shake(12,.35);
-    if(ex.mission7){ ex.m7phase='plant'; toast('⚡ PLASMA ORB BUILT — STAND ON IT TO PLANT THE 20 CRYSTALS! ⚡'); }
-    else toast('⚡ ELECTRIC FIELD ONLINE — CLEAR THEM OUT! ⚡');
+    if(ex.mission7){ ex.m7phase='plant'; toast('PLASMA ORB BUILT — STAND ON IT TO PLANT THE 20 CRYSTALS! '); }
+    else toast('ELECTRIC FIELD ONLINE — CLEAR THEM OUT! ');
   }
   // Mission 7 plant phase: walk onto the orb to plant the crystals, which triggers the final swarm
   if(ex.mission7 && ex.m7phase==='plant'){
     const pcx=player.x+player.w/2, pcy=player.y+player.h/2;
     if(Math.hypot(pcx-ex.flag.x, pcy-ex.flag.y) < ex.flag.r+24){
       ex.m7phase='survive'; ex.crystalsPlanted=true; ex.surviveToSpawn=200; ex.surviveSpawnT=0.2;
-      Sound.power(); shake(16,.45); toast('20 CRYSTALS PLANTED — HERE THEY COME! ⚡');   // keep the current zombies, just pile 200 more on
+      Sound.power(); shake(16,.45); toast('20 CRYSTALS PLANTED — HERE THEY COME! ');   // keep the current zombies, just pile 200 more on
     }
   }
   // Mission 7 survive phase: stream in 200 zombies from all sides; they rush the crystal and get zapped
@@ -3654,7 +3654,7 @@ function drawDefenseUI(ex){
   if(ex.mission7){   // phase banner across the top
     let msg=null, col='#8fd0ff';
     if(ex.m7phase==='build') msg='BUILD THE PLASMA ORB — '+ex.kills+' / 1000 KILLS';
-    else if(ex.m7phase==='plant'){ msg='⚡ STAND ON THE ORB TO PLANT THE 20 CRYSTALS ⚡'; col='#ffe14b'; }
+    else if(ex.m7phase==='plant'){ msg='STAND ON THE ORB TO PLANT THE 20 CRYSTALS '; col='#ffe14b'; }
     else if(ex.m7phase==='survive'){ const left=ex.surviveToSpawn+zombies.filter(z=>z.alive).length; msg='ZOMBIES LEFT — '+left; col='#ff9a6a'; }
     if(msg){ ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='bold 14px '+CF;
       const w=ctx.measureText(msg).width+28; ctx.fillStyle='rgba(8,14,22,.8)'; roundRectPath(W/2-w/2, 92, w, 26, 8); ctx.fill();
@@ -4151,7 +4151,7 @@ function drawPlayerObj(p, faceAim){
     const art=playerArt(p), dw=p.w*1.2, dh=dw*art[2]/art[1]; if(art[0]) ctx.drawImage(art[0], -dw/2, -dh, dw, dh);
     ctx.restore();
     ctx.globalAlpha=1; ctx.fillStyle='#9fd0ff'; ctx.font='bold 11px '+CF; ctx.textAlign='center';
-    ctx.fillText('👁 SPECTATING', cx, p.y-6); ctx.textAlign='left';
+    ctx.fillText('SPECTATING', cx, p.y-6); ctx.textAlign='left';
     return;
   }
   if(p.invuln>0 && Math.floor(p.invuln*12)%2===0) return; // blink when hit
@@ -4541,7 +4541,7 @@ function drawHUD(){
   const bars=[];
   if(p && p.rapidT>0) bars.push(['RIFLE',p.rapidT,7,'#ffe14b']);
   if(p && p.weapon==='spread'&&p.weaponT>0) bars.push(['SHOTGUN',p.weaponT,10,'#5cc9ff']);
-  if(p && p.weapon==='laser'&&p.weaponT>0) bars.push(['🔺 LASER',p.weaponT,10,'#ff6bd9']);
+  if(p && p.weapon==='laser'&&p.weaponT>0) bars.push(['LASER',p.weaponT,10,'#ff6bd9']);
   if(p && p.shieldT>0) bars.push(['SHIELD',p.shieldT,8,'#5dff6a']);
   bars.forEach((b,i)=>{
     const y=by-i*20;
@@ -4681,7 +4681,7 @@ function drawMenu(){
     ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.fill(); ctx.shadowBlur=0;
     ctx.lineWidth=2.5; ctx.strokeStyle='#ffd98a'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
     ctx.fillStyle='#fff6e6'; ctx.font='bold 16px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🎯 TARGET PRACTICE', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; ctx.restore(); }
+    ctx.fillText('TARGET PRACTICE', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; ctx.restore(); }
   drawCampaignButton(380);
   drawCoopButton(418);
   drawStoreButton(456);
@@ -4843,7 +4843,7 @@ function drawAccount(){
   drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  ctx.fillStyle='#7ee0a0'; ctx.font='bold 30px '+CF; ctx.fillText('👤 ACCOUNT', W/2, 96); ctx.shadowBlur=0;
+  ctx.fillStyle='#7ee0a0'; ctx.font='bold 30px '+CF; ctx.fillText('ACCOUNT', W/2, 96); ctx.shadowBlur=0;
   ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('save coins, skins, campaign & ranks across devices', W/2, 122);
   if(!acctReady()){
     ctx.fillStyle='#ffd24a'; ctx.font='bold 14px '+CF; ctx.fillText('accounts aren’t switched on yet', W/2, 210);
@@ -4889,7 +4889,7 @@ function drawSettings(){
 
   // ---- MUSIC ----
   ctx.fillStyle='#7fd0ff'; ctx.font='bold 17px '+CF; ctx.textAlign='right'; ctx.textBaseline='middle';
-  ctx.fillText('♪ MUSIC', setMusicBtn.x-12, setMusicBtn.y+setMusicBtn.h/2+1); ctx.textBaseline='alphabetic';
+  ctx.fillText('MUSIC', setMusicBtn.x-12, setMusicBtn.y+setMusicBtn.h/2+1); ctx.textBaseline='alphabetic';
   drawToggle(setMusicBtn, settings.music);
 
   // ---- SWAP STICKS (left/right-handed on-screen joysticks) ----
@@ -4903,14 +4903,14 @@ function drawSettings(){
     ctx.fillStyle='rgba(126,224,160,.14)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle='#7ee0a0'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
     ctx.fillStyle='#eafff0'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🎯 '+label+'  ⟳', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
+    ctx.fillText(''+label+'  ⟳', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
 
   // ---- CONFIGURE BUTTONS (opens the full remap screen) ----
   { const b=setPadCfgBtn;
     ctx.fillStyle='rgba(143,123,255,.14)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle='#8f7bff'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
     ctx.fillStyle='#eafff0'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🎮 BUTTONS ▸', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
+    ctx.fillText('BUTTONS ▸', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
 
   // ---- BLOOD ----
   ctx.fillStyle='#ff6b6b'; ctx.font='bold 17px '+CF; ctx.textAlign='center';
@@ -4988,7 +4988,7 @@ function drawStoreButton(cy){
   ctx.lineWidth=3; ctx.strokeStyle='#0b4d3f'; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.stroke();
   ctx.fillStyle='#eafff8'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='bold '+Math.round(b.h*0.42)+'px '+CF;
-  ctx.fillText('🛒 STORE', b.x+b.w/2, cy+1);
+  ctx.fillText('STORE', b.x+b.w/2, cy+1);
   ctx.textBaseline='alphabetic';
   ctx.restore();
 }
@@ -5004,7 +5004,7 @@ function drawCoopButton(cy){
   ctx.lineWidth=3; ctx.strokeStyle='#241a5c'; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.stroke();
   ctx.fillStyle='#efe9ff'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='bold '+Math.round(b.h*0.42)+'px '+CF;
-  ctx.fillText('🌐 ONLINE', b.x+b.w/2, cy+1);
+  ctx.fillText('ONLINE', b.x+b.w/2, cy+1);
   ctx.textBaseline='alphabetic';
   ctx.restore();
 }
@@ -5175,7 +5175,7 @@ function drawTutorial(){
     section('#ffd24a','✦ STORE',
       'Spend coins on new looks — soldier skins plus the BASIC, SOLDIER and PIXEL zombie skins. Your equipped zombie even shows up in the online menus.');
     section('#7fd0ff','✦ SETTINGS',
-      'Toggle screen shake, blood and ♪ MUSIC. Remap every controller button under BUTTONS — the right stick always aims. Press M any time to mute.');
+      'Toggle screen shake, blood and MUSIC. Remap every controller button under BUTTONS — the right stick always aims. Press M any time to mute.');
   } else if(tutPage===7){
     ctx.textAlign='center'; ctx.fillStyle='#5dff8a'; ctx.font='bold 15px '+CF;
     ctx.fillText('PLAY ONLINE', W/2, 254);
@@ -5255,7 +5255,7 @@ function drawCampaign(){
     ctx.textAlign='left'; ctx.fillStyle=locked?'#9aa39a':'#f3ffee'; ctx.font='bold 15px '+CF;
     ctx.fillText(locked?'LOCKED':m.name, r.x+44, cy+1);
     ctx.textAlign='right';
-    if(locked){ ctx.fillStyle='#9aa39a'; ctx.font='15px '+CF; ctx.fillText('🔒', r.x+r.w-14, cy+1); }
+    if(locked){ ctx.fillStyle='#9aa39a'; ctx.font='15px '+CF; ctx.fillText('', r.x+r.w-14, cy+1); }
     else if(done){ ctx.fillStyle='#7ee06a'; ctx.font='bold 15px '+CF; ctx.fillText('✓ CLEAR', r.x+r.w-14, cy+1); }
     else { ctx.fillStyle='#fff'; ctx.font='bold 14px '+CF; ctx.fillText('▶ PLAY', r.x+r.w-14, cy+1); }
     ctx.textBaseline='alphabetic';
@@ -5266,7 +5266,7 @@ function drawCampaign(){
   ctx.fillStyle=gg; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.fill();
   ctx.lineWidth=2.5; ctx.strokeStyle='#5c3d05'; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.stroke();
   ctx.fillStyle='#5c3d05'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='bold 18px '+CF;
-  ctx.fillText('🛒 ARMORY (shop)', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic';
+  ctx.fillText('ARMORY (shop)', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic';
 }
 function drawShop(){
   panelBg(); drawBackBtn();
@@ -5354,7 +5354,7 @@ function drawMissionDone(){
   ctx.fillText(won?'the outbreak is over — for now':'the fight continues…', W/2, H-42);
 }
 let storyT=0, coopT=0;
-function defenseSummary(r){ return r.cleared ? ('CLEARED with '+r.lives+' ♥') : (r.killed+' kills, fell in '+Math.floor(r.time)+'s'); }
+function defenseSummary(r){ return r.cleared ? ('CLEARED with '+r.lives+' lives') : (r.killed+' kills, fell in '+Math.floor(r.time)+'s'); }
 function drawHordePreview(list){
   for(const z of list){
     if(z.boss){ const bw=88, bh=bw*BAH/BAW; ctx.drawImage(Bsprite, z.x-bw/2, z.y-bh*0.55, bw, bh); }
@@ -5753,10 +5753,10 @@ function drawOver(){
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   if(defWon){
     ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-    ctx.fillStyle='#7ee06a'; ctx.font='bold 48px '+CF; ctx.fillText('VICTORY! 🏆', W/2, H/2-56); ctx.shadowBlur=0;
+    ctx.fillStyle='#7ee06a'; ctx.font='bold 48px '+CF; ctx.fillText('VICTORY! ', W/2, H/2-56); ctx.shadowBlur=0;
     ctx.fillStyle='#c8e6b0'; ctx.font='16px '+CF; ctx.fillText('Flag defended — '+defWonKills+' kills', W/2, H/2-24);
     ctx.fillStyle='#ffd24a'; ctx.font='bold 21px '+CF; ctx.fillText('SCORE  '+String(score).padStart(6,'0'), W/2, H/2+4);
-    if(score>=hi && score>0){ ctx.fillStyle='#7ee06a'; ctx.font='14px '+CF; ctx.fillText('★ NEW BEST! ★', W/2, H/2+24); }
+    if(score>=hi && score>0){ ctx.fillStyle='#7ee06a'; ctx.font='14px '+CF; ctx.fillText('NEW BEST!', W/2, H/2+24); }
     pauseMenuButton(overRetryBtn, '#7ee06a','#3ea22f','#0d3b08','↻  AGAIN');
     pauseMenuButton(overHomeBtn,  '#6aa4ff','#3f6fd1','#0b1c40','⌂  HOME');
     return;
@@ -5766,7 +5766,7 @@ function drawOver(){
   ctx.fillText(mode==='campaign' ? MISSIONS[campaignMission].name : 'You reached WAVE '+wave, W/2, H/2-24);
   ctx.fillStyle='#ffd24a'; ctx.font='bold 21px '+CF;
   ctx.fillText('SCORE  '+String(score).padStart(6,'0'), W/2, H/2+4);
-  if(score>=hi && score>0){ ctx.fillStyle='#7ee06a'; ctx.font='14px '+CF; ctx.fillText('★ NEW BEST! ★', W/2, H/2+24); }
+  if(score>=hi && score>0){ ctx.fillStyle='#7ee06a'; ctx.font='14px '+CF; ctx.fillText('NEW BEST!', W/2, H/2+24); }
   pauseMenuButton(overRetryBtn, '#7ee06a','#3ea22f','#0d3b08','↻  RETRY');
   pauseMenuButton(overHomeBtn,  '#6aa4ff','#3f6fd1','#0b1c40','⌂  HOME');
 }
@@ -5789,11 +5789,11 @@ function drawOnlinePick(){
   ctx.fillStyle='#9f8dff'; ctx.font='bold 26px '+CF; ctx.fillText('ONLINE', W/2, 96);
   ctx.shadowBlur=0;
   ctx.fillStyle='#c9e6b0'; ctx.font='bold 13px '+CF; ctx.fillText('play with a friend', W/2, 126);
-  drawVersusModeButton(opVersusBtn, '#c24a1a','#8f3210','#ff8a3d','⚔ VERSUS',
+  drawVersusModeButton(opVersusBtn, '#c24a1a','#8f3210','#ff8a3d','VERSUS',
     'fight each other', 'local pass & play or online');
-  drawVersusModeButton(opCoopBtn, '#2fa35a','#1c7a41','#5dff8a','🤝 CO-OP',
+  drawVersusModeButton(opCoopBtn, '#2fa35a','#1c7a41','#5dff8a','CO-OP',
     'team up online — shared cash', 'defend the flag together');
-  drawVersusModeButton(opWarBtn, '#c0392b','#7a1f14','#ff8a6a','⚔ WAR',
+  drawVersusModeButton(opWarBtn, '#c0392b','#7a1f14','#ff8a6a','WAR',
     'up to 5 per team online', 'bots fill the empty slots');
 }
 const playNormalBtn  = {x:W/2-150, y:100, w:300, h:66};
@@ -6172,7 +6172,7 @@ function warBuy(key, buyer){
     const kind=key, v=spawnVehicleFor(me, kind);
     if(!v){ me.cash+=it.cost; toast('No room to drop it — move to open ground'); return; }
     if(!me._inVehicle){ enterVehicle(me, v); if(me===warMe()) duel.driving=v; }
-    toast(kind==='tank'?'🚂 TANK — you\'re in!':'🚙 JEEP — you\'re in!');
+    toast(kind==='tank'?'TANK — you\'re in!':'JEEP — you\'re in!');
   }
 }
 const DUEL_MAG=7, DUEL_RELOAD=1.6;   // pistol: 7 shots per magazine, then a reload
@@ -6310,7 +6310,7 @@ function coopSpawn(n){ const cd=codef; if(!cd) return;
 }
 function coopSpawnBoss(){ const cd=codef; cd.bossCount=(cd.bossCount||0)+1;
   cd.bosses.push(makeBoss(cd.bossCount));
-  toast('⚠ BOSS INCOMING!'); shake(10,.3); Sound.power();
+  toast('BOSS INCOMING!'); shake(10,.3); Sound.power();
 }
 function coopBuild(pl,type){ if(codef) doBuild(codef, pl, type, true); }
 function coopBuildRequest(type){
@@ -6474,7 +6474,7 @@ function coopDefEnd(kills){
   lbSubmit('coopdef', k);
   try{ NetIO.cleanup(); }catch(e){}
   net=null; codef=null; explore=null; mode='arcade'; zombies=[]; bullets=[]; boss=null;
-  if(victory){ Sound.win(); toast('🏆 DEFENSE WON — '+k+' kills!'); } else toast('CO-OP OVER — '+k+' kills');
+  if(victory){ Sound.win(); toast('DEFENSE WON — '+k+' kills!'); } else toast('CO-OP OVER — '+k+' kills');
   state=STATE.MENU;
 }
 function drawCoopDef(){
@@ -6686,7 +6686,7 @@ function drawLocalSharedHUD(cd){
   ctx.textAlign='left'; ctx.fillStyle='#ffe14b'; ctx.font='bold 16px '+CF;
   ctx.fillText('$'+Math.floor(cd.cash), bx+10, by+19);
   ctx.textAlign='right'; ctx.fillStyle='#ffd6d6';
-  ctx.fillText('P1 ♥'+Math.max(0,cd.p1.lives||0)+'  P2 ♥'+Math.max(0,cd.p2.lives||0), bx+bw-10, by+19);
+  ctx.fillText('P1 ×'+Math.max(0,cd.p1.lives||0)+'  P2 ×'+Math.max(0,cd.p2.lives||0), bx+bw-10, by+19);
   ctx.shadowBlur=0;
   const f=cd.flag, fx=bx+10, fy=by+25, fw=bw-20, fbh=8;
   ctx.fillStyle='rgba(0,0,0,.5)'; roundRectPath(fx,fy,fw,fbh,4); ctx.fill();
@@ -6704,7 +6704,7 @@ function drawAudioHint(){
   ctx.fillStyle='rgba(20,26,16,.85)'; roundRectPath(bx,by,bw,bh,7); ctx.fill();
   ctx.strokeStyle='rgba(255,225,75,.6)'; ctx.lineWidth=1.5; roundRectPath(bx,by,bw,bh,7); ctx.stroke();
   ctx.fillStyle='#ffe14b'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('🔊 tap the screen once for sound', W/2, by+bh/2+1);
+  ctx.fillText('tap the screen once for sound', W/2, by+bh/2+1);
   ctx.textBaseline='alphabetic'; ctx.restore();
 }
 function drawLocalPause(){
@@ -6830,7 +6830,7 @@ function drawTargetPractice(){
   drawGloom(0.4);
   const pl=duel.p1;
   ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
-  ctx.fillStyle='#ffe14b'; ctx.font='bold 15px '+CF; ctx.fillText('🎯 TARGET PRACTICE', 14, 28);
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 15px '+CF; ctx.fillText('TARGET PRACTICE', 14, 28);
   ctx.fillStyle='#eafff0'; ctx.font='bold 14px '+CF; ctx.fillText('HITS: '+(duel.hits||0), 14, 48);
   ctx.textAlign='right'; ctx.fillStyle=(pl.reloadT>0)?'#ff5b5b':'#ffe14b';
   ctx.fillText(pl.reloadT>0?'RELOAD':(''+pl.mag), W-14, 28); ctx.shadowBlur=0;
@@ -6972,7 +6972,7 @@ function drawDuelLocalOver(){
   const winP=duel.winner===1?'P1':'P2', winC=duel.winner===1?'#7ee06a':'#ff7a7a';
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  ctx.fillStyle=winC; ctx.font='bold 40px '+CF; ctx.fillText(winP+' WINS! 🏆', W/2, H/2-8); ctx.shadowBlur=0;
+  ctx.fillStyle=winC; ctx.font='bold 40px '+CF; ctx.fillText(winP+' WINS! ', W/2, H/2-8); ctx.shadowBlur=0;
   ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
   ctx.fillStyle='#e6f2df'; ctx.font='bold 15px '+CF; ctx.fillText('any button to leave', W/2, H/2+28); ctx.globalAlpha=1;
 }
@@ -7105,7 +7105,7 @@ function startBigWar(opts){
   padPrev=[{},{}];
   state=STATE.DUEL;
   if(opts.split) toast('SPLIT-SCREEN WAR — P1 vs P2, bots fill the ranks!');
-  else toast('10v10 WAR — first to 100 kills! 📻');
+  else toast('10v10 WAR — first to 100 kills!');
 }
 function startWarSplit(){ startBigWar({ split:true, team1:[{ctrl:0}], team2:[{ctrl:1}] }); }   // 1 human per team, local split screen
 
@@ -7151,7 +7151,7 @@ function startWarOnline(seed, roster, count){
   clearDuelSpawns();
   net.snapT=0; net.inT=0;
   state=STATE.DUEL;
-  toast('ONLINE WAR — first to 100 kills! 📻');
+  toast('ONLINE WAR — first to 100 kills!');
 }
 const WAR_WN={pistol:0,rifle:1,shotgun:2}, WAR_NW=['pistol','rifle','shotgun'];
 function warSnapshot(){
@@ -7394,12 +7394,12 @@ const ALLY_CMDS=[
 function duelHasAlly(){ const me=warMe(); return !!(duel && duel.team && me && duel.fighters && duel.fighters.some(g=>g.bot && !g.dead && g.team===me.team)); }
 function sendAllyCmd(c, team){
   if(!duel) return;
-  if(!team && duel.net && net && net.role==='guest'){ NetIO.send({t:'wcmd', cmd:c.cmd}); toast('📻 SENT'); duel.commsOpen=false; return; }   // guest → order via the host
+  if(!team && duel.net && net && net.role==='guest'){ NetIO.send({t:'wcmd', cmd:c.cmd}); toast('SENT'); duel.commsOpen=false; return; }   // guest → order via the host
   team = team || (warMe() ? warMe().team : 1);   // whose army this order is for
   if(!duel.cmd) duel.cmd={};
   duel.cmd[team]={type:c.cmd, t:9};
   duel.allyCmd=duel.cmd[team];   // keep the alias the solo comms UI reads
-  toast('📻 SENT');
+  toast('SENT');
   const cmdr=duel.humans&&duel.humans.find(h=>h.team===team);
   const ally=cmdr&&duel.fighters.find(g=>g.bot&&!g.dead&&g.team===team);
   if(c.cmd==='hold' && ally) duel.cmd[team].hold={x:ally.x, y:ally.y};  // lock the spot they're standing on
@@ -7564,7 +7564,7 @@ function toggleVehicle(f){
   if(!f && duel && duel.net && net && net.role==='guest'){ NetIO.send({t:'wveh'}); return; }   // guest → ask the host to toggle
   const me=f||warMe(); if(!me||me.dead) return;
   if(me._inVehicle){ exitVehicle(me); if(me===warMe()) duel.driving=null; Sound.hit(); }
-  else { const v=nearestVehicle(me); if(v){ enterVehicle(me,v); if(me===warMe()) duel.driving=v; Sound.power(); toast(v.kind==='tank'?'🚂 TANK — cannon ready!':'🚙 JEEP — floor it!'); } }
+  else { const v=nearestVehicle(me); if(v){ enterVehicle(me,v); if(me===warMe()) duel.driving=v; Sound.power(); toast(v.kind==='tank'?'TANK — cannon ready!':'JEEP — floor it!'); } }
 }
 // bot vehicle behaviour: on foot → grab a nearby vehicle; inside → drive it toward the enemy and fire
 function botVehicleStep(f, dt){
@@ -7955,7 +7955,7 @@ function drawWarSplitHUD(v, me){   // per-player money + compact shop inside one
   const oc=ALLY_CMDS[me._cmdSel||0], ow=176, oh=26, ox=rx+rw-ow-10, oy=ry+30;
   ctx.fillStyle='rgba(24,40,64,.9)'; roundRectPath(ox,oy,ow,oh,7); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(ox,oy,ow,oh,7); ctx.stroke();
-  ctx.textAlign='left'; ctx.fillStyle='#8fd0ff'; ctx.font='bold 10px '+CF; ctx.fillText('📻▲▼', ox+7, oy+oh/2+4);
+  ctx.textAlign='left'; ctx.fillStyle='#8fd0ff'; ctx.font='bold 10px '+CF; ctx.fillText('▲▼', ox+7, oy+oh/2+4);
   ctx.textAlign='center'; ctx.fillStyle='#eef4ff'; ctx.font='bold 10px '+CF; ctx.fillText(oc.label, ox+ow/2+10, oy+oh/2+4);
   ctx.textAlign='right'; ctx.fillStyle='#ffe14b'; ctx.font='bold 9px '+CF; ctx.fillText('X▶', ox+ow-7, oy+oh/2+4);
   ctx.restore();
@@ -7984,7 +7984,7 @@ function drawCommsUI(){
     const bx=12, by=62, bw=270, bh=32;
     ctx.fillStyle='rgba(24,40,64,.92)'; roundRectPath(bx,by,bw,bh,8); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(bx,by,bw,bh,8); ctx.stroke();
-    ctx.fillStyle='#8fd0ff'; ctx.font='bold 13px '+CF; ctx.textAlign='left'; ctx.fillText('📻 ▲▼', bx+8, by+bh/2+1);
+    ctx.fillStyle='#8fd0ff'; ctx.font='bold 13px '+CF; ctx.textAlign='left'; ctx.fillText('▲▼', bx+8, by+bh/2+1);
     ctx.fillStyle='#eef4ff'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.fillText(cmd.label, bx+bw/2+4, by+bh/2+1);
     ctx.fillStyle='#ffe14b'; ctx.font='bold 10px '+CF; ctx.textAlign='right'; ctx.fillText('X▶  Y▤', bx+bw-8, by+bh/2+1);
     ctx.restore();
@@ -7996,7 +7996,7 @@ function drawCommsUI(){
     ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle=duel.commsOpen?'rgba(60,90,140,.95)':'rgba(24,40,64,.9)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
-    ctx.fillStyle='#dce9ff'; ctx.font='bold 13px '+CF; ctx.fillText('📻 COMMS', b.x+b.w/2, b.y+b.h/2+1);
+    ctx.fillStyle='#dce9ff'; ctx.font='bold 13px '+CF; ctx.fillText('COMMS', b.x+b.w/2, b.y+b.h/2+1);
     ctx.restore();
     if(!duel.commsOpen) return;
   }
@@ -8032,7 +8032,7 @@ function drawTeamHUD(){
       const b=driveBtn; ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle=duel.driving?'rgba(150,60,40,.92)':'rgba(40,80,50,.9)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
       ctx.lineWidth=2; ctx.strokeStyle=duel.driving?'#ff9a6a':'#7fe0a0'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
-      ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.fillText(duel.driving?'🚪 EXIT':'🚗 DRIVE', b.x+b.w/2, b.y+b.h/2+1); ctx.restore(); }
+      ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.fillText(duel.driving?'EXIT':'DRIVE', b.x+b.w/2, b.y+b.h/2+1); ctx.restore(); }
     if(me && me.dead) {} else if(me && duel.driving){ ctx.save(); ctx.textAlign='left'; ctx.fillStyle='#ffd8a0'; ctx.font='bold 12px '+CF; ctx.fillText(duel.driving.kind==='tank'?'TANK — fire the cannon!':'JEEP — mounted gun', 12, 66); ctx.restore(); }
     else if(!duel.split && me) drawTeamWeaponLine(me, 12, 46);
     // cash + buy shop (solo/online only — split-screen draws its own per-player shop inside each half)
@@ -8079,7 +8079,7 @@ function drawTeamOver(){
   ctx.fillStyle='rgba(6,10,16,.80)'; ctx.fillRect(0,0,W,H);
   const win=duel.winner===1;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  ctx.fillStyle=win?'#7ee06a':'#ff7a7a'; ctx.font='bold 34px '+CF; ctx.fillText(win?'YOUR TEAM WINS! 🏆':'ENEMY WINS', W/2, H/2-8); ctx.shadowBlur=0;
+  ctx.fillStyle=win?'#7ee06a':'#ff7a7a'; ctx.font='bold 34px '+CF; ctx.fillText(win?'YOUR TEAM WINS! ':'ENEMY WINS', W/2, H/2-8); ctx.shadowBlur=0;
   ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
   ctx.fillStyle='#e6f2df'; ctx.font='bold 15px '+CF; ctx.fillText(duel.split?'any button to leave':'tap to leave', W/2, H/2+28); ctx.globalAlpha=1;
 }
@@ -8431,7 +8431,7 @@ function drawDuelOver(){
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
   ctx.fillStyle=meWon?'#7ee06a':'#ff7a7a'; ctx.font='bold 36px '+CF;
-  ctx.fillText(duel.campaign5 ? (meWon?'ZOMBIE DESTROYED! 🏆':'YOU DIED') : (meWon?'YOU WIN! 🏆':'YOU LOSE'), W/2, H/2-10); ctx.shadowBlur=0;
+  ctx.fillText(duel.campaign5 ? (meWon?'ZOMBIE DESTROYED! ':'YOU DIED') : (meWon?'YOU WIN! ':'YOU LOSE'), W/2, H/2-10); ctx.shadowBlur=0;
   ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
   ctx.fillStyle='#e6f2df'; ctx.font='bold 16px '+CF; ctx.fillText(duel.campaign5?(meWon?'+20 coins':'tap to retry'):'tap to leave', W/2, H/2+30); ctx.globalAlpha=1;
 }
@@ -8473,26 +8473,26 @@ function drawPlayPick(){
   drawPlayBtn(playNormalBtn, '#3ea22f','#2a7d24','#7ee06a','NORMAL', 'wave survival · wire, power-ups & bosses');
   drawPlayBtn(playOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD', 'endless twin-stick · roam free');
   drawPlayBtn(playDefenseBtn, '#2f7ad1','#1c559e','#7fb0ff','DEFENSE', 'buy turrets & walls · protect the flag');
-  drawPlayBtn(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','⚔ SHOOTOUT vs AI', 'solo 1v1 duel against a bot');
-  drawPlayBtn(playSplitBtn, '#7a4bd6','#4f2f9e','#b48bff','🎮 2-PLAYER SPLIT', 'co-op or 1v1 · 2 controllers, 1 screen');
+  drawPlayBtn(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','SHOOTOUT vs AI', 'solo 1v1 duel against a bot');
+  drawPlayBtn(playSplitBtn, '#7a4bd6','#4f2f9e','#b48bff','2-PLAYER SPLIT', 'co-op or 1v1 · 2 controllers, 1 screen');
   drawDiffSelector();
 }
 function drawSplitPick(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#b48bff'; ctx.font='bold 22px '+CF; ctx.fillText('🎮 2-PLAYER SPLIT', W/2, 54);
+  ctx.fillStyle='#b48bff'; ctx.font='bold 22px '+CF; ctx.fillText('2-PLAYER SPLIT', W/2, 54);
   ctx.shadowBlur=0;
   ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('2 controllers · one screen · no internet', W/2, 78);
   drawVersusModeButton(splitCoopBtn, '#2f7ad1','#1c559e','#7fb0ff','CO-OP DEFENSE',
     'build & defend together', 'shared cash · protect the flag');
-  drawVersusModeButton(splitDuelBtn, '#c24a1a','#8f3210','#ff8a3d','⚔ SHOOTOUT 1v1',
+  drawVersusModeButton(splitDuelBtn, '#c24a1a','#8f3210','#ff8a3d','SHOOTOUT 1v1',
     'you vs your partner', 'grab weapons · last one standing');
-  drawVersusModeButton(splitShootCoopBtn, '#2fa35a','#1c7a41','#5dff8a','⚔ SHOOTOUT 2v2',
+  drawVersusModeButton(splitShootCoopBtn, '#2fa35a','#1c7a41','#5dff8a','SHOOTOUT 2v2',
     'team up vs 2 bots', 'both of you on one team');
   drawVersusModeButton(splitOpenBtn, '#c24a1a','#8f3210','#ff8a3d','OPEN WORLD',
     'endless survival together', 'shared lives · roam & shoot');
-  drawVersusModeButton(splitWarBtn, '#c0392b','#7a1f14','#ff8a6a','⚔ WAR 1v1',
+  drawVersusModeButton(splitWarBtn, '#c0392b','#7a1f14','#ff8a6a','WAR 1v1',
     'you vs partner · bots fill both armies', 'first to 100 kills on a huge map');
   ctx.fillStyle='rgba(220,230,245,.55)'; ctx.font='11px '+CF;
   ctx.fillText('plug in 2 controllers before you start', W/2, H-12);
@@ -8501,7 +8501,7 @@ function drawShootPick(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#c79bff'; ctx.font='bold 24px '+CF; ctx.fillText('⚔ SHOOTOUT vs AI', W/2, 74);
+  ctx.fillStyle='#c79bff'; ctx.font='bold 24px '+CF; ctx.fillText('SHOOTOUT vs AI', W/2, 74);
   ctx.shadowBlur=0;
   ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('pick a format', W/2, 104);
   drawVersusModeButton(shoot1v1Btn, '#9f5ad1','#6f3aa0','#c79bff','1v1 DUEL',
@@ -8515,7 +8515,7 @@ function drawShootPick(){
     ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,11); ctx.fill();
     ctx.lineWidth=2.5; ctx.strokeStyle='#ff8a6a'; roundRectPath(b.x,b.y,b.w,b.h,11); ctx.stroke();
     ctx.textAlign='center'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-    ctx.fillStyle='#ffe6df'; ctx.font='bold 20px '+CF; ctx.fillText('⚔ 10v10 WAR', b.x+b.w/2, b.y+26);
+    ctx.fillStyle='#ffe6df'; ctx.font='bold 20px '+CF; ctx.fillText('10v10 WAR', b.x+b.w/2, b.y+26);
     ctx.shadowBlur=0; ctx.fillStyle='#ffc9bd'; ctx.font='bold 10px '+CF; ctx.fillText('command 9 allies on a massive battlefield', b.x+b.w/2, b.y+44); }
   drawPUToggle();
 }
@@ -8543,7 +8543,7 @@ function drawMapPick(){
   const rg=ctx.createLinearGradient(0,r.y,0,r.y+r.h); rg.addColorStop(0, rsel?'#3f8a5a':'#2a7d46'); rg.addColorStop(1, rsel?'#1c6a3a':'#1c5a32');
   ctx.fillStyle=rg; roundRectPath(r.x,r.y,r.w,r.h,9); ctx.fill();
   ctx.lineWidth=rsel?3:2; ctx.strokeStyle=rsel?'#ffe14b':'#5dff8a'; roundRectPath(r.x,r.y,r.w,r.h,9); ctx.stroke();
-  ctx.fillStyle='#eaffe0'; ctx.font='bold 15px '+CF; ctx.textAlign='center'; ctx.fillText('🎲 RANDOM MAP', r.x+r.w/2, r.y+r.h/2+5);
+  ctx.fillStyle='#eaffe0'; ctx.font='bold 15px '+CF; ctx.textAlign='center'; ctx.fillText('RANDOM MAP', r.x+r.w/2, r.y+r.h/2+5);
 }
 function drawDefSetup(){
   panelBg(); drawBackBtn();
@@ -8568,7 +8568,7 @@ function drawDefSetup(){
   // leaderboard shortcut (top-right)
   const lb=defLeaderBtn; ctx.fillStyle='rgba(60,48,14,.9)'; roundRectPath(lb.x,lb.y,lb.w,lb.h,8); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle='#ffc23f'; roundRectPath(lb.x,lb.y,lb.w,lb.h,8); ctx.stroke();
-  ctx.fillStyle='#ffe9b0'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('🏆 LEADERBOARD', lb.x+lb.w/2, lb.y+lb.h/2+1); ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#ffe9b0'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('LEADERBOARD', lb.x+lb.w/2, lb.y+lb.h/2+1); ctx.textBaseline='alphabetic';
 }
 function drawLbTab(b, label, sel){
   ctx.fillStyle=sel?'#2f6fb0':'rgba(255,255,255,.06)'; roundRectPath(b.x,b.y,b.w,b.h,9); ctx.fill();
@@ -8579,7 +8579,7 @@ function drawLeader(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#ffd24a'; ctx.font='bold 26px '+CF; ctx.fillText('🏆 LEADERBOARD', W/2, 60); ctx.shadowBlur=0;
+  ctx.fillStyle='#ffd24a'; ctx.font='bold 26px '+CF; ctx.fillText('LEADERBOARD', W/2, 60); ctx.shadowBlur=0;
   drawLbTab(lbTabDef,  'DEFENSE', lbView==='defense');
   drawLbTab(lbTabCoop, 'CO-OP',   lbView==='coopdef');
   const defView=(lbView==='defense');
@@ -8621,7 +8621,7 @@ function drawLeader(){
   else if(!LB_URL){ ctx.fillStyle='rgba(200,210,225,.5)'; ctx.font='10px '+CF; ctx.fillText('this device only — online board not configured yet', W/2, H-70); }
   const nb=lbNameBtn; ctx.fillStyle='rgba(24,44,24,.9)'; roundRectPath(nb.x,nb.y,nb.w,nb.h,9); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle='#7ee06a'; roundRectPath(nb.x,nb.y,nb.w,nb.h,9); ctx.stroke();
-  ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.textBaseline='middle'; ctx.fillText('🏷 '+(lbName()?('NAME: '+lbName()):'SET YOUR NAME'), W/2, nb.y+nb.h/2+1); ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.textBaseline='middle'; ctx.fillText(''+(lbName()?('NAME: '+lbName()):'SET YOUR NAME'), W/2, nb.y+nb.h/2+1); ctx.textBaseline='alphabetic';
 }
 function drawVersusPick(){
   panelBg(); drawBackBtn();
@@ -8652,7 +8652,7 @@ function drawModeToggle(){
   ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.4); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle=duelSel?'#ff8a3d':'#5dff8a'; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.4); ctx.stroke();
   ctx.fillStyle='#fff'; ctx.font='bold 14px '+CF; ctx.textBaseline='middle';
-  if(duelSel){ ctx.textAlign='center'; ctx.fillText('⚔ SHOOTOUT (1v1)   ⟳ tap', b.x+b.w/2, b.y+b.h/2+1); }
+  if(duelSel){ ctx.textAlign='center'; ctx.fillText('SHOOTOUT (1v1)   ⟳ tap', b.x+b.w/2, b.y+b.h/2+1); }
   else { drawZombieIcon(b.x+28, b.y+b.h/2, 24); ctx.textAlign='center'; ctx.fillText('HORDE DEFENSE   ⟳ tap', b.x+b.w/2+12, b.y+b.h/2+1); }
   ctx.textBaseline='alphabetic';
 }
@@ -8660,23 +8660,23 @@ function drawNetLobby(){
   panelBg(); drawBackBtn();
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=4;
-  ctx.fillStyle=net.war?'#ff8a6a':'#5dff8a'; ctx.font='bold 24px '+CF; ctx.fillText(net.war?'⚔ ONLINE WAR':(net.coop?'CO-OP DEFENSE':'ONLINE VERSUS'), W/2, 58);
+  ctx.fillStyle=net.war?'#ff8a6a':'#5dff8a'; ctx.font='bold 24px '+CF; ctx.fillText(net.war?'ONLINE WAR':(net.coop?'CO-OP DEFENSE':'ONLINE VERSUS'), W/2, 58);
   ctx.shadowBlur=0;
   const L=net.lobby;
   if(L==='choose'){
     if(!net.coop) drawModeToggle();
-    drawVersusModeButton(netQuickBtn, '#c24a1a','#8f3210','#ff8a3d','⚡ QUICK MATCH','find any public game','auto-connect · no code needed');
+    drawVersusModeButton(netQuickBtn, '#c24a1a','#8f3210','#ff8a3d','QUICK MATCH','find any public game','auto-connect · no code needed');
     drawVersusModeButton(netHostBtn, '#2fa35a','#1c7a41','#5dff8a','HOST A GAME','create a private room','get a code to share');
     drawVersusModeButton(netJoinBtn, '#3f7ad1','#2b559e','#7fb0ff','JOIN A GAME','enter a friend’s code','connect to their room');
     ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF;
     ctx.fillText('Joining? You’ll play the host’s chosen mode.', W/2, H-40);
   } else if(L==='searching'){
-    ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('⚡ QUICK MATCH', W/2, 150);
+    ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('QUICK MATCH', W/2, 150);
     ctx.globalAlpha=0.5+0.5*Math.abs(Math.sin(performance.now()/350));
     ctx.fillStyle='#ffe14b'; ctx.font='bold 16px '+CF; ctx.fillText(net.status||'searching…', W/2, 210); ctx.globalAlpha=1;
     ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF; ctx.fillText('looking for open games — this takes a few seconds', W/2, 250);
   } else if(net.public && (L==='hosting' || (L==='connected' && net.role==='host'))){
-    ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('⚡ QUICK MATCH', W/2, 120);
+    ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('QUICK MATCH', W/2, 120);
     if(net.coop){   // count-based public room (war / co-op defense)
       ctx.fillStyle='#c9e6b0'; ctx.font='bold 14px '+CF; ctx.fillText('PLAYERS IN ROOM', W/2, 168);
       ctx.fillStyle='#fff'; ctx.font='bold 48px '+CF; ctx.fillText((net.joined||1)+' / '+(net.maxPlayers||2), W/2, 224);
@@ -8700,7 +8700,7 @@ function drawNetLobby(){
       if(!net.coop) drawModeToggle();
     }
   } else if(L==='qmcount'){   // pick how many players before searching
-    ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('⚡ QUICK MATCH', W/2, 120);
+    ctx.fillStyle='#ff8a3d'; ctx.font='bold 22px '+CF; ctx.fillText('QUICK MATCH', W/2, 120);
     ctx.fillStyle='#c9e6b0'; ctx.font='bold 14px '+CF; ctx.fillText('HOW MANY PLAYERS?', W/2, 164);
     // minus / count / plus
     for(const btn of [qmMinusBtn, qmPlusBtn]){ ctx.fillStyle='rgba(40,60,90,.95)'; roundRectPath(btn.x,btn.y,btn.w,btn.h,10); ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(btn.x,btn.y,btn.w,btn.h,10); ctx.stroke(); }
@@ -8710,7 +8710,7 @@ function drawNetLobby(){
     ctx.fillStyle='#9fb0c9'; ctx.font='12px '+CF; ctx.fillText('up to '+qmMax()+' · bots fill any empty slots', W/2, 278);
     { const b=qmGoBtn, g=ctx.createLinearGradient(0,b.y,0,b.y+b.h); g.addColorStop(0,'#ff8a3d'); g.addColorStop(1,'#8f3210');
       ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle='#3a1608'; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.stroke();
-      ctx.fillStyle='#fff'; ctx.font='bold 19px '+CF; ctx.textBaseline='middle'; ctx.fillText('⚡ FIND '+(net.qmCount||2)+' PLAYERS', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
+      ctx.fillStyle='#fff'; ctx.font='bold 19px '+CF; ctx.textBaseline='middle'; ctx.fillText('FIND '+(net.qmCount||2)+' PLAYERS', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
   } else if(L==='hosting' || (L==='connected' && net.role==='host')){
     if(!net.coop) drawModeToggle();
     ctx.fillStyle='#c9e6b0'; ctx.font='bold 14px '+CF; ctx.fillText('YOUR ROOM CODE', W/2, 118);
@@ -8792,7 +8792,7 @@ function drawNetResult(){
   ctx.shadowBlur=0;
   const me=net.myResult, op=net.oppResult;
   let verdict='—', vcol='#e6f2df';
-  if(me && op){ if(me.score>op.score){ verdict='YOU WIN! 🏆'; vcol='#7ee06a'; }
+  if(me && op){ if(me.score>op.score){ verdict='YOU WIN! '; vcol='#7ee06a'; }
     else if(me.score<op.score){ verdict='YOU LOSE'; vcol='#ff9a9a'; }
     else { verdict='TIE GAME'; vcol='#ffe14b'; } }
   ctx.fillStyle=vcol; ctx.font='bold 28px '+CF; ctx.fillText(verdict, W/2, 100);
