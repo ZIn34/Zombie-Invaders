@@ -70,6 +70,11 @@
   body.landscape #joy{left:26px;top:auto;bottom:24px;transform:none;}
   body.landscape #tfire,body.landscape #aimjoy{right:26px;top:auto;bottom:24px;transform:none;}
   body.landscape #tpause{left:50%;right:auto;top:auto;bottom:20px;transform:translateX(-50%);}
+  /* SWAP STICKS (left-handed): move stick to the right, fire/aim to the left */
+  body.swapsticks #joy{left:auto;right:26px;}
+  body.swapsticks #tfire,body.swapsticks #aimjoy{right:auto;left:26px;}
+  body.landscape.swapsticks #joy{left:auto;right:26px;}
+  body.landscape.swapsticks #tfire,body.landscape.swapsticks #aimjoy{right:auto;left:26px;}
 </style>
 </head>
 <body>
@@ -513,6 +518,7 @@ function canvasTap(p, pid){
              return; } }
   } else if(state===STATE.SETTINGS){
     if(inRect(p, setMusicBtn)){ settings.music=!settings.music; saveSettings(); Music.refresh(); Music.start(); Sound.hit(); }
+    else if(inRect(p, setSwapBtn)){ settings.swapSticks=!settings.swapSticks; saveSettings(); applyStickLayout(); Sound.hit(); toast(settings.swapSticks?'STICKS SWAPPED — move on the right':'STICKS NORMAL — move on the left'); }
     else if(inRect(p, setPadCfgBtn)){ padBindWait=null; Pad.focus=0; state=STATE.PADCFG; Sound.hit(); }
     else if(inRect(p, setShakeBasicBtn)){ settings.shakeBasic=!settings.shakeBasic; saveSettings(); Sound.hit(); }
     else if(inRect(p, setShakeBossBtn)){ settings.shakeBoss=!settings.shakeBoss; saveSettings(); Sound.hit(); }
@@ -667,7 +673,7 @@ function padTargets(){
     case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn, backBtn];
     case STATE.VERSUSMODE: return [vBasicBtn, vAdvBtn, backBtn];
     case STATE.STORE: return coinPackBtns.concat(skinActBtns, [backBtn]);
-    case STATE.SETTINGS: return [setShakeBasicBtn, setShakeBossBtn, setMusicBtn, setPadCfgBtn, setBBasicOff, setBBasicNorm, setBBasicMore, setBBossOff, setBBossNorm, setBBossMore, setBackBtn];
+    case STATE.SETTINGS: return [setShakeBasicBtn, setShakeBossBtn, setMusicBtn, setSwapBtn, setPadCfgBtn, setBBasicOff, setBBasicNorm, setBBasicMore, setBBossOff, setBBossNorm, setBBossMore, setBackBtn];
     case STATE.PADCFG: return padCfgRowSet.concat([padCfgResetBtn, padCfgDoneBtn]);
     case STATE.PAUSE: return [resumeBtn, homeBtn];
     case STATE.OVER: case STATE.WIN: return [overRetryBtn, overHomeBtn];
@@ -904,7 +910,8 @@ let defPendingCoop=false;// which defense the setup screen will launch
 let defWon=false;        // solo defense: reached the kill limit
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
-let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, padMap:null};
+let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, padMap:null};
+function applyStickLayout(){ try{ document.body.classList.toggle('swapsticks', !!settings.swapSticks); }catch(e){} }   // left/right-handed on-screen joysticks
 // ---- CONTROLLER BUTTON REMAPPING ----
 // Every remappable action + its built-in default button index(es). A custom binding in
 // settings.padMap overrides the defaults with a single chosen button.
@@ -930,9 +937,11 @@ function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settin
   if(typeof s.music==='boolean')      settings.music=s.music;
   if(typeof s.shake==='boolean'){ settings.shakeBasic=s.shake; settings.shakeBoss=s.shake; } // migrate old single toggle
   if(typeof s.blood==='number'){ settings.bloodBasic=s.blood; settings.bloodBoss=s.blood; }
+  if(typeof s.swapSticks==='boolean')  settings.swapSticks=s.swapSticks;
   if(s.padMap && typeof s.padMap==='object') settings.padMap=s.padMap;   // restore custom controller bindings
 } }catch(e){} }
 loadSettings();
+applyStickLayout();
 let state = STATE.MENU;
 let pauseReturn = STATE.PLAY;   // where RESUME sends you back to
 const resumeBtn = {x:W/2-110, y:H/2-6,  w:220, h:56};
@@ -4418,6 +4427,7 @@ const setBBossOff ={x:86,  y:440, w:82, h:38};
 const setBBossNorm={x:174, y:440, w:82, h:38};
 const setBBossMore={x:262, y:440, w:82, h:38};
 const setMusicBtn={x:322, y:262, w:96, h:34};
+const setSwapBtn={x:322, y:306, w:96, h:34};   // swap the on-screen joysticks (left/right-handed)
 const setPadCfgBtn={x:16, y:262, w:190, h:34};  // opens the full button-remap screen (left slot so controller nav can reach it)
 const setBackBtn={x:W/2-70, y:492, w:140, h:46};
 // full controller remap screen: a SET button per action + reset/done
@@ -4672,6 +4682,11 @@ function drawSettings(){
   ctx.fillStyle='#7fd0ff'; ctx.font='bold 17px '+CF; ctx.textAlign='right'; ctx.textBaseline='middle';
   ctx.fillText('♪ MUSIC', setMusicBtn.x-12, setMusicBtn.y+setMusicBtn.h/2+1); ctx.textBaseline='alphabetic';
   drawToggle(setMusicBtn, settings.music);
+
+  // ---- SWAP STICKS (left/right-handed on-screen joysticks) ----
+  ctx.fillStyle='#7ee0a0'; ctx.font='bold 15px '+CF; ctx.textAlign='right'; ctx.textBaseline='middle';
+  ctx.fillText('↔ SWAP STICKS', setSwapBtn.x-12, setSwapBtn.y+setSwapBtn.h/2+1); ctx.textBaseline='alphabetic';
+  drawToggle(setSwapBtn, settings.swapSticks);
 
   // ---- CONFIGURE BUTTONS (opens the full remap screen) ----
   { const b=setPadCfgBtn;
