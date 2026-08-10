@@ -55,6 +55,10 @@
     width:210px;padding:12px 10px;border-radius:12px;border:2px solid #8f7bff;background:#191233;color:#fff;
     font:bold 26px "Comic Sans MS","Comic Neue",monospace;text-align:center;text-transform:uppercase;letter-spacing:4px;
     outline:none;box-shadow:0 6px 20px rgba(0,0,0,.5);}
+  #acctEmail,#acctPass{display:none;position:absolute;left:50%;transform:translateX(-50%);z-index:60;
+    width:250px;padding:11px 12px;border-radius:10px;border:2px solid #8f7bff;background:#191233;color:#fff;
+    font:bold 17px "Comic Sans MS","Comic Neue",monospace;text-align:center;outline:none;box-shadow:0 6px 20px rgba(0,0,0,.5);}
+  #acctEmail{top:206px;} #acctPass{top:262px;}
   #tpause{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     width:82px;height:60px;border-radius:14px;
     background:rgba(255,225,75,.14);border:2px solid rgba(255,225,75,.55);color:#ffe14b;
@@ -93,6 +97,8 @@
       <div id="aimjoy"><div id="aimThumb"></div><span class="aimlbl">AIM</span></div>
     </div>
     <input id="netcode" maxlength="8" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <input id="acctEmail" type="email" maxlength="60" placeholder="email" autocomplete="email" autocapitalize="off" spellcheck="false">
+    <input id="acctPass" type="password" maxlength="40" placeholder="password" autocomplete="current-password">
   </div>
 </div>
 
@@ -511,12 +517,18 @@ function canvasTap(p, pid){
   if(state===STATE.MENU){
     if(inRect(p, gearBtn)) state=STATE.SETTINGS;               // open settings
     else if(inRect(p, menuLeaderBtn)) enterLeader('defense', STATE.MENU);   // leaderboard
+    else if(inRect(p, menuAcctBtn)) enterAccount();   // account sign-in / cloud sync
     else if(inRect(p, tutBtn)){ tutPage=0; state=STATE.TUTORIAL; }   // how-to-play
     else if(inRect(p, campBtn)) enterCampaign(); // story mode — jump straight into the cutscene
     else if(inRect(p, coopBtn)) state=STATE.ONLINEPICK;  // choose Versus or Co-op
     else if(inRect(p, storeBtn)) state=STATE.STORE;
     else if(inRect(p, playBtn)) state=STATE.PLAYPICK;   // choose Normal or Open World
     else if(inRect(p, targetBtn)) setupTargetPractice();
+  } else if(state===STATE.ACCOUNT){
+    if(inRect(p, backBtn)){ leaveAccount(); return; }
+    if(acct){ if(inRect(p, acctLogoutBtn)) acctLogout(); }
+    else { if(inRect(p, acctLoginBtn)) acctAuth('signInWithPassword');
+      else if(inRect(p, acctSignupBtn)) acctAuth('signUp'); }
   } else if(state===STATE.STORE){
     if(inRect(p, backBtn)) state=STATE.MENU;
     else { for(let i=0;i<COIN_PACKS.length;i++) if(inRect(p, coinPackBtns[i])){ buyCoinPack(i); return; }
@@ -873,7 +885,7 @@ const chance=p=>Math.random()<p;
 function rectHit(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
 
 /* ============================ STATE =================================== */
-const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28, SPLITPICK:29, SHOOTPICK:30, DEFSETUP:31, LEADER:32, PADCFG:33, MAPPICK:34};
+const STATE = {MENU:0, PLAY:1, PAUSE:2, OVER:3, WIN:4, WAVE:5, CHASE:6, TUTORIAL:7, CAMPAIGN:8, STORY:9, SHOP:10, MISSIONDONE:11, COOP:12, DEPLOY:13, HANDOFF:14, COOPRESULT:15, CUTSCENE:16, DEATH:17, VERSUSMODE:18, SETTINGS:19, STORE:20, VERSUSPICK:21, NETLOBBY:22, NETATTACK:23, NETRESULT:24, DUEL:25, PLAYPICK:26, ONLINEPICK:27, COOPDEF:28, SPLITPICK:29, SHOOTPICK:30, DEFSETUP:31, LEADER:32, PADCFG:33, MAPPICK:34, ACCOUNT:35};
 /* ===== ONLINE LEADERBOARD (Firebase Realtime Database) =====
    Paste your Firebase Realtime Database URL below to make the board shared across ALL players.
    e.g. const LB_URL='https://zombie-invaders-default-rtdb.firebaseio.com';
@@ -917,6 +929,95 @@ function lbLoad(mode){
   }).catch(()=>{ lbData[mode]=lbDedupe(lbLocalGet(mode)).slice(0,50); lbErr[mode]='(offline — showing this device)'; });
 }
 function enterLeader(m, back){ lbView=m||'defense'; lbDiff=difficulty; if(back!=null) lbBackState=back; state=STATE.LEADER; lbLoad('defense'+lbDiff); lbLoad('coopdef'); }
+
+/* ===== PLAYER ACCOUNTS — Firebase Authentication (email + password) + cloud save =====
+   SETUP (one-time, in your Firebase console for project zombie-invaders-9222c):
+     1) Project settings → General → copy the "Web API Key" and paste it into FB_API_KEY below.
+     2) Build → Authentication → Sign-in method → enable "Email/Password".
+     3) Realtime Database → Rules → allow signed-in users to read/write their own save, e.g.:
+        { "rules": { "lb": { ".read": true, ".write": true },
+                     "users": { "$uid": { ".read": "$uid === auth.uid", ".write": "$uid === auth.uid" } } } }
+   Leave FB_API_KEY '' and accounts stay off — the game still saves locally on each device.          */
+const FB_API_KEY='';
+let acct=null;                       // {uid,email,idToken,refreshToken} once signed in
+let acctMsg='', acctBusy=false;      // status line on the account screen
+let _acctPushT=null;
+function acctReady(){ return !!FB_API_KEY; }
+function acctSaveObj(){ return {coins,campaignUnlocked,hi,campaignWon,upg,ownedSkins,equippedSkin,ownedZombieSkins,equippedZombieSkin,ownedBossSkins,equippedBossSkin,pname:lbName()}; }
+function acctStoreToken(rt){ try{ if(rt) localStorage.setItem('zi_acct_rt', rt); else localStorage.removeItem('zi_acct_rt'); }catch(e){} }
+function acctErr(code){ code=code||'';
+  if(code.indexOf('EMAIL_EXISTS')>=0) return 'that email already has an account — log in';
+  if(code.indexOf('EMAIL_NOT_FOUND')>=0) return 'no account for that email — sign up';
+  if(code.indexOf('INVALID_PASSWORD')>=0||code.indexOf('INVALID_LOGIN')>=0) return 'wrong email or password';
+  if(code.indexOf('INVALID_EMAIL')>=0) return 'that email looks invalid';
+  if(code.indexOf('WEAK_PASSWORD')>=0) return 'password too short (6+ chars)';
+  if(code.indexOf('OPERATION_NOT_ALLOWED')>=0) return 'enable Email/Password in Firebase';
+  if(code.indexOf('TOO_MANY_ATTEMPTS')>=0) return 'too many tries — wait a bit';
+  return code ? ('error: '+code.toLowerCase().replace(/_/g,' ')) : 'sign-in failed';
+}
+function acctAuth(mode){   // mode: 'signUp' (create) | 'signInWithPassword' (log in)
+  if(!acctReady()){ acctMsg='accounts not set up yet (FB_API_KEY)'; return; }
+  if(acctBusy) return;
+  const email=((document.getElementById('acctEmail')||{}).value||'').trim();
+  const pass=((document.getElementById('acctPass')||{}).value||'');
+  if(email.length<4||email.indexOf('@')<0){ acctMsg='enter a valid email'; return; }
+  if(pass.length<6){ acctMsg='password needs 6+ characters'; return; }
+  acctBusy=true; acctMsg=(mode==='signUp')?'creating account…':'signing in…';
+  fetch('https://identitytoolkit.googleapis.com/v1/accounts:'+mode+'?key='+FB_API_KEY,
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,returnSecureToken:true})})
+    .then(r=>r.json()).then(d=>{ acctBusy=false;
+      if(d&&d.idToken){ acct={uid:d.localId,email:d.email||email,idToken:d.idToken,refreshToken:d.refreshToken}; acctStoreToken(d.refreshToken);
+        try{ document.getElementById('acctPass').value=''; }catch(e){}
+        acctShowInputs(false); acctMsg=''; Sound.power(); toast(mode==='signUp'?'ACCOUNT CREATED — synced':'SIGNED IN — synced'); acctPull(); }
+      else { acctMsg=acctErr(d&&d.error&&d.error.message); Sound.hit(); }
+    }).catch(()=>{ acctBusy=false; acctMsg='network error — try again'; });
+}
+function acctLogout(){ acct=null; acctStoreToken(null); acctMsg=''; acctShowInputs(true); Sound.hit(); toast('LOGGED OUT'); }
+function acctRestore(){   // silent auto-login on launch using the saved refresh token
+  let rt=''; try{ rt=localStorage.getItem('zi_acct_rt')||''; }catch(e){}
+  if(!rt||!acctReady()) return;
+  fetch('https://securetoken.googleapis.com/v1/token?key='+FB_API_KEY,
+    {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'grant_type=refresh_token&refresh_token='+encodeURIComponent(rt)})
+    .then(r=>r.json()).then(d=>{ if(d&&d.id_token){ acct={uid:d.user_id,email:'',idToken:d.id_token,refreshToken:d.refresh_token}; acctStoreToken(d.refresh_token); acctPull(); } else acctStoreToken(null); })
+    .catch(()=>{});
+}
+function acctPull(){   // load this account's cloud save, merge it in (or seed it from this device)
+  if(!acct) return;
+  fetch(LB_URL.replace(/\/+$/,'')+'/users/'+acct.uid+'/save.json?auth='+encodeURIComponent(acct.idToken))
+    .then(r=>r.json()).then(d=>{ if(d&&typeof d==='object'){ acctApplySave(d); } else { acctPush(); } }).catch(()=>{});
+}
+function acctApplySave(s){   // merge cloud save with local, keeping the best of each so nothing is lost
+  try{
+    coins=Math.max(coins||0, s.coins||0);
+    campaignUnlocked=Math.max(campaignUnlocked||1, s.campaignUnlocked||1);
+    hi=Math.max(hi||0, s.hi||0);
+    campaignWon = campaignWon || !!s.campaignWon;
+    if(s.upg) for(const k in upg) if(k in s.upg) upg[k]=Math.max(upg[k]||0, s.upg[k]||0);
+    const uni=(a,b)=>{ const o=(a||[]).slice(); for(const x of (b||[])) if(o.indexOf(x)<0) o.push(x); return o; };
+    ownedSkins=uni(ownedSkins,s.ownedSkins); ownedZombieSkins=uni(ownedZombieSkins,s.ownedZombieSkins); ownedBossSkins=uni(ownedBossSkins,s.ownedBossSkins);
+    if(s.equippedSkin && ownedSkins.indexOf(s.equippedSkin)>=0) equippedSkin=s.equippedSkin;
+    if(s.equippedZombieSkin && ownedZombieSkins.indexOf(s.equippedZombieSkin)>=0) equippedZombieSkin=s.equippedZombieSkin;
+    if(s.equippedBossSkin && ownedBossSkins.indexOf(s.equippedBossSkin)>=0) equippedBossSkin=s.equippedBossSkin;
+    if(s.pname){ try{ localStorage.setItem('zi_pname', s.pname); }catch(e){} }
+    saveProgress();
+  }catch(e){}
+}
+function acctPush(){   // upload the current save to this account (debounced)
+  if(!acct) return;
+  if(_acctPushT) clearTimeout(_acctPushT);
+  _acctPushT=setTimeout(()=>{ if(!acct) return;
+    fetch(LB_URL.replace(/\/+$/,'')+'/users/'+acct.uid+'/save.json?auth='+encodeURIComponent(acct.idToken),
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(acctSaveObj())}).catch(()=>{});
+  }, 800);
+}
+function acctShowInputs(show){ const e=document.getElementById('acctEmail'), p=document.getElementById('acctPass');
+  if(e) e.style.display = show?'block':'none'; if(p) p.style.display = show?'block':'none';
+  if(!show){ try{ e&&e.blur(); p&&p.blur(); }catch(_){} } }
+function enterAccount(){ acctMsg=''; state=STATE.ACCOUNT; acctShowInputs(!acct); }
+function leaveAccount(){ acctShowInputs(false); state=STATE.MENU; }
+const acctLoginBtn ={x:W/2-152, y:322, w:146, h:52};
+const acctSignupBtn={x:W/2+6,   y:322, w:146, h:52};
+const acctLogoutBtn={x:W/2-95,  y:300, w:190, h:52};
 let defKillLimit=0;      // 0 = endless; otherwise win the defense when kills reach this
 let defPendingCoop=false;// which defense the setup screen will launch
 let defWon=false;        // solo defense: reached the kill limit
@@ -1095,6 +1196,7 @@ const MISSIONS=[
 ];
 function saveProgress(){
   try{ localStorage.setItem('zi_save', JSON.stringify({coins,campaignUnlocked,hi,campaignWon,upg,ownedSkins,equippedSkin,ownedZombieSkins,equippedZombieSkin,ownedBossSkins,equippedBossSkin})); }catch(e){}
+  if(acct) acctPush();   // also sync to the signed-in account
 }
 function loadProgress(){
   try{
@@ -1113,6 +1215,7 @@ function loadProgress(){
   }catch(e){}
 }
 loadProgress();
+acctRestore();   // silently sign back in if this device has a saved session
 
 /* grassy field background */
 let tufts=[], blades=[];
@@ -1885,7 +1988,7 @@ function update(dt){
   } else if(state===STATE.DUEL){
     if(duel && duel.targetPractice){ if(pressed['Escape']){ duel=null; mode='arcade'; state=STATE.MENU; } else updateTargetPractice(dt); }
     else if(duel && duel.team){ if(pressed['Escape']) teamDuelEnd();
-      else if(duel.net && net && net.role==='host'){ if(!duel.commsOpen) updateTeamDuel(dt); net.snapT-=dt; if(net.snapT<=0){ net.snapT=1/15; NetIO.broadcast(warSnapshot()); } }
+      else if(duel.net && net && net.role==='host'){ updateTeamDuel(dt); net.snapT-=dt; if(net.snapT<=0){ net.snapT=1/15; NetIO.broadcast(warSnapshot()); } }   // online: comms never freeze the sim
       else if(duel.net && net){ updateWarGuest(dt); }
       else if(!duel.commsOpen) updateTeamDuel(dt); }   // comms menu (touch) fully freezes the fight
     else if(duel && duel.local){ if(pressed['Escape']) duelLocalEnd(); else updateDuelLocal(dt); }
@@ -1910,6 +2013,8 @@ function update(dt){
     if(pressed['Escape']) state=lbBackState;
   } else if(state===STATE.ONLINEPICK){
     if(pressed['Escape']) state=STATE.MENU;
+  } else if(state===STATE.ACCOUNT){
+    if(pressed['Escape']) leaveAccount();
   } else if(state===STATE.COOPDEF){
     if(codef && codef.local){
       if(pressed['Escape']) coopDefEnd(codef?codef.kills:0);
@@ -3689,6 +3794,7 @@ function render(){
 
   if(state===STATE.MENU){ drawMenu(); ctx.restore(); drawToast(); return; }
   if(state===STATE.SETTINGS){ drawSettings(); ctx.restore(); drawToast(); return; }
+  if(state===STATE.ACCOUNT){ drawAccount(); ctx.restore(); drawToast(); return; }
   if(state===STATE.PADCFG){ drawPadCfg(); ctx.restore(); drawToast(); return; }
   if(state===STATE.STORE){ drawStore(); ctx.restore(); drawToast(); return; }
 
@@ -4429,6 +4535,7 @@ const skinActBtns  = STORE_SKINS.map((s,i)=>{ const c=i%4, r=(i/4|0); return {x:
 const backBtn={x:12, y:12, w:74, h:32};
 const gearBtn={x:W-58, y:H-58, w:44, h:44};                 // settings gear, bottom-right of the menu
 const menuLeaderBtn={x:14, y:H-58, w:44, h:44};             // leaderboard, bottom-left of the menu
+const menuAcctBtn={x:66, y:H-58, w:44, h:44};               // account (sign in / sync), next to the leaderboard
 // SCREEN SHAKE — separate toggles for basic zombies and the boss
 const setShakeBasicBtn={x:75,  y:206, w:120, h:44};
 const setShakeBossBtn ={x:235, y:206, w:120, h:44};
@@ -4541,6 +4648,20 @@ function drawMenu(){
     ctx.fillText('BEST: '+String(hi).padStart(6,'0'), W/2, 236); ctx.shadowBlur=0; }
   drawGearButton();
   drawMenuLeaderButton();
+  drawMenuAcctButton();
+}
+function drawMenuAcctButton(){   // person icon, bottom-left → account sign-in / sync
+  const b=menuAcctBtn, cx=b.x+b.w/2, cy=b.y+b.h/2;
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=8; ctx.shadowOffsetY=3;
+  ctx.fillStyle=acct?'rgba(24,44,30,.9)':'rgba(20,26,20,.85)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.fill();
+  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.lineWidth=2.5; ctx.strokeStyle=acct?'#4fd07a':'#3a4a5c'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
+  ctx.fillStyle=acct?'#7ee0a0':'#9fb0c9';
+  ctx.beginPath(); ctx.arc(cx, cy-5, 6.5, 0, 6.28); ctx.fill();                       // head
+  ctx.beginPath(); ctx.arc(cx, cy+13, 11, Math.PI*1.15, Math.PI*1.85); ctx.fill();     // shoulders
+  if(acct){ ctx.fillStyle='#4fd07a'; ctx.font='bold 10px '+CF; ctx.textAlign='center'; ctx.fillText('✓', b.x+b.w-8, b.y+12); }
+  ctx.restore();
 }
 // a trophy button, bottom-left → opens the leaderboard
 function drawMenuLeaderButton(){
@@ -4673,6 +4794,37 @@ function drawStore(){
 
   ctx.textAlign='center'; ctx.fillStyle='#7f8c7a'; ctx.font='10px '+CF;
   ctx.fillText('demo store — no real charge', W/2, H-20);
+}
+function drawAccount(){
+  ctx.fillStyle='rgba(6,10,10,.9)'; ctx.fillRect(0,0,W,H);
+  drawBackBtn();
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
+  ctx.fillStyle='#7ee0a0'; ctx.font='bold 30px '+CF; ctx.fillText('👤 ACCOUNT', W/2, 96); ctx.shadowBlur=0;
+  ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF; ctx.fillText('save coins, skins, campaign & ranks across devices', W/2, 122);
+  if(!acctReady()){
+    ctx.fillStyle='#ffd24a'; ctx.font='bold 14px '+CF; ctx.fillText('accounts aren’t switched on yet', W/2, 210);
+    ctx.fillStyle='#c8cfc4'; ctx.font='12px '+CF;
+    ctx.fillText('add your Firebase Web API key + enable', W/2, 250);
+    ctx.fillText('Email/Password sign-in to turn this on', W/2, 270);
+    return;
+  }
+  if(acct){
+    ctx.fillStyle='#eafff0'; ctx.font='bold 15px '+CF; ctx.fillText('✓ signed in', W/2, 190);
+    if(acct.email){ ctx.fillStyle='#9fe0b0'; ctx.font='bold 13px '+CF; ctx.fillText(acct.email, W/2, 216); }
+    ctx.fillStyle='#c8cfc4'; ctx.font='12px '+CF; ctx.fillText('your progress syncs automatically', W/2, 250);
+    const b=acctLogoutBtn, g=ctx.createLinearGradient(0,b.y,0,b.y+b.h); g.addColorStop(0,'#c24a1a'); g.addColorStop(1,'#8f3210');
+    ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle='#ff8a6a'; roundRectPath(b.x,b.y,b.w,b.h,b.h*0.3); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='bold 18px '+CF; ctx.textBaseline='middle'; ctx.fillText('LOG OUT', b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic';
+  } else {
+    // (the email + password HTML inputs sit over the canvas here at y≈206 / 262)
+    ctx.fillStyle='#9fb0c9'; ctx.font='bold 12px '+CF; ctx.fillText('log in, or sign up to create an account', W/2, 175);
+    for(const bt of [acctLoginBtn, acctSignupBtn]){ const login=(bt===acctLoginBtn);
+      const g=ctx.createLinearGradient(0,bt.y,0,bt.y+bt.h); if(login){ g.addColorStop(0,'#3ea22f'); g.addColorStop(1,'#2a7d24'); } else { g.addColorStop(0,'#3f7ad1'); g.addColorStop(1,'#2b559e'); }
+      ctx.fillStyle=g; roundRectPath(bt.x,bt.y,bt.w,bt.h,bt.h*0.3); ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=login?'#7ee06a':'#7fb0ff'; roundRectPath(bt.x,bt.y,bt.w,bt.h,bt.h*0.3); ctx.stroke();
+      ctx.fillStyle='#fff'; ctx.font='bold 17px '+CF; ctx.textBaseline='middle'; ctx.fillText(login?'LOG IN':'SIGN UP', bt.x+bt.w/2, bt.y+bt.h/2+1); ctx.textBaseline='alphabetic'; }
+  }
+  if(acctMsg){ ctx.fillStyle=acctBusy?'#ffe14b':'#ff9a9a'; ctx.font='bold 13px '+CF; ctx.fillText(acctMsg, W/2, H-70); }
 }
 function drawSettings(){
   ctx.fillStyle='rgba(6,10,6,.85)'; ctx.fillRect(0,0,W,H);   // dim the world behind the panel
