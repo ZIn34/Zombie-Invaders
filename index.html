@@ -957,6 +957,7 @@ function acctErr(code){ code=code||'';
   if(code.indexOf('INVALID_EMAIL')>=0) return 'that email looks invalid';
   if(code.indexOf('WEAK_PASSWORD')>=0) return 'password too short (6+ chars)';
   if(code.indexOf('OPERATION_NOT_ALLOWED')>=0) return 'enable Email/Password in Firebase';
+  if(code.indexOf('CONFIGURATION_NOT_FOUND')>=0||code.indexOf('ADMIN_ONLY')>=0) return 'turn on Authentication in Firebase (Build → Authentication → Get started)';
   if(code.indexOf('TOO_MANY_ATTEMPTS')>=0) return 'too many tries — wait a bit';
   return code ? ('error: '+code.toLowerCase().replace(/_/g,' ')) : 'sign-in failed';
 }
