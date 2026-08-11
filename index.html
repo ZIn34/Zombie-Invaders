@@ -373,7 +373,7 @@ const Sound = (() => {
     bossGrunt(){ if(playSample(0.8, 0.62, 0.55)) return;
       growl({ base:150, end:80, dur:0.26, vol:0.19, rough:30, harsh:6,
         formants:[[430,1.0],[820,0.55]], formants2:[[300,1.0],[600,0.5]], sustain:0.32 }); },
-    tank(){ if(playNamed('tank', 1, 0.9)) return; gunShot({crackDur:0.06, hp:700, boom:70, boomDur:0.22, tail:0.42, vol:0.5}); },   // recorded tank cannon (synth fallback)
+    tank(){ if(playNamed('tank', 1, 2.6)) return; gunShot({crackDur:0.06, hp:700, boom:70, boomDur:0.22, tail:0.42, vol:0.95}); },   // recorded tank cannon (loud), synth fallback
     power(){ tone(660,.1,'sine',.16); setTimeout(()=>tone(990,.14,'sine',.16),90); },
     hurt(){ tone(300,.25,'sawtooth',.2,70); noise(.2,.2); },
     step(f){ tone(f,.05,'square',.05); },
