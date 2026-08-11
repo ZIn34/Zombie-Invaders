@@ -3204,6 +3204,7 @@ const DEF_GRID=48;   // builds snap to the floor's grass grid
 const BUILD_SPEC={
   turret: {cost:50,  size:44, hp:70,  range:250, fireCd:0.5,  dmg:1, kind:'turret'},
   turret2:{cost:110, size:44, hp:140, range:320, fireCd:0.30, dmg:2, kind:'turret'},
+  hyper:  {cost:300, size:44, hp:90,  range:320, fireCd:0.11, dmg:1, kind:'turret'},   // rifle turret: rifle damage + speed, heavy-turret range; $300, no crystal
   wall:   {cost:25,  size:48, hp:140, kind:'wall'},
   wall2:  {cost:60,  size:48, hp:380, kind:'wall'},
   spike:  {cost:35,  size:48, hp:240, kind:'spike'},
@@ -3212,6 +3213,7 @@ const BUILD_SPEC={
 const BUILD_BAR=[
   {type:'turret',  label:'TURRET'},
   {type:'turret2', label:'HEAVY'},
+  {type:'hyper',   label:'HYPER'},
   {type:'plasma',  label:'PLASMA'},
   {type:'wall',    label:'WALL'},
   {type:'wall2',   label:'STEEL'},
@@ -3389,12 +3391,12 @@ function doBuild(ctx2, pl, type, isCoop){
     if(overlapsBuild()){ toast('NO ROOM'); Sound.empty(); return; }
   }
   ctx2.cash-=spec.cost;
-  if(spec.kind==='turret') ctx2.turrets.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:0,range:spec.range,fireCd:spec.fireCd,dmg:spec.dmg,tier:(type==='turret2'?2:1),aim:ang,cost:spec.cost});
+  if(spec.kind==='turret') ctx2.turrets.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:0,range:spec.range,fireCd:spec.fireCd,dmg:spec.dmg,tier:(type==='turret2'?2:1),hyper:(type==='hyper'),aim:ang,cost:spec.cost});
   else if(spec.kind==='plasma'){ if(!ctx2.plasmas)ctx2.plasmas=[]; ctx2.crystals=(ctx2.crystals||0)-1;   // consumes one boss crystal
     ctx2.plasmas.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:1.5,range:spec.range,fireCd:spec.fireCd,aim:ang,cost:spec.cost}); }
   else if(spec.kind==='wall') ctx2.walls.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,tier:(type==='wall2'?2:1),cost:spec.cost});
   else ctx2.spikes.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cost:spec.cost});
-  Sound.power(); toast(spec.kind==='spike'?'SPIKES SET':spec.kind==='plasma'?'PLASMA LAUNCHER BUILT':(spec.kind==='turret'?(type==='turret2'?'HEAVY TURRET':'TURRET'):(type==='wall2'?'STEEL WALL':'BARRICADE'))+' BUILT');
+  Sound.power(); toast(spec.kind==='spike'?'SPIKES SET':spec.kind==='plasma'?'PLASMA LAUNCHER BUILT':(spec.kind==='turret'?(type==='turret2'?'HEAVY TURRET':type==='hyper'?'HYPER TURRET':'TURRET'):(type==='wall2'?'STEEL WALL':'BARRICADE'))+' BUILT');
 }
 // where a build would land for this player (mirrors doBuild)
 function buildGhostSpot(pl){
@@ -3503,7 +3505,7 @@ function updateDefense(dt){
     for(const bo of ex.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim), vy=Math.sin(t.aim), sp=760;
-        bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:7,h:7, vx:vx*sp, vy:vy*sp, col:(t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:t.dmg||1, t:0, turret:true});
+        bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:t.hyper?6:7,h:t.hyper?6:7, vx:vx*sp, vy:vy*sp, col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:t.dmg||1, t:0, turret:true});
         t.cd=t.fireCd||0.5; } }
   }
   // PLASMA LAUNCHERS: lob a plasma orb at a zombie cluster; where it lands it becomes a small
@@ -3732,16 +3734,22 @@ function drawDefenseSpikes(ex){
     const hp=sp.hp/sp.hpMax; if(hp<1){ ctx.fillStyle='rgba(0,0,0,'+(0.4*(1-hp))+')'; roundRectPath(x,y,sp.w,sp.h,4); ctx.fill(); } }
 }
 function drawDefenseTurrets(ex){
-  for(const t of ex.turrets){ if(t.hp<=0) continue; const heavy=t.tier===2;
+  for(const t of ex.turrets){ if(t.hp<=0) continue; const heavy=t.tier===2, hyper=!!t.hyper;
     ctx.save(); ctx.translate(t.x,t.y);
-    ctx.fillStyle=heavy?'#5a3b3b':'#3b4a5a'; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.fill();
-    ctx.strokeStyle=heavy?'#ff9a6a':'#8fb0d0'; ctx.lineWidth=heavy?3:2; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.stroke();
+    ctx.fillStyle=hyper?'#2f5238':heavy?'#5a3b3b':'#3b4a5a'; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.fill();
+    ctx.strokeStyle=hyper?'#7dff8a':heavy?'#ff9a6a':'#8fb0d0'; ctx.lineWidth=heavy?3:2.5; ctx.beginPath(); ctx.arc(0,0,t.w*0.5,0,6.28); ctx.stroke();
     ctx.rotate(t.aim||0);
-    ctx.fillStyle=heavy?'#3a2020':'#20303f'; ctx.fillRect(0,-(heavy?5:4), t.w*(heavy?0.72:0.64), heavy?10:8);
-    ctx.fillStyle=heavy?'#c08060':'#5f7f9f'; ctx.beginPath(); ctx.arc(0,0,heavy?8:7,0,6.28); ctx.fill();
+    if(hyper){   // twin rifle barrels
+      ctx.fillStyle='#1e3324'; ctx.fillRect(0,-6, t.w*0.78, 4); ctx.fillRect(0,2, t.w*0.78, 4);
+      ctx.fillStyle='#5fd07a'; ctx.beginPath(); ctx.arc(0,0,7,0,6.28); ctx.fill();
+      const glow=0.5+0.5*Math.sin(performance.now()/90); ctx.fillStyle='rgba(160,255,150,'+(0.3+0.4*glow)+')'; ctx.beginPath(); ctx.arc(t.w*0.78,-4,2,0,6.28); ctx.arc(t.w*0.78,4,2,0,6.28); ctx.fill();
+    } else {
+      ctx.fillStyle=heavy?'#3a2020':'#20303f'; ctx.fillRect(0,-(heavy?5:4), t.w*(heavy?0.72:0.64), heavy?10:8);
+      ctx.fillStyle=heavy?'#c08060':'#5f7f9f'; ctx.beginPath(); ctx.arc(0,0,heavy?8:7,0,6.28); ctx.fill();
+    }
     ctx.restore();
     const hp=t.hp/t.hpMax, x=t.x-t.w/2; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, t.y-t.h/2-7, t.w, 4);
-    ctx.fillStyle=hp>0.4?(heavy?'#ff9a6a':'#7fd0ff'):'#ff7a7a'; ctx.fillRect(x, t.y-t.h/2-7, t.w*hp, 4); }
+    ctx.fillStyle=hp>0.4?(hyper?'#7dff8a':heavy?'#ff9a6a':'#7fd0ff'):'#ff7a7a'; ctx.fillRect(x, t.y-t.h/2-7, t.w*hp, 4); }
 }
 function drawDefensePlasma(ex){
   const t=performance.now()/1000;
@@ -3878,11 +3886,19 @@ function drawBuildTile(bb, cash, sel){
   ctx.fillStyle=afford?'rgba(24,44,24,.94)':'rgba(38,38,38,.86)';
   roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
   if(sel){ ctx.save(); ctx.strokeStyle='#ffe14b'; ctx.lineWidth=3; ctx.setLineDash([7,4]); ctx.lineDashOffset=-(performance.now()/60)%11; roundRectPath(bb.x-3,bb.y-3,bb.w+6,bb.h+6,10); ctx.stroke(); ctx.restore(); }
-  ctx.lineWidth=2; ctx.strokeStyle=afford?(spec.kind==='turret'?(bb.type==='turret2'?'#ff9a6a':'#7fd0ff'):spec.kind==='plasma'?'#b48bff':spec.kind==='spike'?'#d0d6dd':(bb.type==='wall2'?'#aeb6bf':'#9fe27f')):'#666';
+  ctx.lineWidth=2; ctx.strokeStyle=afford?(spec.kind==='turret'?(bb.type==='turret2'?'#ff9a6a':bb.type==='hyper'?'#7dff8a':'#7fd0ff'):spec.kind==='plasma'?'#b48bff':spec.kind==='spike'?'#d0d6dd':(bb.type==='wall2'?'#aeb6bf':'#9fe27f')):'#666';
   roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.stroke();
   ctx.globalAlpha=afford?1:0.5;
   const icx=bb.x+bb.w/2, icy=bb.y+13;
-  if(spec.kind==='turret' && Tsprite){ const ih=(bb.type==='turret2')?23:20, iw=ih*(TAW/TAH); ctx.drawImage(Tsprite, icx-iw/2, icy-ih/2, iw, ih); }
+  if(bb.type==='hyper'){   // mini hyper (rifle) turret: green, twin barrels
+    ctx.save(); ctx.translate(icx,icy);
+    ctx.fillStyle='#2f5238'; ctx.beginPath(); ctx.arc(0,0,9,0,6.28); ctx.fill();
+    ctx.lineWidth=1.4; ctx.strokeStyle='#7dff8a'; ctx.stroke();
+    ctx.rotate(-0.5); ctx.fillStyle='#1e3324'; ctx.fillRect(0,-4,10,3); ctx.fillRect(0,1,10,3);
+    ctx.fillStyle='#5fd07a'; ctx.beginPath(); ctx.arc(0,0,3,0,6.28); ctx.fill();
+    ctx.restore();
+  }
+  else if(spec.kind==='turret' && Tsprite){ const ih=(bb.type==='turret2')?23:20, iw=ih*(TAW/TAH); ctx.drawImage(Tsprite, icx-iw/2, icy-ih/2, iw, ih); }
   else if(spec.kind==='wall' && Wsprite){ const ih=20, iw=20; ctx.drawImage(Wsprite, icx-iw/2, icy-ih/2, iw, ih); if(bb.type==='wall2'){ ctx.fillStyle='rgba(150,165,180,.5)'; roundRectPath(icx-iw/2,icy-ih/2,iw,ih,3); ctx.fill(); } }
   else if(spec.kind==='plasma'){   // mini plasma-turret icon: hex base, coil emitter, glowing core
     ctx.save(); ctx.translate(icx,icy);
