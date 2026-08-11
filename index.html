@@ -7856,9 +7856,9 @@ function botDrive(f, dt){
   if(foe && fd<(v.kind==='tank'?1250:900) && v.cd<=0){ if(v.kind==='tank'){ tankFire(v,f.team); v.cd=1.35; } else { jeepFire(v,f.team); v.cd=0.14; } }
 }
 function tankFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2+18), my=v.y+Math.sin(a)*(v.w/2+18);
-  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*920,vy:Math.sin(a)*920,team,t:0,shell:true,owner:v.driver}); Sound.power(); shake(7,.28); }
+  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*920,vy:Math.sin(a)*920,team,t:0,shell:true,owner:v.driver}); v.flash=1; Sound.power(); shake(7,.28); }
 function jeepFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2+12), my=v.y+Math.sin(a)*(v.w/2+12);
-  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*DUEL_BSPD,vy:Math.sin(a)*DUEL_BSPD,team,t:0,owner:v.driver}); Sound.rifle(); }
+  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*DUEL_BSPD,vy:Math.sin(a)*DUEL_BSPD,team,t:0,owner:v.driver}); v.flash=1; Sound.rifle(); }
 function shellExplode(b){
   if(duel.blasts) duel.blasts.push({x:b.x,y:b.y,t:0}); duelBlood(b.x,b.y,16); shake(9,.32);
   for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle||f.spawnProtT>0) continue;   // instant-kill foot soldiers in the blast
@@ -7873,7 +7873,7 @@ function shellExplode(b){
 function updateVehicles(dt){
   if(!duel.vehicles) return;
   if(duel.blasts){ for(const bl of duel.blasts) bl.t+=dt; duel.blasts=duel.blasts.filter(bl=>bl.t<0.45); }
-  for(const vv of duel.vehicles){ if(vv.wreck && vv.wreckT!=null) vv.wreckT-=dt; }   // burnt wrecks clear away after a while
+  for(const vv of duel.vehicles){ if(vv.wreck && vv.wreckT!=null) vv.wreckT-=dt; if(vv.flash>0) vv.flash-=dt*6; }   // wrecks clear; muzzle flash decays
   if(duel.vehicles.some(vv=>vv.wreck && vv.wreckT<=0)) duel.vehicles=duel.vehicles.filter(vv=>!(vv.wreck && vv.wreckT<=0));
   for(const me of duel.humans){   // every human drives their OWN occupied vehicle
     const v=me._veh;
@@ -8119,6 +8119,10 @@ function drawVehicle(v){
   ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.angle+Math.PI/2); drawVehicleBody(v.kind,v.w,v.h,v.occupied&&!v.wreck);
   if(v.wreck){ ctx.fillStyle='rgba(8,6,4,.6)'; ctx.beginPath(); ctx.ellipse(0,0,v.w*0.56,v.h*0.56,0,0,6.28); ctx.fill(); }
   ctx.restore();
+  if(!v.wreck && v.flash>0){   // muzzle flash at the barrel tip when firing
+    const a=v.angle, off=(v.kind==='tank'? v.w/2+18 : v.w/2+12);
+    drawFlashAt(v.x+Math.cos(a)*off, v.y+Math.sin(a)*off, a, v.flash, v.kind==='tank'?38:24);
+  }
   if(v.wreck){ const t=performance.now()/300;   // burning wreck → smoke
     for(let i=0;i<3;i++){ const s=(t+i*0.34)%1; ctx.globalAlpha=(1-s)*0.38; ctx.fillStyle=i?'#3a3632':'#5a3018'; ctx.beginPath(); ctx.arc(v.x+Math.sin(t*3+i)*7, v.y-8-s*30, 5+s*11, 0,6.28); ctx.fill(); } ctx.globalAlpha=1; return; }
   if(v.occupied){ const human=v.driver&&!v.driver.bot;
