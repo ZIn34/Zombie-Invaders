@@ -3360,7 +3360,6 @@ function doBuild(ctx2, pl, type, isCoop){
   if(ctx2 && ctx2.orbActive){ toast('THE FIELD IS ONLINE'); Sound.empty(); return; }   // Mission 6: no building once the orb spawns
   if(type==='sell'){ sellNearest(ctx2, pl); return; }
   if(type==='plasma' && isCoop){ toast('PLASMA — SOLO DEFENSE ONLY'); Sound.empty(); return; }   // launcher runs on the solo-defense sim only
-  if(type==='plasma' && ctx2.plasmas && ctx2.plasmas.some(t=>t.hp>0)){ toast('ONLY 1 PLASMA LAUNCHER AT A TIME'); Sound.empty(); return; }
   const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
   if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
   const ang=(pl.aim!=null)?pl.aim:-Math.PI/2, dist=60;
@@ -3402,7 +3401,7 @@ function drawBuildGhost(ctx2, pl, type, isCoop){
   const spec=BUILD_SPEC[type]; if(!spec||!pl) return;
   const {cx,cy,ang}=buildGhostSpot(pl); const size=spec.size;
   const blocked = buildSpotBlocked(ctx2, type, cx, cy, isCoop) || (ctx2.cash<spec.cost)
-    || (type==='plasma' && (isCoop || (ctx2.plasmas && ctx2.plasmas.some(t=>t.hp>0))));   // one launcher at a time; not in co-op
+    || (type==='plasma' && isCoop);   // plasma isn't available in co-op
   ctx.save(); ctx.globalAlpha=0.5;
   ctx.fillStyle = blocked ? 'rgba(255,80,80,.28)' : 'rgba(255,255,255,.30)';
   ctx.strokeStyle = blocked ? '#ff6b6b' : '#ffffff';
@@ -3496,19 +3495,21 @@ function updateDefense(dt){
   // PLASMA LAUNCHERS: lob a plasma orb at a zombie cluster; where it lands it becomes a small
   // attract-and-zap field (like the campaign electric field, but smaller) for 20 seconds
   if(!ex.plasmas)ex.plasmas=[]; if(!ex.orbs)ex.orbs=[]; if(!ex.pshots)ex.pshots=[];
+  const plasmaBallOut=(t)=> ex.pshots.some(s=>s.owner===t) || ex.orbs.some(o=>o.owner===t);   // one ball out per turret
   for(const t of ex.plasmas){ if(t.hp<=0) continue;
     if(t.cd>0)t.cd-=dt;
+    if(plasmaBallOut(t)) continue;   // this turret already has a plasma ball in play — wait for it to fade
     let best=null,bd=t.range;
     for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
     for(const bo of ex.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const a=t.aim, sp=440;
-        ex.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0});
+        ex.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0, owner:t});
         if(Sound.laser)Sound.laser(); t.cd=t.fireCd||6; } }
   }
   for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
     if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
-      ex.orbs.push({x:s.x, y:s.y, r:52, attract:200, life:20, t:0}); Sound.power(); shake(6,.2); } }
+      ex.orbs.push({x:s.x, y:s.y, r:26, attract:50, life:20, t:0, owner:s.owner}); Sound.power(); shake(6,.2); } }
   ex.pshots=ex.pshots.filter(s=>!s._land);
   for(const o of ex.orbs){ o.life-=dt; o.t=(o.t||0)+dt; }
   ex.orbs=ex.orbs.filter(o=>o.life>0);
@@ -3745,17 +3746,43 @@ function drawDefensePlasma(ex){
     ctx.fillStyle='rgba(180,140,255,0.35)'; ctx.beginPath(); ctx.arc(s.x,s.y,12,0,6.28); ctx.fill();
     ctx.fillStyle='#d8c2ff'; ctx.beginPath(); ctx.arc(s.x,s.y,6,0,6.28); ctx.fill();
     ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(s.x,s.y,2.6,0,6.28); ctx.fill(); ctx.restore(); }
-  // launchers
+  // launchers — a coil-emitter turret with a pulsing plasma core
   if(ex.plasmas) for(const t2 of ex.plasmas){ if(t2.hp<=0) continue;
+    const now=performance.now(), R=t2.w*0.5;
+    const charge = t2.cd!=null ? clamp(1-(t2.cd/(t2.fireCd||3)),0,1) : 1;   // 0 just fired → 1 fully charged
+    const pulse = 0.5+0.5*Math.sin(now/ (t2.cd<0.4?70:280));
     ctx.save(); ctx.translate(t2.x,t2.y);
-    ctx.fillStyle='#3b2f52'; ctx.beginPath(); ctx.arc(0,0,t2.w*0.5,0,6.28); ctx.fill();
-    ctx.strokeStyle='#b48bff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(0,0,t2.w*0.5,0,6.28); ctx.stroke();
+    // shadow + hex base plate
+    ctx.fillStyle='rgba(0,0,0,.32)'; ctx.beginPath(); ctx.ellipse(0,4,R*1.05,R*0.9,0,0,6.28); ctx.fill();
+    ctx.fillStyle='#2b2440'; ctx.beginPath();
+    for(let i=0;i<6;i++){ const a=i/6*6.28+0.52, px=Math.cos(a)*R, py=Math.sin(a)*R; i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth=2.5; ctx.strokeStyle='#6b53a0'; ctx.stroke();
+    // inner ring + rivets
+    ctx.fillStyle='#39305a'; ctx.beginPath(); ctx.arc(0,0,R*0.72,0,6.28); ctx.fill();
+    ctx.fillStyle='#5a4a86'; for(let i=0;i<6;i++){ const a=i/6*6.28+0.52; ctx.beginPath(); ctx.arc(Math.cos(a)*R*0.82,Math.sin(a)*R*0.82,2,0,6.28); ctx.fill(); }
+    // rotating emitter head
     ctx.rotate(t2.aim||0);
-    ctx.fillStyle='#2a2040'; ctx.fillRect(0,-5, t2.w*0.6, 10);
-    ctx.fillStyle='#c9a8ff'; ctx.fillRect(t2.w*0.42,-6, 8, 12);   // muzzle cup
+    // barrel housing
+    ctx.fillStyle='#2a2040'; roundRectPath(-6,-8, R*1.02, 16, 4); ctx.fill();
+    ctx.strokeStyle='#7a5fc0'; ctx.lineWidth=1.5; roundRectPath(-6,-8, R*1.02, 16, 4); ctx.stroke();
+    // two coil prongs at the muzzle
+    const tip=R*0.98;
+    ctx.strokeStyle='#8f74d6'; ctx.lineWidth=3; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(tip-9,-7); ctx.lineTo(tip+4,-9); ctx.moveTo(tip-9,7); ctx.lineTo(tip+4,9); ctx.stroke();
+    ctx.fillStyle='#c9a8ff'; ctx.beginPath(); ctx.arc(tip+4,-9,2.6,0,6.28); ctx.arc(tip+4,9,2.6,0,6.28); ctx.fill();
+    // charging plasma core between the prongs
+    const coreR=3+charge*3.5+pulse*1.2, cx=tip+4;
+    const cg=ctx.createRadialGradient(cx,0,0, cx,0,coreR+6);
+    cg.addColorStop(0,'#ffffff'); cg.addColorStop(0.45,'rgba(200,160,255,'+(0.7+0.3*charge)+')'); cg.addColorStop(1,'rgba(150,90,255,0)');
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,0,coreR+6,0,6.28); ctx.fill();
+    ctx.fillStyle='#efe4ff'; ctx.beginPath(); ctx.arc(cx,0,coreR*0.55,0,6.28); ctx.fill();
+    // little arc flickers between the prongs when nearly charged
+    if(charge>0.6){ ctx.strokeStyle='rgba(220,200,255,'+(0.4+0.5*pulse)+')'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(cx,-8); ctx.lineTo(cx+(pulse-0.5)*5,0); ctx.lineTo(cx,8); ctx.stroke(); }
+    ctx.lineCap='butt';
     ctx.restore();
-    const glow=0.5+0.5*Math.sin(t2.cd<=0.2?performance.now()/80:performance.now()/300);
-    ctx.fillStyle='rgba(180,140,255,'+(0.3+0.4*glow)+')'; ctx.beginPath(); ctx.arc(t2.x,t2.y,5,0,6.28); ctx.fill();
+    // hp bar
     const hp=t2.hp/t2.hpMax, x=t2.x-t2.w/2; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, t2.y-t2.h/2-7, t2.w, 4);
     ctx.fillStyle=hp>0.4?'#c48bff':'#ff7a7a'; ctx.fillRect(x, t2.y-t2.h/2-7, t2.w*hp, 4); }
 }
@@ -3814,12 +3841,25 @@ function drawBuildTile(bb, cash, sel){
   ctx.fillStyle=afford?'rgba(24,44,24,.94)':'rgba(38,38,38,.86)';
   roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
   if(sel){ ctx.save(); ctx.strokeStyle='#ffe14b'; ctx.lineWidth=3; ctx.setLineDash([7,4]); ctx.lineDashOffset=-(performance.now()/60)%11; roundRectPath(bb.x-3,bb.y-3,bb.w+6,bb.h+6,10); ctx.stroke(); ctx.restore(); }
-  ctx.lineWidth=2; ctx.strokeStyle=afford?(spec.kind==='turret'?(bb.type==='turret2'?'#ff9a6a':'#7fd0ff'):spec.kind==='spike'?'#d0d6dd':(bb.type==='wall2'?'#aeb6bf':'#9fe27f')):'#666';
+  ctx.lineWidth=2; ctx.strokeStyle=afford?(spec.kind==='turret'?(bb.type==='turret2'?'#ff9a6a':'#7fd0ff'):spec.kind==='plasma'?'#b48bff':spec.kind==='spike'?'#d0d6dd':(bb.type==='wall2'?'#aeb6bf':'#9fe27f')):'#666';
   roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.stroke();
   ctx.globalAlpha=afford?1:0.5;
   const icx=bb.x+bb.w/2, icy=bb.y+13;
   if(spec.kind==='turret' && Tsprite){ const ih=(bb.type==='turret2')?23:20, iw=ih*(TAW/TAH); ctx.drawImage(Tsprite, icx-iw/2, icy-ih/2, iw, ih); }
   else if(spec.kind==='wall' && Wsprite){ const ih=20, iw=20; ctx.drawImage(Wsprite, icx-iw/2, icy-ih/2, iw, ih); if(bb.type==='wall2'){ ctx.fillStyle='rgba(150,165,180,.5)'; roundRectPath(icx-iw/2,icy-ih/2,iw,ih,3); ctx.fill(); } }
+  else if(spec.kind==='plasma'){   // mini plasma-turret icon: hex base, coil emitter, glowing core
+    ctx.save(); ctx.translate(icx,icy);
+    ctx.fillStyle='#2b2440'; ctx.beginPath(); for(let i=0;i<6;i++){ const a=i/6*6.28+0.52,px=Math.cos(a)*9,py=Math.sin(a)*9; i?ctx.lineTo(px,py):ctx.moveTo(px,py);} ctx.closePath(); ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle='#8f74d6'; ctx.stroke();
+    ctx.rotate(-0.5);
+    ctx.fillStyle='#2a2040'; roundRectPath(-2,-3,10,6,2); ctx.fill();
+    ctx.strokeStyle='#8f74d6'; ctx.lineWidth=1.4; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(7,-3); ctx.lineTo(10,-4); ctx.moveTo(7,3); ctx.lineTo(10,4); ctx.stroke(); ctx.lineCap='butt';
+    const plz=0.5+0.5*Math.sin(performance.now()/240);
+    const g=ctx.createRadialGradient(9,0,0, 9,0,5); g.addColorStop(0,'#fff'); g.addColorStop(0.5,'rgba(200,160,255,0.85)'); g.addColorStop(1,'rgba(150,90,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(9,0,4+plz,0,6.28); ctx.fill();
+    ctx.restore();
+  }
   else if(spec.kind==='spike'){ ctx.fillStyle='#cfd6dd'; for(let i=0;i<3;i++){ const sx=icx-9+i*9; ctx.beginPath(); ctx.moveTo(sx-3,icy+7); ctx.lineTo(sx,icy-8); ctx.lineTo(sx+3,icy+7); ctx.closePath(); ctx.fill(); } }
   ctx.globalAlpha=1;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
