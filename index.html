@@ -4450,6 +4450,7 @@ function drawPlayerObj(p, faceAim){
     const pixel=(equippedSkin && equippedSkin!=='default');
     let pixL=0;
     if(pixel) pixL = twin ? (explore ? 9 : 49) : 2;   // pixel flash: open-world 9px left, other twin-stick 49px left; normal mode 2px left
+    else if(twin && explore) pixL = -4;   // basic soldier rifle in defense: nudge 4px right
     drawUnitFlash(cx, scy, aim, heavy, isRifle, rec, 12, pixL);   // non-shootout: raise 12px
   }
 }
@@ -8896,7 +8897,7 @@ function playerFlashMuzzle(p){
   const aim=(p.aim!=null)?p.aim:-Math.PI/2;
   const heavy=(p.weapon==='spread'||p.rapidT>0||p.permRapid);
   const pixel=(equippedSkin && equippedSkin!=='default');
-  const pixL = pixel ? (explore?9:49) : 0;   // matches the flash's extraLeft in drawPlayerObj
+  const pixL = pixel ? (explore?9:49) : (explore ? -4 : 0);   // matches the flash's extraLeft in drawPlayerObj (basic soldier rifle nudged 4px right in defense)
   return unitFlashPoint(cx, scy, aim, heavy, 12, pixL);
 }
 function drawMuzzleFlash(pl){   // shootout fighters
