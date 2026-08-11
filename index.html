@@ -1236,6 +1236,12 @@ const MISSIONS=[
      {bg:'toxic', art:'boss', speaker:'U.S. GENERAL', text:'We put a crystal from a boss on this — and much more zombies came at it.'},
      {bg:'fire', art:'horde', speaker:'U.S. GENERAL', text:'What I need you to do is build a plasma orb out in the open, then plant these 20 crystals in it. Try to survive.'},
    ]},
+  {name:'The Zombifiers’ Lab', war8:true,
+   intro:[
+     {bg:'dawn', art:'standoff', speaker:'U.S. GENERAL', text:'OK — now we know where all of the zombies are coming from. The enemy civilization we now call the Zombifiers are using science to grow zombies.'},
+     {bg:'toxic', art:'boss', speaker:'U.S. GENERAL', text:'We found their lab and need you to destroy it. I’ll give you 9 allies to help — command them and lead us to victory.'},
+     {bg:'fire', art:'horde', speaker:'U.S. GENERAL', text:'Fight to 100 kills, then breach the lab at the enemy’s heart. Good luck, soldier.'},
+   ]},
   // ── add your next missions below, same format ──
 ];
 function saveProgress(){
@@ -1787,6 +1793,7 @@ function startMission(i){
   replaying = campaignWon || (i < campaignUnlocked-1);   // already-cleared mission earns no coins
   score=0; coinsThisMission=0;
   explore=null;
+  if(MISSIONS[i].war8){ setupWar8(); return; }                // Mission 8: 10v10 war → breach the Zombifiers' lab
   if(MISSIONS[i].defense7){ setupDefense7(); return; }       // Mission 7: plasma-orb defense (1000 kills → plant crystals → swarm)
   if(MISSIONS[i].defense6){ setupDefense6(); return; }       // Mission 6: electric-field defense
   if(MISSIONS[i].shootout5){ setupShootout5(); return; }     // Mission 5: gun-zombie shootout
@@ -7139,6 +7146,164 @@ function startBigWar(opts){
 }
 function startWarSplit(){ startBigWar({ split:true, team1:[{ctrl:0}], team2:[{ctrl:1}] }); }   // 1 human per team, local split screen
 
+/* ===================== CAMPAIGN MISSION 8 — "The Zombifiers' Lab" =====================
+   Phase 1 ("war"): a 10v10 war to 100 kills — you + 9 ally bots vs 10 enemy bots. Zombies
+     pour in from the enemy side in bulk; shooting them does NOT count toward the 100.
+   Phase 2 ("lab"): breach the enemy lab at map centre. Everyone teleports to the door. 15
+     enemy soldiers inside DON'T respawn — clear them, then kill the 5 scientists at the back,
+     who each spawn a zombie every 3s. All 15 + all 5 dead → mission complete.  */
+const W8_LAB={w:1140, h:840};
+function setupWar8(){
+  try{ NetIO.cleanup(); }catch(e){} net=null;
+  mode='campaign'; explore=null; coop=null; codef=null; defWon=false; netShowCodeInput(false);
+  const WW=8500, HH=8500, N=10, fighters=[];
+  for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=HH-240-(i%2)*80;
+    fighters.push(mkFighter(x, y, -Math.PI/2, 1, i>0, i===0?'kb':null)); }   // fighter 0 = you; 1..9 = ally bots
+  for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=180+(i%2)*80;
+    fighters.push(mkFighter(x, y, Math.PI/2, 2, true, null)); }
+  const bld=makeWarBuildings(WW,HH);
+  duel={ W:WW, H:HH, camX:0, camY:0, bullets:[], over:false, winner:0, overT:0, t:0, team:true, split:false, war:true, paused:false,
+    campaign8:true, phase:'war', zombies:[], scientists:[], zSpawnT:1.2, labEnemyN:0, sciN:0, _toLab:false,
+    warGoal:100, score1:0, score2:0, driving:null, blasts:[], cash:0,
+    fighters, humans:fighters.filter(f=>!f.bot),
+    pickups:[], obs:makeWarObs(WW,HH).concat(bld.walls), buildings:bld.buildings, vehicles:[], decals:makeWarDecals(WW,HH) };
+  duel.me = fighters[0];
+  duel.squadMate = duel.fighters.find(f=>f.bot && f.team===1);
+  for(const h of duel.humans) h._squad = duel.fighters.find(f=>f.bot && f.team===h.team && f!==h);
+  clearDuelSpawns();
+  padPrev=[{},{}];
+  state=STATE.DUEL;
+  toast('WAR — 100 KILLS, THEN BREACH THE LAB!');
+}
+function spawnWarZombie(x,y){
+  x=clamp(x,20,(duel.W||DUEL_W)-DUEL_PS-20); y=clamp(y,20,(duel.H||DUEL_H)-DUEL_PS-20);
+  duel.zombies.push({x,y,hp:2,flash:0,walkT:Math.random()*6,dead:false,spd:rand(46,68),cd:0});
+}
+function war8Update(dt){
+  if(!duel||!duel.campaign8) return;
+  if(duel._toLab && duel.phase==='war'){ duel._toLab=false; war8ToLab(); return; }   // deferred transition (safe, outside the fighter loop)
+  war8Bullets();
+  if(duel.phase==='war'){
+    duel.zSpawnT-=dt;
+    if(duel.zSpawnT<=0 && duel.zombies.length<28){ duel.zSpawnT=rand(0.6,1.2);
+      for(let k=0;k<3;k++) spawnWarZombie(rand(240,duel.W-240), rand(110,280)); }   // bulk horde from the enemy (top) side
+  } else if(duel.phase==='lab'){
+    war8Scientists(dt);
+  }
+  war8Zombies(dt);
+}
+function war8Bullets(){   // team-1 fire vs zombies (always) and scientists (once the 15 are down)
+  for(const b of duel.bullets){ if(b.dead||b.team!==1) continue;
+    let hit=false;
+    for(const z of duel.zombies){ if(z.dead) continue;
+      if(Math.abs(b.x-(z.x+DUEL_PS/2))<24 && Math.abs(b.y-(z.y+DUEL_PS/2))<24){
+        z.hp-=(b.shell?99:1); z.flash=0.16; duelBlood(b.x,b.y, z.hp<=0?18:5);
+        if(z.hp<=0){ z.dead=true; duelSplat(z.x+DUEL_PS/2,z.y+DUEL_PS/2); }
+        if(!b.shell){ b.dead=true; hit=true; } break; } }
+    if(hit||b.dead) continue;
+    if(duel.phase==='lab' && duel.labEnemyN<=0){
+      for(const s of duel.scientists){ if(s.dead) continue;
+        if(Math.abs(b.x-s.x)<26 && Math.abs(b.y-s.y)<32){ s.hp-=1; s.flash=0.16; b.dead=true; duelBlood(b.x,b.y, s.hp<=0?20:6);
+          if(s.hp<=0){ s.dead=true; duelSplat(s.x,s.y); shake(6,.25); Sound.over&&Sound.over(); } break; } }
+    }
+  }
+}
+function war8Zombies(dt){
+  for(const z of duel.zombies){ if(z.dead) continue;
+    if(z.flash>0) z.flash-=dt;
+    let tgt=null,bd=1e9; const zx=z.x+DUEL_PS/2, zy=z.y+DUEL_PS/2;
+    for(const f of duel.fighters){ if(f.team!==1||f.dead||f._inVehicle) continue;
+      const d=Math.hypot((f.x+DUEL_PS/2)-zx,(f.y+DUEL_PS/2)-zy); if(d<bd){bd=d;tgt=f;} }
+    if(tgt){ const tx=(tgt.x+DUEL_PS/2)-zx, ty=(tgt.y+DUEL_PS/2)-zy, d=Math.hypot(tx,ty)||1;
+      const nx=z.x+(tx/d)*z.spd*dt, ny=z.y+(ty/d)*z.spd*dt;
+      if(!duelBlocks(nx,z.y,DUEL_PS,DUEL_PS)) z.x=nx; else if(!duelBlocks(z.x+(tx/d)*z.spd*dt,z.y,DUEL_PS,DUEL_PS)){}
+      if(!duelBlocks(z.x,ny,DUEL_PS,DUEL_PS)) z.y=ny;
+      z.walkT+=dt*8;
+      z.cd-=dt;
+      if(d<32 && z.cd<=0){ z.cd=0.7;
+        if(!(tgt.spawnProtT>0)){ tgt.hp-=1; tgt.flash=0.16; Sound.zHit&&Sound.zHit(); duelBlood(tgt.x+DUEL_PS/2,tgt.y+DUEL_PS/2,6);
+          if(tgt.hp<=0 && !tgt.dead){ tgt.dead=true; tgt.respawnT=5; duelSplat(tgt.x+DUEL_PS/2,tgt.y+DUEL_PS/2); } } }
+    }
+  }
+  duel.zombies=duel.zombies.filter(z=>!z.dead);
+}
+function war8Scientists(dt){
+  let alive=0;
+  for(const s of duel.scientists){ if(s.dead) continue; alive++;
+    if(s.flash>0) s.flash-=dt; s.t=(s.t||0)+dt;
+    s.spawnT-=dt;
+    if(s.spawnT<=0){ s.spawnT=3; if(duel.zombies.length<40) spawnWarZombie(s.x-DUEL_PS/2+rand(-24,24), s.y+44); }   // one zombie every 3s
+  }
+  duel.labEnemyN = duel.fighters.filter(f=>f.team===2 && f.noResp && !f.dead).length;
+  if(duel.labEnemyN<=0 && alive===0 && !duel.over){ duel.over=true; duel.winner=1; duel.campaign8win=true; duel.overT=0; shake(18,.7); Sound.power&&Sound.power(); }
+}
+function war8ToLab(){
+  duel.phase='lab';
+  const cx=Math.round(duel.W/2), cy=Math.round(duel.H/2), LW=W8_LAB.w, LH=W8_LAB.h;
+  const L={x:cx-LW/2, y:cy-LH/2, w:LW, h:LH}; duel.lab=L;
+  const tw=26, dg=160, half=(L.w-dg)/2;
+  const walls=[
+    {x:L.x, y:L.y, w:L.w, h:tw, kind:'bwall'},                       // top
+    {x:L.x, y:L.y, w:tw, h:L.h, kind:'bwall'},                       // left
+    {x:L.x+L.w-tw, y:L.y, w:tw, h:L.h, kind:'bwall'},                // right
+    {x:L.x, y:L.y+L.h-tw, w:half, h:tw, kind:'bwall'},               // bottom-left (door gap in the middle)
+    {x:L.x+L.w-half, y:L.y+L.h-tw, w:half, h:tw, kind:'bwall'},      // bottom-right
+  ];
+  duel.labWalls=walls; for(const w of walls) duel.obs.push(w);
+  duel.buildings.push({x:L.x, y:L.y, w:L.w, h:L.h});                 // floor + roof (roof lifts once you step inside)
+  // wipe the open-field war: only your squad survives into the assault
+  duel.fighters=duel.fighters.filter(f=>f.team===1);
+  duel.zombies=[]; duel.vehicles=[]; duel.bullets=[]; duel.blasts=[];
+  const doorX=cx, doorY=L.y+L.h-tw-46;
+  let i=0; for(const f of duel.fighters){ f.dead=false; f.hp=DUEL_HP; f.respawnT=null; f._inVehicle=false; f._veh=null; f._targetVeh=null;
+    f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0;
+    f.x=doorX-60+(i%5)*30-DUEL_PS/2; f.y=doorY-Math.floor(i/5)*36-DUEL_PS/2; f.aim=-Math.PI/2; f.spawnProtT=2.5;
+    f._labDoor={x:doorX, y:doorY}; i++; }
+  // 15 enemy soldiers inside — no respawn
+  for(let k=0;k<15;k++){ const ex=L.x+tw+80+(k%5)*((L.w-2*tw-160)/4), ey=L.y+tw+180+Math.floor(k/5)*100;
+    const e=mkFighter(Math.round(ex), Math.round(ey), Math.PI/2, 2, true, null); e.noResp=true; duel.fighters.push(e); }
+  duel.labEnemyN=15;
+  // 5 scientists lined along the back wall
+  duel.scientists=[]; for(let k=0;k<5;k++){ duel.scientists.push({x:Math.round(L.x+tw+130+k*((L.w-2*tw-260)/4)), y:L.y+tw+58, hp:3, flash:0, spawnT:3, dead:false, t:Math.random()*6}); }
+  duel.sciN=5;
+  duel.camX=doorX-200; duel.camY=doorY-200;
+  shake(16,.6); Sound.boss&&Sound.boss();
+  toast('BREACH THE LAB — clear it out!');
+}
+function drawWarZombie(z){
+  const cx=z.x+DUEL_PS/2, cy=z.y+DUEL_PS/2, bob=Math.sin(z.walkT)*2;
+  ctx.save(); ctx.translate(cx, cy+bob);
+  ctx.fillStyle='rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(0, 15, 13, 5, 0, 0, 6.28); ctx.fill();
+  const body = z.flash>0 ? '#d6ffe0' : '#5a8f3e';
+  ctx.fillStyle=body; roundRectPath(-10,-6,20,22,5); ctx.fill();
+  ctx.fillStyle='#2f5220'; ctx.fillRect(-10,2,20,3);
+  ctx.fillStyle=z.flash>0?'#eaffee':'#7ab857'; ctx.beginPath(); ctx.arc(0,-12,9,0,6.28); ctx.fill();   // head
+  ctx.fillStyle='#3a2a1a'; ctx.fillRect(-5,-14,3,3); ctx.fillRect(2,-14,3,3);                          // eyes
+  ctx.fillStyle=body; ctx.fillRect(-15,-4,6,4); ctx.fillRect(9,-4,6,4);                                // arms out
+  ctx.restore();
+}
+let SciImg=null, SciImgOK=false;   // optional scientist sprite (swapped in when provided)
+function drawScientist(s){
+  const invuln = duel.phase==='lab' && duel.labEnemyN>0;
+  ctx.save(); ctx.translate(s.x, s.y);
+  ctx.fillStyle='rgba(0,0,0,.30)'; ctx.beginPath(); ctx.ellipse(0,17,14,5,0,0,6.28); ctx.fill();
+  if(SciImgOK && SciImg){ const iw=40, ih=48; ctx.imageSmoothingEnabled=false; ctx.drawImage(SciImg, -iw/2, -ih/2-2, iw, ih); }
+  else {
+    // placeholder: a lab-coat figure
+    ctx.fillStyle=s.flash>0?'#ffffff':'#eef1f4'; roundRectPath(-11,-6,22,24,5); ctx.fill();   // coat
+    ctx.fillStyle='#c8ced6'; ctx.fillRect(-1,-6,2,24);                                          // coat seam
+    ctx.fillStyle='#5a6270'; ctx.fillRect(-4,-6,8,7);                                           // collar/tie
+    ctx.fillStyle=s.flash>0?'#ffffff':'#f0d3b0'; ctx.beginPath(); ctx.arc(0,-13,8,0,6.28); ctx.fill();  // head
+    ctx.fillStyle='#2a2a2a'; ctx.fillRect(-5,-15,3,2); ctx.fillRect(2,-15,3,2);                 // glasses
+    ctx.strokeStyle='#2a2a2a'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(-2,-14); ctx.lineTo(2,-14); ctx.stroke();
+  }
+  ctx.fillStyle='#ff5b5b'; const hp=Math.max(0,s.hp)/3; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(-14,-24,28,4);
+  ctx.fillStyle='#ff6b6b'; ctx.fillRect(-14,-24,28*hp,4);
+  if(invuln){ ctx.globalAlpha=0.35+0.25*Math.sin(performance.now()/140); ctx.strokeStyle='#7fd0ff'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(0,-2,20,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
+  ctx.restore();
+}
+
 /* ===================== ONLINE WAR (host-authoritative, up to 5 per team) ===================== */
 function warAssignRoster(count){   // balance players across the two teams, ≤5 each; returns per-player {team, slot(=fighter index)}
   const roster=[]; let t1=0,t2=0;
@@ -7242,7 +7407,10 @@ function startShootout1v2(){   // you alone vs two bots
   toast('1v2 SHOOTOUT — you vs 2 bots!');
 }
 function startTeamShootoutCoop(){ startTeamShootout({split:true, h1:{bot:false,ctrl:0}, h2:{bot:false,ctrl:1}}); }
-function teamDuelEnd(){ duel=null; mode='arcade'; state=STATE.MENU; toast('SHOOTOUT OVER'); }
+function teamDuelEnd(){
+  if(duel && duel.campaign8){ const won=(duel.winner===1); duel=null; mode='campaign';
+    if(won){ Sound.power&&Sound.power(); missionComplete(); } else { Sound.over&&Sound.over(); state=STATE.OVER; } return; }
+  duel=null; mode='arcade'; state=STATE.MENU; toast('SHOOTOUT OVER'); }
 function teamLineBlocked(a,b){ const ax=a.x+DUEL_PS/2,ay=a.y+DUEL_PS/2,bx=b.x+DUEL_PS/2,by=b.y+DUEL_PS/2,steps=12;
   for(let i=1;i<steps;i++){ const t=i/steps,x=ax+(bx-ax)*t,y=ay+(by-ay)*t; if(duelBlocks(x-3,y-3,6,6)) return true; } return false; }
 // find a spot tucked behind an obstacle relative to the enemy. forward=true → an advanced cover spot toward the enemy (picked at random); else the nearest cover.
@@ -7540,12 +7708,30 @@ function enemyBarrierBlocks(team, cy){
   if(team===1 && cy<b.yB2) return true;   // team-1 enemy kept out of team-2's spawn (top)
   return false;
 }
+function warTryOver(){   // score reached the goal → end the war (or, in Mission 8, trigger the lab breach)
+  if(duel.over) return;
+  if(duel.campaign8){
+    if(duel.phase==='war'){
+      if(duel.score2>=duel.warGoal){ duel.over=true; duel.winner=2; duel.overT=0; Sound.over(); }   // enemy hit 100 first → you lose
+      else if(duel.score1>=duel.warGoal){ duel._toLab=true; }                                        // you hit 100 → breach the lab (deferred)
+    }
+    return;   // lab-phase win is handled by war8Scientists, never by the score
+  }
+  if(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal){ duel.over=true; duel.winner=duel.score1>=duel.warGoal?1:2; duel.overT=0; Sound.over(); }
+}
 function teamCheckOver(){
   if(duel.war) return;   // WAR ends on the kill score, not a wipe (teams respawn)
   const a1=duel.fighters.some(f=>f.team===1&&!f.dead), a2=duel.fighters.some(f=>f.team===2&&!f.dead);
   if((!a1||!a2) && !duel.over){ duel.over=true; duel.winner=a1?1:2; duel.overT=0; Sound.over(); }
 }
 function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST spot away from enemies, with brief spawn protection
+  if(f.noResp){ f.dead=true; f.respawnT=null; return; }   // Mission 8 lab enemies stay down for good
+  if(duel.campaign8 && duel.phase==='lab' && f.team===1 && f._labDoor){   // your squad respawns right at the lab door
+    f.x=f._labDoor.x-DUEL_PS/2+rand(-40,40); f.y=f._labDoor.y-DUEL_PS/2+rand(-10,20);
+    f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
+    f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
+    f.aim=-Math.PI/2; f._age=0; f.spawnProtT=3; return;
+  }
   const band = f.team===1 ? (duel.H-240) : 200;
   let best=null, bestD=-1;
   for(let t=0;t<26;t++){
@@ -7586,7 +7772,7 @@ function destroyVehicle(v, killerTeam, killerOwner){
   if(d){ d._inVehicle=false; d._veh=null; if(duel.driving===v) duel.driving=null;
     d.dead=true;
     if(duel.war){ d.respawnT=5; awardKillCash(killerOwner, d); if(killerTeam===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
-      if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){ duel.over=true; duel.winner=duel.score1>=duel.warGoal?1:2; duel.overT=0; Sound.over(); } }
+      warTryOver(); }
   }
   v.driver=null; v.occupied=false;
 }
@@ -7636,7 +7822,7 @@ function shellExplode(b){
   for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle||f.spawnProtT>0) continue;   // instant-kill foot soldiers in the blast
     if(Math.hypot((f.x+DUEL_PS/2)-b.x,(f.y+DUEL_PS/2)-b.y)<100){ f.dead=true; f.flash=0.18;
       if(duel.war){ f.respawnT=5; awardKillCash(b.owner, f); if(b.team===1)duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
-        if(!duel.over&&(duel.score1>=duel.warGoal||duel.score2>=duel.warGoal)){duel.over=true;duel.winner=duel.score1>=duel.warGoal?1:2;duel.overT=0;Sound.over();} }
+        warTryOver(); }
       duelSplat(f.x+DUEL_PS/2,f.y+DUEL_PS/2); }
   }
   if(duel.vehicles) for(const v of duel.vehicles){ if(v.wreck||!v.driver||v.driver.team===b.team) continue;   // 10 dmg to enemy vehicles → 3 shells kill a tank (30hp), 2 a jeep (20hp)
@@ -7756,12 +7942,13 @@ function updateTeamDuel(dt){
         if(f.hp<=0){ f.dead=true;
           if(duel.war){ f.respawnT=5; awardKillCash(b.owner, f);   // WAR: score the kill (+cash if it's yours/assist), respawn in 5s, first to the goal wins
             if(b.team===1) duel.score1=(duel.score1||0)+1; else duel.score2=(duel.score2||0)+1;
-            if(!duel.over && (duel.score1>=duel.warGoal || duel.score2>=duel.warGoal)){ duel.over=true; duel.winner=duel.score1>=duel.warGoal?1:2; duel.overT=0; Sound.over(); }
+            warTryOver();
           } else teamCheckOver();
         } break; } }
   }
   duel.bullets=duel.bullets.filter(b=>!b.dead && b.t<3);
   tickDuelBlood(dt);
+  if(duel.campaign8) war8Update(dt);   // Mission 8: zombie horde, lab breach, scientists
   teamCheckOver();
   teamTickFlash(dt);
   teamCam();
@@ -7923,6 +8110,10 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
     else { ctx.fillStyle=b.team===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); } }
   for(const f of duel.fighters){ if(f.dead||f._inVehicle) continue; drawDuelSoldier(f, f.team===1?'#6ad06a':'#ff6b6b', f===me);
     if(f.spawnProtT>0){ ctx.save(); ctx.globalAlpha=0.3+0.25*Math.sin(performance.now()/110); ctx.strokeStyle='#7fe0ff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(f.x+DUEL_PS/2,f.y+DUEL_PS/2,DUEL_PS*0.72,0,6.28); ctx.stroke(); ctx.restore(); } }
+  if(duel.campaign8){   // Mission 8: horde zombies + lab scientists
+    for(const z of duel.zombies){ if(z.dead||z.x<x0-60||z.x>x1+60||z.y<y0-60||z.y>y1+60) continue; drawWarZombie(z); }
+    for(const s of duel.scientists){ if(s.dead||s.x<x0-60||s.x>x1+60||s.y<y0-60||s.y>y1+60) continue; drawScientist(s); }
+  }
   if(duel.blasts) for(const bl of duel.blasts){ if(bl.t<0) continue; const pr=bl.t/0.45, r=10+pr*72; ctx.globalAlpha=1-pr;
     ctx.fillStyle='rgba(255,150,40,'+(0.4*(1-pr))+')'; ctx.beginPath(); ctx.arc(bl.x,bl.y,r*0.62,0,6.28); ctx.fill();
     ctx.strokeStyle='#ffb04a'; ctx.lineWidth=5*(1-pr)+1; ctx.beginPath(); ctx.arc(bl.x,bl.y,r,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
@@ -8051,10 +8242,19 @@ function drawTeamHUD(){
   ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
   if(duel.war){
     const me=warMe();
+    if(duel.campaign8){
+      ctx.textAlign='center'; ctx.fillStyle='#ffd14b'; ctx.font='bold 15px '+CF;
+      const msg = duel.phase==='lab'
+        ? (duel.labEnemyN>0 ? 'CLEAR THE LAB — ENEMIES '+duel.labEnemyN
+                            : 'KILL THE SCIENTISTS — '+duel.scientists.filter(s=>!s.dead).length+' LEFT')
+        : 'KILLS  '+(duel.score1||0)+' / '+duel.warGoal;
+      ctx.fillText(msg, W/2, 20); ctx.textAlign='left'; ctx.shadowBlur=0;
+    } else {
     const myScore=(me&&me.team===2)?(duel.score2||0):(duel.score1||0), foeScore=(me&&me.team===2)?(duel.score1||0):(duel.score2||0);
     ctx.fillStyle='#6ad06a'; ctx.font='bold 15px '+CF; ctx.fillText('YOUR TEAM  '+myScore+' / '+duel.warGoal, 12, 20);
     ctx.textAlign='right'; ctx.fillStyle='#ff6b6b'; ctx.fillText(foeScore+' / '+duel.warGoal+'  ENEMY', W-12, 20);
     ctx.shadowBlur=0;
+    }
     if(me && me.dead && me.respawnT!=null){ ctx.save(); ctx.textAlign='center'; ctx.fillStyle='rgba(6,10,16,.66)'; roundRectPath(W/2-96, H*0.4-18, 192, 40, 9); ctx.fill();
       ctx.fillStyle='#ffd14b'; ctx.font='bold 15px '+CF; ctx.fillText('RESPAWNING… '+Math.ceil(me.respawnT), W/2, H*0.4+8); ctx.restore(); }
     // DRIVE / EXIT button — shown when driving or standing next to a vehicle
@@ -8109,7 +8309,8 @@ function drawTeamOver(){
   ctx.fillStyle='rgba(6,10,16,.80)'; ctx.fillRect(0,0,W,H);
   const win=duel.winner===1;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  ctx.fillStyle=win?'#7ee06a':'#ff7a7a'; ctx.font='bold 34px '+CF; ctx.fillText(win?'YOUR TEAM WINS! ':'ENEMY WINS', W/2, H/2-8); ctx.shadowBlur=0;
+  const title = duel.campaign8 ? (win?'LAB DESTROYED!':'YOU DIED') : (win?'YOUR TEAM WINS! ':'ENEMY WINS');
+  ctx.fillStyle=win?'#7ee06a':'#ff7a7a'; ctx.font='bold 34px '+CF; ctx.fillText(title, W/2, H/2-8); ctx.shadowBlur=0;
   ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
   ctx.fillStyle='#e6f2df'; ctx.font='bold 15px '+CF; ctx.fillText(duel.split?'any button to leave':'tap to leave', W/2, H/2+28); ctx.globalAlpha=1;
 }
