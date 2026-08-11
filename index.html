@@ -538,6 +538,7 @@ function canvasTap(p, pid){
   if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){
     if(explore && explore.defense){   // defense build buttons take the tap before aiming
       for(const wb of defWeaponBtns){ if(inRect(p, wb)){ defBuyOrEquip(player, explore, wb); return; } }   // weapon shop
+      if(inRect(p, plasmaRangeBtn)){ buyPlasmaRange(); return; }   // 2x plasma range (5 crystals)
       if(!explore.orbActive) for(const bb of buildBtns){ if(inRect(p, bb)){ if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else defBuild(bb.type); return; } }
     }
     if(state===STATE.COOPDEF && codef){   // co-op build buttons
@@ -1180,7 +1181,7 @@ let lastMissionCoins=0;
 let replaying=false;               // replaying an already-cleared mission → no coins
 // purchased upgrade levels (spent coins in the campaign shop)
 const upg={hp:0, firerate:0, rarity:0, amount:0, damage:0};
-function dmgUp(){ return upg.damage||0; }   // BULLET DAMAGE upgrade → +1 damage per level (campaign)
+function dmgUp(){ return (mode==='campaign') ? (upg.damage||0) : 0; }   // BULLET DAMAGE upgrade → campaign only (not arcade/defense/open-world)
 let ownedSkins=['default'], equippedSkin='default';   // STORE state (persisted)
 let ownedZombieSkins=['classic'], equippedZombieSkin='classic';   // zombie skin (classic = default)
 let ownedBossSkins=['classic'], equippedBossSkin='classic';       // boss skin (classic = default)
@@ -1662,7 +1663,7 @@ function makePlayer(){
   if(mode==='campaign'){ p.fireCut=(upg.firerate||0)*0.035;  // TRIGGER SPEED upgrade
     if(campaignMission>=3) p.permRapid=true;                 // Mission 4 onward: keep the RIFLE power-up
   }
-  p.mags = Math.min(MAG_MAX, p.mags + (upg.ammocap||0));   // AMMO CAPACITY upgrade → +1 starting reserve magazine each level
+  if(mode==='campaign') p.mags = Math.min(MAG_MAX, p.mags + (upg.ammocap||0));   // AMMO CAPACITY upgrade → campaign only
   p.ammo=magSizeFor(p);   // start with a full magazine for the current weapon
   return p;
 }
@@ -3223,6 +3224,14 @@ const defWeaponBtns=[
   {wp:'rifle',   label:'RIFLE',   cost:150, x:8, y:100, w:132, h:30},
   {wp:'shotgun', label:'SHOTGUN', cost:120, x:8, y:134, w:132, h:30},
 ];
+const plasmaRangeBtn={x:8, y:168, w:158, h:30, crystals:5};   // spend 5 boss crystals → double the range of every plasma ball
+function buyPlasmaRange(){ const ex=explore; if(!ex||!ex.defense) return;
+  if(ex.plasmaRangeX2){ toast('ALREADY MAXED'); Sound.empty(); return; }
+  if((ex.crystals||0)<plasmaRangeBtn.crystals){ toast('NEED 5 CRYSTALS'); Sound.empty(); return; }
+  ex.crystals-=plasmaRangeBtn.crystals; ex.plasmaRangeX2=true;
+  if(ex.orbs) for(const o of ex.orbs){ o.r*=2; o.attract*=2; }   // upgrade any orbs already out
+  Sound.power(); toast('PLASMA RANGE DOUBLED!');
+}
 function defWeaponEquipped(pl, wp){ return wp==='rifle' ? (!!pl.permRapid && !pl.permSpread) : !!pl.permSpread; }
 function defEquipWeapon(pl, wp){
   if(defWeaponEquipped(pl,wp)){ pl.permRapid=false; pl.permSpread=false; pl.weapon='gun'; pl.rapidT=0; }   // tap again → back to pistol
@@ -3249,7 +3258,7 @@ function setupDefense(){
   explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:defKillLimit,
     cash:DEF_START_CASH,
     flag:(function(){ const fh=Math.round(600*DIFF[difficulty].flagHp); return {x:0, y:0, r:46, hp:fh, hpMax:fh}; })(),
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRangeX2:false, bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=12;
   lives=3; score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
@@ -3352,7 +3361,9 @@ function sellNearest(ctx2, pl){
   let best=null, bd=R, arr=null;
   const scan=(list)=>{ if(!list) return; for(const o of list){ if(o.hp<=0) continue; const d=Math.hypot(o.x-cx,o.y-cy); if(d<bd){ bd=d; best=o; arr=list; } } };
   scan(ctx2.turrets); scan(ctx2.walls); scan(ctx2.spikes); scan(ctx2.plasmas);
-  if(best && arr){ const refund=best.cost||0; ctx2.cash+=refund; const i=arr.indexOf(best); if(i>=0) arr.splice(i,1); Sound.power(); toast('SOLD — refunded $'+refund); }
+  if(best && arr){ const refund=best.cost||0; ctx2.cash+=refund; const i=arr.indexOf(best); if(i>=0) arr.splice(i,1);
+    const isPlasma=(arr===ctx2.plasmas); if(isPlasma) ctx2.crystals=(ctx2.crystals||0)+1;   // give the boss crystal back too
+    Sound.power(); toast(isPlasma?('SOLD — $'+refund+' + 1 crystal'):('SOLD — refunded $'+refund)); }
   else { toast('stand next to a build to sell'); Sound.empty(); }
 }
 // shared build logic for solo Defense (ctx=explore) and co-op (ctx=codef); host-authoritative for co-op
@@ -3360,6 +3371,7 @@ function doBuild(ctx2, pl, type, isCoop){
   if(ctx2 && ctx2.orbActive){ toast('THE FIELD IS ONLINE'); Sound.empty(); return; }   // Mission 6: no building once the orb spawns
   if(type==='sell'){ sellNearest(ctx2, pl); return; }
   if(type==='plasma' && isCoop){ toast('PLASMA — SOLO DEFENSE ONLY'); Sound.empty(); return; }   // launcher runs on the solo-defense sim only
+  if(type==='plasma' && (ctx2.crystals||0)<1){ toast('NEED 1 BOSS CRYSTAL'); Sound.empty(); return; }
   const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
   if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
   const ang=(pl.aim!=null)?pl.aim:-Math.PI/2, dist=60;
@@ -3368,16 +3380,18 @@ function doBuild(ctx2, pl, type, isCoop){
   const blocks=isCoop?codefBlocks:defBlocks;
   const hit=(o)=>o && o.hp>0 && defRectsOverlap(x0,y0,size,size, o.x-o.w/2,o.y-o.h/2,o.w,o.h);
   if(!ctx2.spikes) ctx2.spikes=[];
+  const overlapsBuild=()=> ctx2.turrets.some(hit)||ctx2.walls.some(hit)||ctx2.spikes.some(hit)||(ctx2.plasmas&&ctx2.plasmas.some(hit));
   if(spec.kind==='spike'){
     if(cx-size/2<-DEF_HALF||cx+size/2>DEF_HALF||cy-size/2<-DEF_HALF||cy+size/2>DEF_HALF){ toast('NO ROOM'); Sound.empty(); return; }
-    if(ctx2.turrets.some(hit)||ctx2.walls.some(hit)||ctx2.spikes.some(hit)){ toast('NO ROOM'); Sound.empty(); return; }
+    if(overlapsBuild()){ toast('NO ROOM'); Sound.empty(); return; }
   } else {
     if(blocks(x0,y0,size,size)){ toast('NO ROOM'); Sound.empty(); return; }
-    if(ctx2.turrets.some(hit)||ctx2.walls.some(hit)||ctx2.spikes.some(hit)){ toast('NO ROOM'); Sound.empty(); return; }
+    if(overlapsBuild()){ toast('NO ROOM'); Sound.empty(); return; }
   }
   ctx2.cash-=spec.cost;
   if(spec.kind==='turret') ctx2.turrets.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:0,range:spec.range,fireCd:spec.fireCd,dmg:spec.dmg,tier:(type==='turret2'?2:1),aim:ang,cost:spec.cost});
-  else if(spec.kind==='plasma'){ if(!ctx2.plasmas)ctx2.plasmas=[]; ctx2.plasmas.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:1.5,range:spec.range,fireCd:spec.fireCd,aim:ang,cost:spec.cost}); }
+  else if(spec.kind==='plasma'){ if(!ctx2.plasmas)ctx2.plasmas=[]; ctx2.crystals=(ctx2.crystals||0)-1;   // consumes one boss crystal
+    ctx2.plasmas.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:1.5,range:spec.range,fireCd:spec.fireCd,aim:ang,cost:spec.cost}); }
   else if(spec.kind==='wall') ctx2.walls.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,tier:(type==='wall2'?2:1),cost:spec.cost});
   else ctx2.spikes.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cost:spec.cost});
   Sound.power(); toast(spec.kind==='spike'?'SPIKES SET':spec.kind==='plasma'?'PLASMA LAUNCHER BUILT':(spec.kind==='turret'?(type==='turret2'?'HEAVY TURRET':'TURRET'):(type==='wall2'?'STEEL WALL':'BARRICADE'))+' BUILT');
@@ -3393,7 +3407,7 @@ function buildSpotBlocked(ctx2, type, cx, cy, isCoop){
   const hit=(o)=>o && o.hp>0 && defRectsOverlap(x0,y0,size,size, o.x-o.w/2,o.y-o.h/2,o.w,o.h);
   if(spec.kind==='spike'){ if(cx-size/2<-DEF_HALF||cx+size/2>DEF_HALF||cy-size/2<-DEF_HALF||cy+size/2>DEF_HALF) return true; }
   else if((isCoop?codefBlocks:defBlocks)(x0,y0,size,size)) return true;
-  if((ctx2.turrets&&ctx2.turrets.some(hit))||(ctx2.walls&&ctx2.walls.some(hit))||(ctx2.spikes&&ctx2.spikes.some(hit))) return true;
+  if((ctx2.turrets&&ctx2.turrets.some(hit))||(ctx2.walls&&ctx2.walls.some(hit))||(ctx2.spikes&&ctx2.spikes.some(hit))||(ctx2.plasmas&&ctx2.plasmas.some(hit))) return true;
   return false;
 }
 // draw a white (or red-if-blocked) ghost of the build at the spot it would land — world space
@@ -3401,7 +3415,7 @@ function drawBuildGhost(ctx2, pl, type, isCoop){
   const spec=BUILD_SPEC[type]; if(!spec||!pl) return;
   const {cx,cy,ang}=buildGhostSpot(pl); const size=spec.size;
   const blocked = buildSpotBlocked(ctx2, type, cx, cy, isCoop) || (ctx2.cash<spec.cost)
-    || (type==='plasma' && isCoop);   // plasma isn't available in co-op
+    || (type==='plasma' && (isCoop || (ctx2.crystals||0)<1));   // plasma: not in co-op, needs a boss crystal
   ctx.save(); ctx.globalAlpha=0.5;
   ctx.fillStyle = blocked ? 'rgba(255,80,80,.28)' : 'rgba(255,255,255,.30)';
   ctx.strokeStyle = blocked ? '#ff6b6b' : '#ffffff';
@@ -3509,7 +3523,7 @@ function updateDefense(dt){
   }
   for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
     if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
-      ex.orbs.push({x:s.x, y:s.y, r:26, attract:50, life:20, t:0, owner:s.owner}); Sound.power(); shake(6,.2); } }
+      { const rx=ex.plasmaRangeX2?2:1; ex.orbs.push({x:s.x, y:s.y, r:26*rx, attract:50*rx, life:20, t:0, owner:s.owner}); } Sound.power(); shake(6,.2); } }
   ex.pshots=ex.pshots.filter(s=>!s._land);
   for(const o of ex.orbs){ o.life-=dt; o.t=(o.t||0)+dt; }
   ex.orbs=ex.orbs.filter(o=>o.life>0);
@@ -3593,6 +3607,8 @@ function updateDefense(dt){
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
         if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); } break; } } }
   bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
+  for(const bo of ex.bosses){ if(bo.dead && !bo._crystal){ bo._crystal=true; ex.crystals=(ex.crystals||0)+1;   // every boss drops a head crystal
+    spawnBlood(bo.x+bo.w/2, bo.y+bo.h/2, '#c48bff', 12, 150, 1); toast('+1 CRYSTAL'); } }
   ex.bosses=ex.bosses.filter(bo=>!bo.dead);
   // power-up pickups still work if any exist
   for(const pu of powerups){ pu.t=(pu.t||0)+dt; if(rectHit(pu,p)){ pu.dead=true; applyPower(pu.type); } }
@@ -3794,8 +3810,13 @@ function drawDefenseUI(ex){
   drawWeaponAmmoIcon(player, W-16-ctx.measureText(atxt).width-11, 61); ctx.shadowBlur=0;
   drawMagCount(player, W-14, 81);
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 66);
-  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills+((ex.mission6||ex.mission7)&&!ex.orbActive?(' / '+(ex.mission7?1000:100)):''), 14, 82); ctx.shadowBlur=0;
+  // boss crystals — a second currency, on its own line above the cash
+  { const cyc=59; ctx.fillStyle='#c48bff'; ctx.strokeStyle='#e6c2ff'; ctx.lineWidth=1.3;
+    ctx.beginPath(); ctx.moveTo(18,cyc-5); ctx.lineTo(22,cyc); ctx.lineTo(18,cyc+5); ctx.lineTo(14,cyc); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.45)'; ctx.beginPath(); ctx.moveTo(18,cyc-5); ctx.lineTo(20,cyc); ctx.lineTo(18,cyc+5); ctx.lineTo(16,cyc); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#e6c8ff'; ctx.font='bold 13px '+CF; ctx.textBaseline='middle'; ctx.fillText('x'+(ex.crystals||0), 28, cyc); ctx.textBaseline='alphabetic'; }
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 19px '+CF; ctx.fillText('$'+Math.floor(ex.cash), 14, 84);
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+ex.kills+((ex.mission6||ex.mission7)&&!ex.orbActive?(' / '+(ex.mission7?1000:100)):''), 14, 98); ctx.shadowBlur=0;
   if(ex.mission7){   // phase banner across the top
     let msg=null, col='#8fd0ff';
     if(ex.m7phase==='build') msg='BUILD THE PLASMA ORB — '+ex.kills+' / 1000 KILLS';
@@ -3823,6 +3844,21 @@ function drawDefenseUI(ex){
     ctx.fillText(eq?'EQUIPPED':own?'EQUIP':('$'+b.cost), b.x+b.w-8, b.y+b.h/2);
     ctx.textBaseline='alphabetic'; ctx.restore();
   });
+  // 2x plasma range upgrade (costs boss crystals)
+  { const b=plasmaRangeBtn, owned=ex.plasmaRangeX2, can=(ex.crystals||0)>=b.crystals;
+    ctx.save();
+    ctx.fillStyle = owned ? 'rgba(60,40,80,.94)' : (can?'rgba(44,30,64,.92)':'rgba(40,40,40,.85)');
+    roundRectPath(b.x,b.y,b.w,b.h,7); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle = owned ? '#c48bff' : (can?'#b48bff':'#666'); roundRectPath(b.x,b.y,b.w,b.h,7); ctx.stroke();
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillStyle='#efe0ff'; ctx.font='bold 11px '+CF; ctx.fillText('2X PLASMA RANGE', b.x+8, b.y+b.h/2);
+    ctx.textAlign='right'; ctx.font='bold 11px '+CF;
+    if(owned){ ctx.fillStyle='#c48bff'; ctx.fillText('OWNED', b.x+b.w-8, b.y+b.h/2); }
+    else { // crystal cost with a small diamond
+      const tx=b.x+b.w-8; ctx.fillStyle=can?'#e6c8ff':'#ff8a8a'; ctx.fillText(''+b.crystals, tx, b.y+b.h/2);
+      const dx=tx-16, dy=b.y+b.h/2; ctx.fillStyle=can?'#c48bff':'#7a5a7a'; ctx.strokeStyle='#e6c2ff'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(dx,dy-5); ctx.lineTo(dx+4,dy); ctx.lineTo(dx,dy+5); ctx.lineTo(dx-4,dy); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.textBaseline='alphabetic'; ctx.restore(); }
 }
 function drawBuildTile(bb, cash, sel){
   if(bb.type==='sell'){   // SELL tile — refunds the nearest build at full price
@@ -3836,7 +3872,8 @@ function drawBuildTile(bb, cash, sel){
     ctx.fillStyle='#c9b06a'; ctx.font='bold 8px '+CF; ctx.fillText('full refund', icx, bb.y+41);
     ctx.restore(); return;
   }
-  const afford=cash>=bb.cost, spec=BUILD_SPEC[bb.type];
+  const hasCrystal = !(bb.type==='plasma') || (explore && (explore.crystals||0)>=1);
+  const afford=(cash>=bb.cost) && hasCrystal, spec=BUILD_SPEC[bb.type];
   ctx.save();
   ctx.fillStyle=afford?'rgba(24,44,24,.94)':'rgba(38,38,38,.86)';
   roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
@@ -3865,6 +3902,11 @@ function drawBuildTile(bb, cash, sel){
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.fillStyle=afford?'#eafff0':'#999'; ctx.font='bold 9px '+CF; ctx.fillText(bb.label, icx, bb.y+31);
   ctx.fillStyle=afford?'#ffe14b':'#888'; ctx.font='bold 11px '+CF; ctx.fillText('$'+bb.cost, icx, bb.y+42);
+  if(bb.type==='plasma'){   // needs 1 boss crystal — small badge, top-right
+    const bx=bb.x+bb.w-9, by=bb.y+9, has=(explore&&(explore.crystals||0)>=1);
+    ctx.fillStyle=has?'#c48bff':'#5a4a6a'; ctx.strokeStyle=has?'#e6c2ff':'#3a2f4a'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(bx,by-5); ctx.lineTo(bx+4,by); ctx.lineTo(bx,by+5); ctx.lineTo(bx-4,by); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
   ctx.restore();
 }
 function drawExplore(){
