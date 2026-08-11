@@ -7198,12 +7198,21 @@ function setupWar8(){
     fighters, humans:fighters.filter(f=>!f.bot),
     pickups:[], obs:makeWarObs(WW,HH).concat(bld.walls), buildings:bld.buildings, vehicles:[], decals:makeWarDecals(WW,HH) };
   duel.me = fighters[0];
+  applyCampaignUpgrades(duel.me);   // your purchased upgrades (armor, trigger speed, bullet damage, ammo) carry into the lab war
   duel.squadMate = duel.fighters.find(f=>f.bot && f.team===1);
   for(const h of duel.humans) h._squad = duel.fighters.find(f=>f.bot && f.team===h.team && f!==h);
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
   toast('WAR — 100 KILLS, THEN BREACH THE LAB!');
+}
+function applyCampaignUpgrades(f){   // map the coin-bought campaign upgrades onto a war fighter
+  f.hpMax = DUEL_HP + (upg.hp||0);          // STARTING ARMOR → extra hearts
+  f.hp = f.hpMax;
+  f.magMax = DUEL_MAG + (upg.ammocap||0);   // AMMO CAPACITY → bigger magazine
+  f.mag = f.magMax;
+  f._dmg = 1 + (upg.damage||0);             // BULLET DAMAGE → more damage per shot
+  f._fireMul = 1 - Math.min(0.5, (upg.firerate||0)*0.12);   // TRIGGER SPEED → faster fire
 }
 function spawnWarZombie(x,y){
   x=clamp(x,20,(duel.W||DUEL_W)-DUEL_PS-20); y=clamp(y,20,(duel.H||DUEL_H)-DUEL_PS-20);
@@ -7227,13 +7236,13 @@ function war8Bullets(){   // team-1 fire vs zombies (always) and scientists (onc
     let hit=false;
     for(const z of duel.zombies){ if(z.dead) continue;
       if(Math.abs(b.x-(z.x+DUEL_PS/2))<24 && Math.abs(b.y-(z.y+DUEL_PS/2))<24){
-        z.hp-=(b.shell?99:1); z.flash=0.16; duelBlood(b.x,b.y, z.hp<=0?18:5);
+        z.hp-=(b.shell?99:(b.dmg||1)); z.flash=0.16; duelBlood(b.x,b.y, z.hp<=0?18:5);
         if(z.hp<=0){ z.dead=true; duelSplat(z.x+DUEL_PS/2,z.y+DUEL_PS/2); if(b.owner){ b.owner.cash=(b.owner.cash||0)+10; } }   // +$10 per zombie
         if(!b.shell){ b.dead=true; hit=true; } break; } }
     if(hit||b.dead) continue;
     if(duel.phase==='lab' && duel.labEnemyN<=0){
       for(const s of duel.scientists){ if(s.dead) continue;
-        if(Math.abs(b.x-s.x)<26 && Math.abs(b.y-s.y)<32){ s.hp-=1; s.flash=0.16; b.dead=true; duelBlood(b.x,b.y, s.hp<=0?20:6);
+        if(Math.abs(b.x-s.x)<26 && Math.abs(b.y-s.y)<32){ s.hp-=(b.dmg||1); s.flash=0.16; b.dead=true; duelBlood(b.x,b.y, s.hp<=0?20:6);
           if(s.hp<=0){ s.dead=true; duelSplat(s.x,s.y); shake(6,.25); Sound.over&&Sound.over(); } break; } }
     }
   }
@@ -7726,16 +7735,18 @@ function teamDuelActor(f, inp, dt){
   f.moving=!!(inp.mvx||inp.mvy); if(f.moving) f.walkT+=dt*11;
   if(inp.aim!=null) f.aim=inp.aim;
   if(f.cd>0)f.cd-=dt; if(f.recoil>0)f.recoil-=dt*6;
-  if(f.reloadT>0){ f.reloadT-=dt; if(f.reloadT<=0) f.mag=DUEL_MAG; }
+  if(f.reloadT>0){ f.reloadT-=dt; if(f.reloadT<=0) f.mag=(f.magMax||DUEL_MAG); }
   const wpn=f.weapon||'pistol';
-  const cd=wpn==='shotgun'?0.5:wpn==='rifle'?0.09:DUEL_FIRE_CD;
+  let cd=wpn==='shotgun'?0.5:wpn==='rifle'?0.09:DUEL_FIRE_CD;
+  if(f._fireMul) cd*=f._fireMul;   // TRIGGER SPEED upgrade (campaign lab war)
+  const dmg=f._dmg||1;             // BULLET DAMAGE upgrade
   const hasAmmo=(wpn==='pistol')?(f.mag>0&&f.reloadT<=0):(f.wammo>0);
   if(inp.fire && f.cd<=0 && hasAmmo){
     f.cd=cd; f.recoil=1; f.spawnProtT=0;   // firing drops your spawn protection
     if(wpn==='shotgun')Sound.spread(); else if(wpn==='rifle')Sound.rifle(); else Sound.shoot();
     const m=duelMuzzle(f), cx=m.x, cy=m.y;
-    if(wpn==='shotgun'){ for(const a of[-0.17,0,0.17]){ const ang=f.aim+a; duel.bullets.push({x:cx,y:cy,vx:Math.cos(ang)*DUEL_BSPD,vy:Math.sin(ang)*DUEL_BSPD,team:f.team,t:0,owner:f}); } }
-    else { const sp=(wpn==='rifle')?DUEL_BSPD*1.15:DUEL_BSPD; duel.bullets.push({x:cx,y:cy,vx:Math.cos(f.aim)*sp,vy:Math.sin(f.aim)*sp,team:f.team,t:0,owner:f}); }
+    if(wpn==='shotgun'){ for(const a of[-0.17,0,0.17]){ const ang=f.aim+a; duel.bullets.push({x:cx,y:cy,vx:Math.cos(ang)*DUEL_BSPD,vy:Math.sin(ang)*DUEL_BSPD,team:f.team,t:0,owner:f,dmg}); } }
+    else { const sp=(wpn==='rifle')?DUEL_BSPD*1.15:DUEL_BSPD; duel.bullets.push({x:cx,y:cy,vx:Math.cos(f.aim)*sp,vy:Math.sin(f.aim)*sp,team:f.team,t:0,owner:f,dmg}); }
     if(wpn==='pistol'){ f.mag--; if(f.mag<=0){ f.reloadT=DUEL_RELOAD; Sound.reload(); } } else { f.wammo--; if(f.wammo<=0){ f.weapon='pistol'; f.reloadT=0; } }
   }
 }
@@ -7775,8 +7786,8 @@ function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST sp
   if(f.noResp){ f.dead=true; f.respawnT=null; return; }   // Mission 8 lab enemies stay down for good
   if(duel.campaign8 && duel.phase==='lab' && f.team===1 && f._labDoor){   // your squad respawns right at the lab door
     f.x=f._labDoor.x-DUEL_PS/2+rand(-40,40); f.y=f._labDoor.y-DUEL_PS/2+rand(-10,20);
-    f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
-    f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
+    f.hp=(f.hpMax||DUEL_HP); f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
+    f.weapon='pistol'; f.mag=(f.magMax||DUEL_MAG); f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
     f.aim=-Math.PI/2; f._age=0; f.spawnProtT=3; return;
   }
   const band = f.team===1 ? (duel.H-240) : 200;
@@ -7788,8 +7799,8 @@ function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST sp
     if(nd>bestD){ bestD=nd; best={x,y}; }
   }
   if(!best){ best={x:rand(200,duel.W-200-DUEL_PS), y:band}; }
-  f.x=best.x; f.y=best.y; f.hp=DUEL_HP; f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
-  f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
+  f.x=best.x; f.y=best.y; f.hp=(f.hpMax||DUEL_HP); f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
+  f.weapon='pistol'; f.mag=(f.magMax||DUEL_MAG); f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
   f.aim = f.team===1 ? -Math.PI/2 : Math.PI/2;
   f._age = 0;   // fresh spawn: start fanned out, cohesion ramps in over the next few seconds
   f.spawnProtT = 3;   // invulnerable for ~3s after respawn (ends early if you shoot) — no spawn camping
@@ -7983,7 +7994,7 @@ function updateTeamDuel(dt){
       if(Math.abs(b.x-hx)<HR && Math.abs(b.y-hy)<HR){
         if(b.shell){ b.dead=true; shellExplode(b); break; }   // tank shell → explode on contact
         if(f._behind && bulletShielded(f,b)){ b.dead=true; break; }   // STAY BEHIND ME: a teammate's body soaks the shot
-        f.hp-=1; f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
+        f.hp-=(b.dmg||1); f.flash=0.16; b.dead=true; Sound.zHit(); duelBlood(b.x,b.y, f.hp<=0?26:7); if(f.hp<=0) duelSplat(hx,hy);
         if(f.bot && b.owner && !b.owner.dead){ f._threat=b.owner; f._threatT=2.6; }   // react to whoever's shooting you
         if(duel.war && f.hp>0 && b.owner){ f._assistBy=b.owner; f._assistT=4; }   // remember who hurt them → assist window if a teammate finishes
         if(f.hp<=0){ f.dead=true;
