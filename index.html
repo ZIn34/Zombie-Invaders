@@ -1038,6 +1038,7 @@ function acctApplySave(s){   // merge cloud save with local, keeping the best of
     if(s.equippedZombieSkin && ownedZombieSkins.indexOf(s.equippedZombieSkin)>=0) equippedZombieSkin=s.equippedZombieSkin;
     if(s.equippedBossSkin && ownedBossSkins.indexOf(s.equippedBossSkin)>=0) equippedBossSkin=s.equippedBossSkin;
     if(s.pname){ try{ localStorage.setItem('zi_pname', s.pname); }catch(e){} }
+    migrateCampaign();
     saveProgress();
   }catch(e){}
 }
@@ -1303,7 +1304,11 @@ function loadProgress(){
       if(ownedBossSkins.indexOf('classic')<0) ownedBossSkins.push('classic');
       if(s.equippedBossSkin && ownedBossSkins.indexOf(s.equippedBossSkin)>=0) equippedBossSkin=s.equippedBossSkin; }
   }catch(e){}
+  migrateCampaign();
 }
+// If a save "won" the campaign when it was shorter (older builds didn't advance the counter past the final mission),
+// unlock everything up to the newly-added missions and reopen the finale.
+function migrateCampaign(){ if(campaignWon && campaignUnlocked < MISSIONS.length){ campaignUnlocked = MISSIONS.length; campaignWon = false; } }
 loadProgress();
 acctRestore();   // silently sign back in if this device has a saved session
 
@@ -5517,7 +5522,7 @@ function drawCampaign(){
   for(let i=0;i<MISSIONS.length;i++){
     const r=missionRowRect(i), m=MISSIONS[i];
     const locked = i>=campaignUnlocked;
-    const done   = (i < campaignUnlocked-1) || (campaignWon && i===MISSIONS.length-1 && i<campaignUnlocked);   // cleared if progress passed it, or it's the (unlocked) final mission of a won campaign — but never pre-mark a newly-added locked mission
+    const done   = i < campaignUnlocked-1;   // cleared once progress has moved past it (migrateCampaign keeps this correct across added missions)
     const current= !locked && !done;
     let c1,c2,edge;
     if(locked){ c1='rgba(40,44,40,.85)'; c2='rgba(26,28,26,.85)'; edge='rgba(120,130,120,.4)'; }
@@ -8086,7 +8091,7 @@ function botDrive(f, dt){
 }
 function tankFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2+18), my=v.y+Math.sin(a)*(v.w/2+18);
   duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*920,vy:Math.sin(a)*920,team,t:0,shell:true,owner:v.driver}); v.flash=1; Sound.tank(); shake(7,.28); }
-function jeepFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2+12), my=v.y+Math.sin(a)*(v.w/2+12);
+function jeepFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2-8), my=v.y+Math.sin(a)*(v.w/2-8);   // barrel tip pulled back 20px onto the mounted gun
   duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*DUEL_BSPD,vy:Math.sin(a)*DUEL_BSPD,team,t:0,owner:v.driver}); v.flash=1; Sound.rifle(); }
 function shellExplode(b){
   if(duel.blasts) duel.blasts.push({x:b.x,y:b.y,t:0}); duelBlood(b.x,b.y,16); shake(9,.32);
@@ -8349,7 +8354,7 @@ function drawVehicle(v){
   if(v.wreck){ ctx.fillStyle='rgba(8,6,4,.6)'; ctx.beginPath(); ctx.ellipse(0,0,v.w*0.56,v.h*0.56,0,0,6.28); ctx.fill(); }
   ctx.restore();
   if(!v.wreck && v.flash>0){   // muzzle flash at the barrel tip when firing
-    const a=v.angle, off=(v.kind==='tank'? v.w/2+18 : v.w/2+12);
+    const a=v.angle, off=(v.kind==='tank'? v.w/2+18 : v.w/2-8);   // jeep flash pulled back 20px onto the mounted gun
     drawFlashAt(v.x+Math.cos(a)*off, v.y+Math.sin(a)*off, a, v.flash, v.kind==='tank'?38:24);
   }
   if(v.wreck){ const t=performance.now()/300;   // burning wreck → smoke
