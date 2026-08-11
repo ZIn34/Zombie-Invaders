@@ -3317,7 +3317,7 @@ function setupDefense9(){   // Mission 9 (finale): mega plasma orb — 3000 kill
   preMissionDiff=difficulty; difficulty=0;   // forced EASY so the huge kill counts are feasible; all upgrades still apply
   const fh=Math.round(600*DIFF[0].flagHp);
   explore={ defense:true, mission7:true, orbActive:false, m7phase:'build', crystalsPlanted:false, surviveToSpawn:0, surviveSpawnT:0,
-    killGoal:3000, crystalCount:50, swarmCount:10000, swarmCap:95, swarmBatch:34, swarmInt:0.18, swarmNear:true, megaOrb:true,
+    killGoal:3000, crystalCount:50, swarmCount:10000, swarmCap:95, swarmBatch:34, swarmInt:0.18, swarmNear:false, swarmSpeed:2.4, megaOrb:true,
     camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0, killLimit:0,
     cash:DEF_START_CASH+120, flag:{x:0, y:0, r:46, hp:fh, hpMax:fh},   // stays a normal flag while building; becomes a huge orb once online
     turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
@@ -3525,7 +3525,7 @@ function updateDefense(dt){
     ex.spawnT-=dt;
     if(ex.spawnT<=0){ defSpawn(Math.min(6, Math.round((1+Math.floor(ex.elapsed/24))*DIFF[difficulty].spawn))); ex.spawnT=Math.max(0.6, 1.7-ex.elapsed*0.02)/DIFF[difficulty].spawn; }
     // a boss marches in every 20 kills — up to 3 at once past 1000 kills
-    const maxBosses = ex.kills>=1000 ? 3 : 1;
+    const maxBosses = ex.kills>=2000 ? 5 : ex.kills>=1000 ? 3 : 1;
     if(ex.bosses.length<maxBosses && ex.kills>=ex.bossMark){ defSpawnBoss(); ex.bossMark+=20; }
   }
   // turrets auto-fire at nearest zombie (or a boss) in range
@@ -3585,7 +3585,7 @@ function updateDefense(dt){
       if(ex.orbActive){ spawnBlood(z.x+z.w/2, z.y+z.h/2, '#8fe4ff', 10, 200, 1); killZombie(z); score+=10; ex.kills++; Sound.zHit(); continue; }   // zapped by the field
       f.hp-=dt*10; attacked=true;
     }
-    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*(ex.orbActive?1.6:1)*DIFF[difficulty].zSpd, true);
+    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*(ex.orbActive?(1.6*(ex.swarmSpeed||1)):1)*DIFF[difficulty].zSpd, true);   // mega swarm rushes the orb faster
     for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     if(ex.plasmas) for(const s of ex.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
@@ -3601,13 +3601,18 @@ function updateDefense(dt){
       if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
   // BOSSES: slow, tanky, march on the flag and smash anything in the way
+  const bossSmashOrbs = ex.kills>=3000;   // past 3000 kills bosses shrug off plasma orbs and smash them on contact
   for(const bo of ex.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
-    // plasma orb also lures & zaps bosses within 200px
-    { let orb=null,obd=1e9; if(ex.orbs) for(const o of ex.orbs){ const od=Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
+    if(bossSmashOrbs){
+      if(ex.orbs) for(const o of ex.orbs){ if(o.life>0 && Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y) < o.r + bo.w*0.45){ o.life=0; spawnBlood(o.x,o.y,'#c48bff',14,200,1); shake(6,.22); } }   // boss destroys the orb, takes no damage
+    } else {
+      // plasma orb lures & zaps bosses within its attract radius
+      let orb=null,obd=1e9; if(ex.orbs) for(const o of ex.orbs){ const od=Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
       if(orb){ const odx=orb.x-(bo.x+bo.w/2), ody=orb.y-(bo.y+bo.h/2), od=Math.hypot(odx,ody)||1; bo.face=Math.atan2(ody,odx);
         if(od < orb.r + bo.w*0.45){ bo.dead=true; spawnBlood(bo.x+bo.w/2,bo.y+bo.h/2,'#c48bff',18,240,1); spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); score+=100; ex.kills++; Sound.kill(); shake(10,.3); continue; }
         defMove(bo, odx/od, ody/od, dt, 44*DIFF[difficulty].zSpd, true); continue;
-      } }
+      }
+    }
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face = Math.atan2(bdy,bdx);   // angle toward the flag (sprite head points that way)
     const bzapR = (ex.orbActive && ex.megaOrb) ? 260 : f.r;
