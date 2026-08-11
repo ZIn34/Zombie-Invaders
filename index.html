@@ -1191,7 +1191,7 @@ const CAMPAIGN_UPGRADES=[
   {key:'firerate', name:'TRIGGER SPEED',    desc:'shoot noticeably faster',      max:4, costs:[40,75,110,145]},
   {key:'rarity',   name:'POWER-UP QUALITY', desc:'better power-ups (+10% each)',  max:4, costs:[40,50,60,70]},
   {key:'amount',   name:'POWER-UP SUPPLY',  desc:'more power-ups (+10% each)',    max:5, costs:[50,70,90,110,150]},
-  {key:'ammocap',  name:'AMMO CAPACITY',    desc:'+1 starting magazine each',    max:4, costs:[35,55,80,110]},
+  {key:'ammocap',  name:'AMMO CAPACITY',    desc:'+3 rounds per clip each',      max:4, costs:[35,55,80,110]},
   {key:'damage',   name:'BULLET DAMAGE',    desc:'+1 damage per shot each',      max:3, costs:[50,90,140]},
 ];
 function upgCost(u){ const lvl=upg[u.key]||0; return lvl>=u.max ? null : u.costs[lvl]; }
@@ -1677,15 +1677,15 @@ function makePlayer(){
   if(mode==='campaign'){ p.fireCut=(upg.firerate||0)*0.035;  // TRIGGER SPEED upgrade
     if(campaignMission>=3) p.permRapid=true;                 // Mission 4 onward: keep the RIFLE power-up
   }
-  if(mode==='campaign') p.mags = Math.min(MAG_MAX, p.mags + (upg.ammocap||0));   // AMMO CAPACITY upgrade → campaign only
-  p.ammo=magSizeFor(p);   // start with a full magazine for the current weapon
+  p.ammo=magSizeFor(p);   // start with a full magazine (AMMO CAPACITY upgrade grows the pistol clip via magSizeFor)
   return p;
 }
 // ---- universal 7-round MAGAZINE with a STACKED RESERVE (all modes except shootout, which has its own) ----
 // p.ammo = rounds in the current magazine; p.mags = spare magazines in reserve.
 // Empty the current mag fully, then a reload (shootout speed) consumes one reserve mag. Every 2 kills earns +1 reserve mag.
-const MAG_SIZE=12, MAG_RELOAD=1.6, MAG_MAX=20;
-function magSizeFor(p){ if(p && (p.rapidT>0||p.permRapid)) return 30; if(p && p.weapon==='spread') return 5; return MAG_SIZE; }   // rifle 30, shotgun 5, pistol 12
+const MAG_SIZE=12, MAG_RELOAD=1.6, MAG_MAX=20, AMMOCAP_PER=3;   // AMMO CAPACITY upgrade adds this many rounds to the pistol clip per level
+function pistolMag(){ return MAG_SIZE + ((mode==='campaign') ? (upg.ammocap||0)*AMMOCAP_PER : 0); }   // bigger pistol clip in campaign
+function magSizeFor(p){ if(p && (p.rapidT>0||p.permRapid)) return 30; if(p && p.weapon==='spread') return 5; return pistolMag(); }   // rifle 30, shotgun 5, pistol 12(+upgrade)
 function magReload(p, dt){
   if(!p) return;
   if(p.mags==null) p.mags=0;
@@ -7427,7 +7427,7 @@ function setupWar8(){
 function applyCampaignUpgrades(f){   // map the coin-bought campaign upgrades onto a war fighter
   f.hpMax = DUEL_HP + (upg.hp||0);          // STARTING ARMOR → extra hearts
   f.hp = f.hpMax;
-  f.magMax = DUEL_MAG + (upg.ammocap||0);   // AMMO CAPACITY → bigger magazine
+  f.magMax = DUEL_MAG + (upg.ammocap||0)*AMMOCAP_PER;   // AMMO CAPACITY → bigger magazine
   f.mag = f.magMax;
   f._dmg = 1 + (upg.damage||0);             // BULLET DAMAGE → more damage per shot
   f._fireMul = 1 - Math.min(0.5, (upg.firerate||0)*0.12);   // TRIGGER SPEED → faster fire
