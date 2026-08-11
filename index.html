@@ -194,10 +194,32 @@ function applyViewport(){
   document.body.classList.toggle('landscape', _landActive);
   fit();
 }
-function landscapeUI(){ return state===STATE.MENU; }   // screens allowed to use the wide landscape canvas (besides gameplay)
+function fullLandState(){ return state===STATE.MENU || isAimState(); }   // screens that fill the wide canvas natively
+function portraitOnlyState(){   // portrait-designed gameplay that must keep the tall canvas
+  return (state===STATE.PLAY && !explore) || state===STATE.CHASE || state===STATE.WAVE ||
+         state===STATE.PAUSE || state===STATE.DEATH || state===STATE.DEPLOY || state===STATE.HANDOFF ||
+         state===STATE.PLACEFIRE || state===STATE.NETATTACK;
+}
+function uiCard(){ return _landActive && !fullLandState(); }   // a portrait UI screen shown as a centered card in landscape
 function syncViewport(){
-  const want = (isAimState() || landscapeUI()) && (window.innerWidth > window.innerHeight);
+  const wide = window.innerWidth > window.innerHeight;
+  const want = wide && !portraitOnlyState();   // full-land gameplay/menu AND card screens all use the wide canvas
   if(want!==_landActive){ _landActive=want; applyViewport(); }
+}
+// draw a portrait screen (430×560 layout) as a centred card on the wide landscape canvas
+function renderFrame(){
+  if(uiCard()){
+    const SW=PORT_DIMS.w, SH=PORT_DIMS.h, sc=H/SH, cardW=SW*sc, offX=Math.round((W-cardW)/2);
+    drawBackground();                                                    // grass fills the whole wide canvas as a backdrop
+    ctx.save(); ctx.fillStyle='rgba(4,8,4,0.5)'; ctx.fillRect(0,0,W,H); ctx.restore();
+    ctx.save(); ctx.translate(offX,0); ctx.scale(sc,sc);
+    const _W=W,_H=H; W=SW; H=SH;                                          // portrait stage dims for the screen's own layout
+    try{ render(); } finally { W=_W; H=_H; }
+    ctx.restore();
+    ctx.save(); ctx.strokeStyle='rgba(120,150,120,.35)'; ctx.lineWidth=2; ctx.strokeRect(offX+1, 1, cardW-2, H-2); ctx.restore();
+    return;
+  }
+  render();
 }
 window.addEventListener('resize', ()=>{ syncViewport(); fit(); }); fit();
 
@@ -457,7 +479,10 @@ function togglePause(){
 // tap canvas to start / restart / open tutorial
 function canvasPoint(e){
   const r=canvas.getBoundingClientRect();
-  return { x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height) };
+  const cx=(e.clientX-r.left)*(canvas.width/r.width), cy=(e.clientY-r.top)*(canvas.height/r.height);   // physical canvas coords
+  if(uiCard()){ const SH=PORT_DIMS.h, sc=canvas.height/SH, offX=(canvas.width-PORT_DIMS.w*sc)/2;
+    return { x:(cx-offX)/sc, y:cy/sc }; }   // map into the portrait card's 430×560 space
+  return { x:cx, y:cy };
 }
 function inRect(p,b){ return p.x>=b.x && p.x<=b.x+b.w && p.y>=b.y && p.y<=b.y+b.h; }
 canvas.addEventListener('pointerdown', (e)=>{ Sound.resume(); Music.start();
@@ -2016,7 +2041,7 @@ function loop(now){
   padPoll();
   update(dt);
   syncViewport();
-  render();
+  renderFrame();
   syncControls();
   requestAnimationFrame(loop);
 }
@@ -8166,7 +8191,11 @@ function drawTeamView(v){
   drawDuelSceneWorld(camX,camY,VW,VH,me);
   ctx.restore();
   localGloom(v.rx,v.ry,v.rw,v.rh,0.4);
-  { const mate=(me._squad && !me._squad.dead && me._squad.team===me.team) ? me._squad : duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // YOUR own-team squadmate
+  if(duel.war){   // war: mark EVERY living teammate as a squadmate
+    for(const mate of duel.fighters){ if(mate===me || mate.dead || mate.team!==me.team) continue;
+      const md=Math.hypot(mate.x-me.x, mate.y-me.y), msc=1 - Math.min(0.65, md/2600*0.65);
+      drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE', msc); }
+  } else { const mate=(me._squad && !me._squad.dead && me._squad.team===me.team) ? me._squad : duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // shootout: your single squadmate
     if(mate){ const md=Math.hypot(mate.x-me.x, mate.y-me.y); const msc=1 - Math.min(0.65, md/2600*0.65);   // marker shrinks the farther the squadmate is
       drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE', msc); } }
   if(duel.war && !me._inVehicle && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
