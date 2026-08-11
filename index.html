@@ -3243,11 +3243,11 @@ const defWeaponBtns=[
 ];
 const plasmaRangeBtn={x:8, y:168, w:158, h:30, crystals:5};   // spend 5 boss crystals → double the range of every plasma ball
 function buyPlasmaRange(){ const ex=explore; if(!ex||!ex.defense) return;
-  if(ex.plasmaRangeX2){ toast('ALREADY MAXED'); Sound.empty(); return; }
+  if((ex.plasmaRange||0)>=2){ toast('PLASMA RANGE MAXED'); Sound.empty(); return; }   // stacks up to 2 times (4x)
   if((ex.crystals||0)<plasmaRangeBtn.crystals){ toast('NEED 5 CRYSTALS'); Sound.empty(); return; }
-  ex.crystals-=plasmaRangeBtn.crystals; ex.plasmaRangeX2=true;
-  if(ex.orbs) for(const o of ex.orbs){ o.r*=2; o.attract*=2; }   // upgrade any orbs already out
-  Sound.power(); toast('PLASMA RANGE DOUBLED!');
+  ex.crystals-=plasmaRangeBtn.crystals; ex.plasmaRange=(ex.plasmaRange||0)+1;
+  if(ex.orbs) for(const o of ex.orbs){ o.r*=2; o.attract*=2; }   // upgrade any orbs already out (each level doubles)
+  Sound.power(); toast('PLASMA RANGE x'+Math.pow(2,ex.plasmaRange)+'!');
 }
 function defWeaponEquipped(pl, wp){ return wp==='rifle' ? (!!pl.permRapid && !pl.permSpread) : !!pl.permSpread; }
 function defEquipWeapon(pl, wp){
@@ -3275,7 +3275,7 @@ function setupDefense(){
   explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:defKillLimit,
     cash:DEF_START_CASH,
     flag:(function(){ const fh=Math.round(600*DIFF[difficulty].flagHp); return {x:0, y:0, r:46, hp:fh, hpMax:fh}; })(),
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRangeX2:false, bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=12;
   lives=3; score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
@@ -3305,7 +3305,7 @@ function setupDefense7(){   // Mission 7: plasma-orb defense — survive to 1000
     killGoal:1000, crystalCount:20, swarmCount:200, swarmCap:62, swarmBatch:12, swarmInt:0.35,
     camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:0,
     cash:DEF_START_CASH, flag:{x:0, y:0, r:46, hp:fh, hpMax:fh},
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRangeX2:false, bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=7;
   lives=clamp(3+(upg.hp||0),1,7); score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null; zombies=[];
@@ -3320,7 +3320,7 @@ function setupDefense9(){   // Mission 9 (finale): mega plasma orb — 3000 kill
     killGoal:3000, crystalCount:50, swarmCount:10000, swarmCap:95, swarmBatch:34, swarmInt:0.18, swarmNear:true, megaOrb:true,
     camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0, killLimit:0,
     cash:DEF_START_CASH+120, flag:{x:0, y:0, r:46, hp:fh, hpMax:fh},   // stays a normal flag while building; becomes a huge orb once online
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRangeX2:false, bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=magSizeFor(player);
   lives=clamp(3+(upg.hp||0),1,7); score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null; zombies=[];
@@ -3557,7 +3557,7 @@ function updateDefense(dt){
   }
   for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
     if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
-      { const rx=ex.plasmaRangeX2?2:1; ex.orbs.push({x:s.x, y:s.y, r:26*rx, attract:50*rx, life:20, t:0, owner:s.owner}); } Sound.power(); shake(6,.2); } }
+      { const rx=Math.pow(2, ex.plasmaRange||0); ex.orbs.push({x:s.x, y:s.y, r:26*rx, attract:50*rx, life:20, t:0, owner:s.owner}); } Sound.power(); shake(6,.2); } }
   ex.pshots=ex.pshots.filter(s=>!s._land);
   for(const o of ex.orbs){ o.life-=dt; o.t=(o.t||0)+dt; }
   ex.orbs=ex.orbs.filter(o=>o.life>0);
@@ -3888,19 +3888,20 @@ function drawDefenseUI(ex){
     ctx.textBaseline='alphabetic'; ctx.restore();
   });
   // 2x plasma range upgrade (costs boss crystals)
-  { const b=plasmaRangeBtn, owned=ex.plasmaRangeX2, can=(ex.crystals||0)>=b.crystals;
+  { const b=plasmaRangeBtn, lvl=ex.plasmaRange||0, maxed=lvl>=2, can=!maxed && (ex.crystals||0)>=b.crystals;
     ctx.save();
-    ctx.fillStyle = owned ? 'rgba(60,40,80,.94)' : (can?'rgba(44,30,64,.92)':'rgba(40,40,40,.85)');
+    ctx.fillStyle = maxed ? 'rgba(60,40,80,.94)' : (can?'rgba(44,30,64,.92)':'rgba(40,40,40,.85)');
     roundRectPath(b.x,b.y,b.w,b.h,7); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle = owned ? '#c48bff' : (can?'#b48bff':'#666'); roundRectPath(b.x,b.y,b.w,b.h,7); ctx.stroke();
+    ctx.lineWidth=2; ctx.strokeStyle = maxed ? '#c48bff' : (can?'#b48bff':'#666'); roundRectPath(b.x,b.y,b.w,b.h,7); ctx.stroke();
     ctx.textAlign='left'; ctx.textBaseline='middle';
     ctx.fillStyle='#efe0ff'; ctx.font='bold 11px '+CF; ctx.fillText('2X PLASMA RANGE', b.x+8, b.y+b.h/2);
     ctx.textAlign='right'; ctx.font='bold 11px '+CF;
-    if(owned){ ctx.fillStyle='#c48bff'; ctx.fillText('OWNED', b.x+b.w-8, b.y+b.h/2); }
-    else { // crystal cost with a small diamond
+    if(maxed){ ctx.fillStyle='#c48bff'; ctx.fillText('MAX ×4', b.x+b.w-8, b.y+b.h/2); }
+    else { // level pips + crystal cost with a small diamond
       const tx=b.x+b.w-8; ctx.fillStyle=can?'#e6c8ff':'#ff8a8a'; ctx.fillText(''+b.crystals, tx, b.y+b.h/2);
       const dx=tx-16, dy=b.y+b.h/2; ctx.fillStyle=can?'#c48bff':'#7a5a7a'; ctx.strokeStyle='#e6c2ff'; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(dx,dy-5); ctx.lineTo(dx+4,dy); ctx.lineTo(dx,dy+5); ctx.lineTo(dx-4,dy); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(dx,dy-5); ctx.lineTo(dx+4,dy); ctx.lineTo(dx,dy+5); ctx.lineTo(dx-4,dy); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#b48bff'; ctx.textAlign='center'; ctx.font='bold 9px '+CF; ctx.fillText('Lv '+lvl+'/2', dx-26, dy); }
     ctx.textBaseline='alphabetic'; ctx.restore(); }
 }
 function drawBuildTile(bb, cash, sel){
@@ -4879,7 +4880,7 @@ const dBossBtn ={x:12,    y:H-112, w:128, h:44};
 const dClearBtn={x:150,   y:H-112, w:96,  h:44};
 const dDoneBtn ={x:W-128, y:H-114, w:116, h:48};
 const shopContinueBtn={x:W/2-115, y:H-62, w:230, h:50};
-function missionRowRect(i){ return {x:22, y:92+i*48, w:W-44, h:42}; }
+function missionRowRect(i){ return {x:22, y:64+i*46, w:W-44, h:40}; }   // 9 rows fit above the ARMORY button
 function missionAt(pt){ for(let i=0;i<MISSIONS.length;i++){ if(inRect(pt, missionRowRect(i))) return i; } return -1; }
 const campShopBtn={x:W/2-115, y:H-64, w:230, h:50};
 function shopRowRect(i){ return {x:16, y:84+i*68, w:W-32, h:64}; }
