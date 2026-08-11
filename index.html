@@ -3506,6 +3506,7 @@ function updateDefense(dt){
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim), vy=Math.sin(t.aim), sp=760;
         bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:t.hyper?6:7,h:t.hyper?6:7, vx:vx*sp, vy:vy*sp, col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:t.dmg||1, t:0, turret:true});
+        if(t.hyper) Sound.rifle(); else Sound.shoot();   // hyper = rifle sound; turret & heavy = pistol
         t.cd=t.fireCd||0.5; } }
   }
   // PLASMA LAUNCHERS: lob a plasma orb at a zombie cluster; where it lands it becomes a small
@@ -3521,7 +3522,7 @@ function updateDefense(dt){
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const a=t.aim, sp=440;
         ex.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0, owner:t});
-        if(Sound.laser)Sound.laser(); t.cd=t.fireCd||6; } }
+        Sound.tank(); t.cd=t.fireCd||6; } }   // plasma launcher = tank cannon sound
   }
   for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
     if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
@@ -6597,7 +6598,8 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     for(const bo of cd.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim),vy=Math.sin(t.aim),sp=760;
-        bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:7,h:7,vx:vx*sp,vy:vy*sp,col:(t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true}); t.cd=t.fireCd||0.5; } }
+        bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:t.hyper?6:7,h:t.hyper?6:7,vx:vx*sp,vy:vy*sp,col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true});
+        if(t.hyper) Sound.rifle(); else Sound.shoot(); t.cd=t.fireCd||0.5; } }
   }
   const players=cd.players||[cd.p1,cd.p2];   // online uses a players[] array; local split-screen uses p1/p2
   for(const z of zombies){
