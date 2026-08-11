@@ -3206,10 +3206,12 @@ const BUILD_SPEC={
   wall:   {cost:25,  size:48, hp:140, kind:'wall'},
   wall2:  {cost:60,  size:48, hp:380, kind:'wall'},
   spike:  {cost:35,  size:48, hp:240, kind:'spike'},
+  plasma: {cost:150, size:44, hp:80, range:420, fireCd:3, kind:'plasma'},   // lobs a plasma orb — fires slowly, ~one shot every 3s
 };
 const BUILD_BAR=[
   {type:'turret',  label:'TURRET'},
   {type:'turret2', label:'HEAVY'},
+  {type:'plasma',  label:'PLASMA'},
   {type:'wall',    label:'WALL'},
   {type:'wall2',   label:'STEEL'},
   {type:'spike',   label:'SPIKES'},
@@ -3247,7 +3249,7 @@ function setupDefense(){
   explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:defKillLimit,
     cash:DEF_START_CASH,
     flag:(function(){ const fh=Math.round(600*DIFF[difficulty].flagHp); return {x:0, y:0, r:46, hp:fh, hpMax:fh}; })(),
-    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=12;
   lives=3; score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
@@ -3290,6 +3292,7 @@ function defBlocks(x,y,w,h, forZombie){   // arena bounds block everyone; barric
   if(forZombie){
     for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(x,y,w,h, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) return true; }
     for(const t of ex.turrets){ if(t.hp>0 && defRectsOverlap(x,y,w,h, t.x-t.w/2,t.y-t.h/2,t.w,t.h)) return true; }
+    if(ex.plasmas) for(const t of ex.plasmas){ if(t.hp>0 && defRectsOverlap(x,y,w,h, t.x-t.w/2,t.y-t.h/2,t.w,t.h)) return true; }
   }
   return false;
 }
@@ -3348,7 +3351,7 @@ function sellNearest(ctx2, pl){
   const cx=pl.x+pl.w/2, cy=pl.y+pl.h/2, R=120;
   let best=null, bd=R, arr=null;
   const scan=(list)=>{ if(!list) return; for(const o of list){ if(o.hp<=0) continue; const d=Math.hypot(o.x-cx,o.y-cy); if(d<bd){ bd=d; best=o; arr=list; } } };
-  scan(ctx2.turrets); scan(ctx2.walls); scan(ctx2.spikes);
+  scan(ctx2.turrets); scan(ctx2.walls); scan(ctx2.spikes); scan(ctx2.plasmas);
   if(best && arr){ const refund=best.cost||0; ctx2.cash+=refund; const i=arr.indexOf(best); if(i>=0) arr.splice(i,1); Sound.power(); toast('SOLD — refunded $'+refund); }
   else { toast('stand next to a build to sell'); Sound.empty(); }
 }
@@ -3356,6 +3359,7 @@ function sellNearest(ctx2, pl){
 function doBuild(ctx2, pl, type, isCoop){
   if(ctx2 && ctx2.orbActive){ toast('THE FIELD IS ONLINE'); Sound.empty(); return; }   // Mission 6: no building once the orb spawns
   if(type==='sell'){ sellNearest(ctx2, pl); return; }
+  if(type==='plasma' && isCoop){ toast('PLASMA — SOLO DEFENSE ONLY'); Sound.empty(); return; }   // launcher runs on the solo-defense sim only
   const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
   if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
   const ang=(pl.aim!=null)?pl.aim:-Math.PI/2, dist=60;
@@ -3373,9 +3377,10 @@ function doBuild(ctx2, pl, type, isCoop){
   }
   ctx2.cash-=spec.cost;
   if(spec.kind==='turret') ctx2.turrets.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:0,range:spec.range,fireCd:spec.fireCd,dmg:spec.dmg,tier:(type==='turret2'?2:1),aim:ang,cost:spec.cost});
+  else if(spec.kind==='plasma'){ if(!ctx2.plasmas)ctx2.plasmas=[]; ctx2.plasmas.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cd:1.5,range:spec.range,fireCd:spec.fireCd,aim:ang,cost:spec.cost}); }
   else if(spec.kind==='wall') ctx2.walls.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,tier:(type==='wall2'?2:1),cost:spec.cost});
   else ctx2.spikes.push({x:cx,y:cy,w:size,h:size,hp:spec.hp,hpMax:spec.hp,cost:spec.cost});
-  Sound.power(); toast(spec.kind==='spike'?'SPIKES SET':(spec.kind==='turret'?(type==='turret2'?'HEAVY TURRET':'TURRET'):(type==='wall2'?'STEEL WALL':'BARRICADE'))+' BUILT');
+  Sound.power(); toast(spec.kind==='spike'?'SPIKES SET':spec.kind==='plasma'?'PLASMA LAUNCHER BUILT':(spec.kind==='turret'?(type==='turret2'?'HEAVY TURRET':'TURRET'):(type==='wall2'?'STEEL WALL':'BARRICADE'))+' BUILT');
 }
 // where a build would land for this player (mirrors doBuild)
 function buildGhostSpot(pl){
@@ -3486,6 +3491,25 @@ function updateDefense(dt){
         bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:7,h:7, vx:vx*sp, vy:vy*sp, col:(t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:t.dmg||1, t:0, turret:true});
         t.cd=t.fireCd||0.5; } }
   }
+  // PLASMA LAUNCHERS: lob a plasma orb at a zombie cluster; where it lands it becomes a small
+  // attract-and-zap field (like the campaign electric field, but smaller) for 20 seconds
+  if(!ex.plasmas)ex.plasmas=[]; if(!ex.orbs)ex.orbs=[]; if(!ex.pshots)ex.pshots=[];
+  for(const t of ex.plasmas){ if(t.hp<=0) continue;
+    if(t.cd>0)t.cd-=dt;
+    let best=null,bd=t.range;
+    for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
+    for(const bo of ex.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
+    if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
+      if(t.cd<=0){ const a=t.aim, sp=440;
+        ex.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0});
+        if(Sound.laser)Sound.laser(); t.cd=t.fireCd||6; } }
+  }
+  for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
+    if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
+      ex.orbs.push({x:s.x, y:s.y, r:52, attract:200, life:20, t:0}); Sound.power(); shake(6,.2); } }
+  ex.pshots=ex.pshots.filter(s=>!s._land);
+  for(const o of ex.orbs){ o.life-=dt; o.t=(o.t||0)+dt; }
+  ex.orbs=ex.orbs.filter(o=>o.life>0);
   // zombies march on the flag; attack the flag or anything blocking them
   const f=ex.flag;
   for(const z of zombies){
@@ -3498,6 +3522,12 @@ function updateDefense(dt){
     let slow=1;
     if(ex.spikes) for(const sp of ex.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
     if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); continue; }
+    // plasma orb pull: if a live orb is within 200px, this zombie is drawn to it and zapped on contact
+    let orb=null, obd=1e9; if(ex.orbs) for(const o of ex.orbs){ const od=Math.hypot((z.x+z.w/2)-o.x,(z.y+z.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
+    if(orb){ const odx=orb.x-(z.x+z.w/2), ody=orb.y-(z.y+z.h/2), od=Math.hypot(odx,ody)||1; z.face=Math.atan2(ody,odx);
+      if(od < orb.r + z.w*0.4){ spawnBlood(z.x+z.w/2,z.y+z.h/2,'#c48bff',10,200,1); killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); Sound.zHit(); continue; }
+      defMove(z, odx/od, ody/od, dt, 74*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true); z.atk=clamp((z.atk||0)-dt*4,0,1); continue;
+    }
     let attacked=false;
     if(d < f.r + z.w*0.42){
       if(ex.orbActive){ spawnBlood(z.x+z.w/2, z.y+z.h/2, '#8fe4ff', 10, 200, 1); killZombie(z); score+=10; ex.kills++; Sound.zHit(); continue; }   // zapped by the field
@@ -3506,6 +3536,7 @@ function updateDefense(dt){
     else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*(ex.orbActive?1.6:1)*DIFF[difficulty].zSpd, true);
     for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    if(ex.plasmas) for(const s of ex.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     if(!ex.orbActive && zombieTouchesPlayer(z) && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(12,.35);
       if(lives<=0){ if(ex.mission6||ex.mission7)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
@@ -3519,6 +3550,12 @@ function updateDefense(dt){
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
   // BOSSES: slow, tanky, march on the flag and smash anything in the way
   for(const bo of ex.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
+    // plasma orb also lures & zaps bosses within 200px
+    { let orb=null,obd=1e9; if(ex.orbs) for(const o of ex.orbs){ const od=Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
+      if(orb){ const odx=orb.x-(bo.x+bo.w/2), ody=orb.y-(bo.y+bo.h/2), od=Math.hypot(odx,ody)||1; bo.face=Math.atan2(ody,odx);
+        if(od < orb.r + bo.w*0.45){ bo.dead=true; spawnBlood(bo.x+bo.w/2,bo.y+bo.h/2,'#c48bff',18,240,1); spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); score+=100; ex.kills++; Sound.kill(); shake(10,.3); continue; }
+        defMove(bo, odx/od, ody/od, dt, 44*DIFF[difficulty].zSpd, true); continue;
+      } }
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face = Math.atan2(bdy,bdx);   // angle toward the flag (sprite head points that way)
     if(bd < f.r + bo.w*0.5){
@@ -3529,6 +3566,7 @@ function updateDefense(dt){
     if(!ex.orbActive){
       for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
       for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
+      if(ex.plasmas) for(const s of ex.plasmas){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
       const px=p.x+p.w/2, py=p.y+p.h/2;
       if(px>bo.x-6 && px<bo.x+bo.w+6 && py>bo.y-6 && py<bo.y+bo.h+6 && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(14,.4);
         if(lives<=0){ if(ex.mission6||ex.mission7)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
@@ -3581,6 +3619,7 @@ function drawDefense(){
   drawDefenseFlag(ex);
   drawDefenseWalls(ex);
   drawDefenseTurrets(ex);
+  drawDefensePlasma(ex);
   drawZombies(); drawDefenseBoss(ex); drawBullets(); drawPlayer(); drawParticles();
   { const gt=currentGhostType(); if(gt) drawBuildGhost(ex, player, gt, false); }   // white placement ghost
   ctx.restore();
@@ -3591,7 +3630,7 @@ function drawDefense(){
 // YES / NO confirm bar shown at the top while a touch placement is pending
 function drawBuildConfirm(ctx2, isCoop){
   const spec=BUILD_SPEC[touchBuild.type];
-  const label = spec ? (touchBuild.type.indexOf('turret')===0?'TURRET':touchBuild.type.indexOf('wall')===0?'WALL':'SPIKES') : 'BUILD';
+  const label = spec ? (touchBuild.type==='plasma'?'PLASMA':touchBuild.type.indexOf('turret')===0?'TURRET':touchBuild.type.indexOf('wall')===0?'WALL':'SPIKES') : 'BUILD';
   ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillStyle='rgba(10,16,10,.82)'; roundRectPath(W/2-150, 6, 300, 42, 10); ctx.fill();
   ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.fillText('Place '+label+' here?', W/2, 27);
@@ -3684,6 +3723,39 @@ function drawDefenseTurrets(ex){
     ctx.restore();
     const hp=t.hp/t.hpMax, x=t.x-t.w/2; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, t.y-t.h/2-7, t.w, 4);
     ctx.fillStyle=hp>0.4?(heavy?'#ff9a6a':'#7fd0ff'):'#ff7a7a'; ctx.fillRect(x, t.y-t.h/2-7, t.w*hp, 4); }
+}
+function drawDefensePlasma(ex){
+  const t=performance.now()/1000;
+  // active orb fields — a smaller version of the campaign electric field, with the 200px attract ring
+  if(ex.orbs) for(const o of ex.orbs){ const pulse=0.5+0.5*Math.sin(t*6+o.t*2), fade=Math.min(1,o.life/2);
+    ctx.save(); ctx.globalAlpha=fade;
+    ctx.strokeStyle='rgba(180,140,255,0.16)'; ctx.lineWidth=2; ctx.setLineDash([7,7]); ctx.beginPath(); ctx.arc(o.x,o.y,o.attract,0,6.28); ctx.stroke(); ctx.setLineDash([]);   // attract radius
+    const gr=ctx.createRadialGradient(o.x,o.y,3, o.x,o.y, o.r+18+pulse*8);
+    gr.addColorStop(0,'rgba(200,170,255,0.55)'); gr.addColorStop(0.5,'rgba(150,110,255,0.24)'); gr.addColorStop(1,'rgba(120,80,255,0)');
+    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(o.x,o.y,o.r+22,0,6.28); ctx.fill();
+    ctx.strokeStyle='rgba(200,160,255,'+(0.5+0.4*pulse)+')'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(o.x,o.y,o.r*0.7+pulse*4,0,6.28); ctx.stroke();
+    if(typeof FieldOrb!=='undefined' && FieldOrb){ const s=o.r*1.5+pulse*5, w=s, h=s*FieldOrbAH/FieldOrbAW; ctx.imageSmoothingEnabled=true; ctx.drawImage(FieldOrb, o.x-w/2, o.y-h/2, w, h); }
+    else { ctx.fillStyle='#c48bff'; ctx.beginPath(); ctx.arc(o.x,o.y,o.r*0.55,0,6.28); ctx.fill(); }
+    ctx.restore();
+  }
+  // plasma projectiles in flight
+  if(ex.pshots) for(const s of ex.pshots){ ctx.save();
+    ctx.fillStyle='rgba(180,140,255,0.35)'; ctx.beginPath(); ctx.arc(s.x,s.y,12,0,6.28); ctx.fill();
+    ctx.fillStyle='#d8c2ff'; ctx.beginPath(); ctx.arc(s.x,s.y,6,0,6.28); ctx.fill();
+    ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(s.x,s.y,2.6,0,6.28); ctx.fill(); ctx.restore(); }
+  // launchers
+  if(ex.plasmas) for(const t2 of ex.plasmas){ if(t2.hp<=0) continue;
+    ctx.save(); ctx.translate(t2.x,t2.y);
+    ctx.fillStyle='#3b2f52'; ctx.beginPath(); ctx.arc(0,0,t2.w*0.5,0,6.28); ctx.fill();
+    ctx.strokeStyle='#b48bff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(0,0,t2.w*0.5,0,6.28); ctx.stroke();
+    ctx.rotate(t2.aim||0);
+    ctx.fillStyle='#2a2040'; ctx.fillRect(0,-5, t2.w*0.6, 10);
+    ctx.fillStyle='#c9a8ff'; ctx.fillRect(t2.w*0.42,-6, 8, 12);   // muzzle cup
+    ctx.restore();
+    const glow=0.5+0.5*Math.sin(t2.cd<=0.2?performance.now()/80:performance.now()/300);
+    ctx.fillStyle='rgba(180,140,255,'+(0.3+0.4*glow)+')'; ctx.beginPath(); ctx.arc(t2.x,t2.y,5,0,6.28); ctx.fill();
+    const hp=t2.hp/t2.hpMax, x=t2.x-t2.w/2; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x, t2.y-t2.h/2-7, t2.w, 4);
+    ctx.fillStyle=hp>0.4?'#c48bff':'#ff7a7a'; ctx.fillRect(x, t2.y-t2.h/2-7, t2.w*hp, 4); }
 }
 function drawDefenseUI(ex){
   ctx.textAlign='right'; ctx.textBaseline='alphabetic';
