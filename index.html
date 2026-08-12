@@ -3263,13 +3263,12 @@ const defWeaponBtns=[
   {wp:'rifle',   label:'RIFLE',   cost:150, x:8, y:100, w:132, h:30},
   {wp:'shotgun', label:'SHOTGUN', cost:120, x:8, y:134, w:132, h:30},
 ];
-const plasmaRangeBtn={x:8, y:168, w:158, h:30, crystals:5};   // spend 5 boss crystals → double the range of every plasma ball
+const plasmaRangeBtn={x:8, y:168, w:158, h:30, crystals:5};   // 5 boss crystals → +50% plasma blast radius (stacks twice: 60→90→135px)
 function buyPlasmaRange(ctx2){ const ex = ctx2 || ((state===STATE.COOPDEF && codef) ? codef : explore); if(!ex||!(ex.defense||ex.defense2)) return;
-  if((ex.plasmaRange||0)>=2){ toast('PLASMA RANGE MAXED'); Sound.empty(); return; }   // stacks up to 2 times (4x)
+  if((ex.plasmaRange||0)>=2){ toast('PLASMA BLAST MAXED'); Sound.empty(); return; }   // stacks up to 2 times
   if((ex.crystals||0)<plasmaRangeBtn.crystals){ toast('NEED 5 CRYSTALS'); Sound.empty(); return; }
   ex.crystals-=plasmaRangeBtn.crystals; ex.plasmaRange=(ex.plasmaRange||0)+1;
-  if(ex.orbs) for(const o of ex.orbs){ o.r*=2; o.attract*=2; }   // upgrade any orbs already out (each level doubles)
-  Sound.power(); toast('PLASMA RANGE x'+Math.pow(2,ex.plasmaRange)+'!');
+  Sound.power(); toast('PLASMA BLAST +50% — now '+Math.round(60*Math.pow(1.5,ex.plasmaRange))+'px!');
 }
 function sellCrystal(ctx2){   // cash in one boss crystal for $150
   const ex = ctx2 || ((state===STATE.COOPDEF && codef) ? codef : explore); if(!ex||!(ex.defense||ex.defense2)) return;
@@ -3296,19 +3295,13 @@ function layoutBuildBar(){
 }
 layoutBuildBar();
 function defSnap(v){ return Math.floor(v/DEF_GRID)*DEF_GRID + DEF_GRID/2; }   // to grid-cell centre
-function orbShatter(ctx2, x, y){   // 3000+ kills: a boss pops the plasma ball — the blast wrecks every build within 2 grid squares
-  const R=DEF_GRID*2;
-  const wreck=(list)=>{ if(!list) return; for(const s of list){ if(s.hp>0 && Math.hypot(s.x-x,s.y-y)<=R+Math.max(s.w,s.h)/2){ s.hp=0; spawnParticles(s.x,s.y,'#c9d2cf',10,160); spawnBlood(s.x,s.y,'#c48bff',6,140,1); } } };
-  wreck(ctx2.turrets); wreck(ctx2.walls); wreck(ctx2.spikes); wreck(ctx2.plasmas);
-  shake(10,.32); Sound.power();
-}
 function defRectsOverlap(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by; }
 function setupDefense(){
   mode='arcade'; wasEndless=false; wasDefense=true; defWon=false;
   explore={ defense:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:defKillLimit,
     cash:DEF_START_CASH,
     flag:(function(){ const fh=Math.round(600*DIFF[difficulty].flagHp); return {x:0, y:0, r:46, hp:fh, hpMax:fh}; })(),
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], pshots:[], blasts:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=12;
   lives=3; score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
@@ -3338,7 +3331,7 @@ function setupDefense7(){   // Mission 7: plasma-orb defense — survive to 1000
     killGoal:1000, crystalCount:20, swarmCount:200, swarmCap:62, swarmBatch:12, swarmInt:0.35,
     camX:0, camY:0, elapsed:0, kills:0, spawnT:1.2, killLimit:0,
     cash:DEF_START_CASH, flag:{x:0, y:0, r:46, hp:fh, hpMax:fh},
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], pshots:[], blasts:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=7;
   lives=clamp(3+(upg.hp||0),1,7); score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null; zombies=[];
@@ -3353,7 +3346,7 @@ function setupDefense9(){   // Mission 9 (finale): mega plasma orb — 3000 kill
     killGoal:3000, crystalCount:50, swarmCount:10000, swarmCap:95, swarmBatch:34, swarmInt:0.18, swarmNear:false, swarmSpeed:2.4, megaOrb:true,
     camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0, killLimit:0,
     cash:DEF_START_CASH+120, flag:{x:0, y:0, r:46, hp:fh, hpMax:fh},   // stays a normal flag while building; becomes a huge orb once online
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
+    turrets:[], walls:[], spikes:[], plasmas:[], pshots:[], blasts:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0 };
   player=makePlayer(); player.x=150; player.y=150; player.ammo=magSizeFor(player);
   lives=clamp(3+(upg.hp||0),1,7); score=0;
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null; zombies=[];
@@ -3381,10 +3374,19 @@ function defMove(e,mvx,mvy,dt,spd,forZombie){
   const nx=e.x+mvx*spd*dt; if(!defBlocks(nx,e.y,e.w,e.h,forZombie)) e.x=nx;
   const ny=e.y+mvy*spd*dt; if(!defBlocks(e.x,ny,e.w,e.h,forZombie)) e.y=ny;
 }
+// endless-defense pressure curve: every 500 kills the basic zombies toughen up (regular defense only — campaign missions keep their own balance)
+function defScale(ctx2){
+  const on = ctx2 && !ctx2.mission6 && !ctx2.mission7;
+  const steps = on ? Math.floor((ctx2.kills||0)/500) : 0;
+  return { hp: Math.min(6, steps),                    // +1 zombie HP per 500 kills (cap +6)
+           spd: 1+Math.min(0.6, steps*0.08),          // +8% speed per 500 (cap +60%)
+           atk: 1+Math.min(1.0, steps*0.12),          // +12% attack rate per 500 (cap +100%)
+           cmd: on && (ctx2.kills||0)>=3000 };        // 3000+: bosses command the horde — rally 20, then charge as a pack
+}
 function defSpawn(n){
   const ex=explore; if(!ex) return;
   if(zombies.filter(z=>z.alive).length>58) return;
-  const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp));
+  const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp))+defScale(ex).hp;
   for(let i=0;i<n;i++){ const a=Math.random()*6.28;
     zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
       hp:zh, hpMax:zh, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
@@ -3438,6 +3440,7 @@ function doBuild(ctx2, pl, type, isCoop){
   if(type==='sell'){ sellNearest(ctx2, pl); return; }
   if(type==='range'){ buyPlasmaRange(ctx2); return; }   // RANGE+ tile: plasma range upgrade (5 crystals)
   if(type==='crysell'){ sellCrystal(ctx2); return; }    // CASH IN tile: sell a crystal for $150
+  if(type==='plasma' && (ctx2.plasmas||[]).filter(t=>t.hp>0).length>=15){ toast('PLASMA LIMIT — 15 MAX'); Sound.empty(); return; }
   if(type==='plasma' && (ctx2.crystals||0)<1){ toast('NEED 1 BOSS CRYSTAL'); Sound.empty(); return; }
   const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
   if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
@@ -3482,7 +3485,7 @@ function drawBuildGhost(ctx2, pl, type, isCoop){
   const spec=BUILD_SPEC[type]; if(!spec||!pl) return;
   const {cx,cy,ang}=buildGhostSpot(pl); const size=spec.size;
   const blocked = buildSpotBlocked(ctx2, type, cx, cy, isCoop) || (ctx2.cash<spec.cost)
-    || (type==='plasma' && (ctx2.crystals||0)<1);   // plasma needs a boss crystal
+    || (type==='plasma' && ((ctx2.crystals||0)<1 || (ctx2.plasmas||[]).filter(t=>t.hp>0).length>=15));   // plasma: needs a crystal, 15 max
   ctx.save(); ctx.globalAlpha=0.5;
   ctx.fillStyle = blocked ? 'rgba(255,80,80,.28)' : 'rgba(255,255,255,.30)';
   ctx.strokeStyle = blocked ? '#ff6b6b' : '#ffffff';
@@ -3529,7 +3532,7 @@ function updateDefense(dt){
   if(wantFire && p.cd<=0){ if(p.ammo>0){ exploreFire(p); p.ammo--; p.cd=(p.weapon==='spread')?fireRate*2.9:fireRate; } else { Sound.empty(); p.cd=0.25; } }
   // Mission 6: at 100 kills the electric field comes online — builds break, spawns stop, the orb zaps everything that reaches it
   if((ex.mission6||ex.mission7) && !ex.orbActive && ex.kills>=(ex.mission7?(ex.killGoal||1000):100)){
-    ex.orbActive=true; ex.turrets=[]; ex.walls=[]; ex.spikes=[]; ex.plasmas=[]; ex.orbs=[]; ex.pshots=[];
+    ex.orbActive=true; ex.turrets=[]; ex.walls=[]; ex.spikes=[]; ex.plasmas=[]; ex.pshots=[]; ex.blasts=[];
     Sound.power(); shake(12,.35);
     if(ex.mission7){ ex.m7phase='plant'; toast('PLASMA ORB BUILT — STAND ON IT TO PLANT THE '+(ex.crystalCount||20)+' CRYSTALS! '); }
     else toast('ELECTRIC FIELD ONLINE — CLEAR THEM OUT! ');
@@ -3574,29 +3577,37 @@ function updateDefense(dt){
         if(t.hyper) Sound.rifle(); else Sound.shoot();   // hyper = rifle sound; turret & heavy = pistol
         t.cd=t.fireCd||0.5; } }
   }
-  // PLASMA LAUNCHERS: lob a plasma orb at a zombie cluster; where it lands it becomes a small
-  // attract-and-zap field (like the campaign electric field, but smaller) for 20 seconds
-  if(!ex.plasmas)ex.plasmas=[]; if(!ex.orbs)ex.orbs=[]; if(!ex.pshots)ex.pshots=[];
-  const plasmaBallOut=(t)=> ex.pshots.some(s=>s.owner===t) || ex.orbs.some(o=>o.owner===t);   // one ball out per turret
+  // PLASMA CANNONS: every 3s fire a heavy bolt that EXPLODES on the target — massive splash damage (no more lure orbs)
+  if(!ex.plasmas)ex.plasmas=[]; if(!ex.pshots)ex.pshots=[]; if(!ex.blasts)ex.blasts=[];
   for(const t of ex.plasmas){ if(t.hp<=0) continue;
     if(t.cd>0)t.cd-=dt;
-    if(plasmaBallOut(t)) continue;   // this turret already has a plasma ball in play — wait for it to fade
     let best=null,bd=t.range;
     for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
     for(const bo of ex.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const a=t.aim, sp=440;
-        ex.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0, owner:t});
-        Sound.tank(); t.cd=t.fireCd||6; } }   // plasma launcher = tank cannon sound
+        ex.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0});
+        Sound.tank(); t.cd=t.fireCd||3; } }   // plasma cannon = tank sound
   }
-  for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
-    if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
-      { const rx=Math.pow(2, ex.plasmaRange||0); ex.orbs.push({x:s.x, y:s.y, r:26*rx, attract:50*rx, life:20, t:0, owner:s.owner}); } Sound.power(); shake(6,.2); } }
-  ex.pshots=ex.pshots.filter(s=>!s._land);
-  for(const o of ex.orbs){ o.life-=dt; o.t=(o.t||0)+dt; }
-  ex.orbs=ex.orbs.filter(o=>o.life>0);
+  { const PDMG=25, PBLAST=60*Math.pow(1.5, ex.plasmaRange||0);   // RANGE+ grows the blast: 60 → 90 → 135px
+    for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
+      if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
+        ex.blasts.push({x:s.x, y:s.y, r:PBLAST, t:0});
+        spawnBlood(s.x,s.y,'#c48bff',12,220,1); Sound.power(); shake(7,.22);
+        for(const z of zombies){ if(!z.alive) continue;
+          if(Math.hypot((z.x+z.w/2)-s.x,(z.y+z.h/2)-s.y)<=PBLAST+z.w*0.4){ z.hp-=PDMG; z.flash=0.14;
+            if(z.hp<=0){ spawnBlood(z.x+z.w/2,z.y+z.h/2,'#c48bff',8,180,1); killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); } } }
+        for(const bo of ex.bosses){ if(bo.dead) continue;
+          if(Math.hypot((bo.x+bo.w/2)-s.x,(bo.y+bo.h/2)-s.y)<=PBLAST+bo.w*0.45){ bo.hp-=PDMG; bo.flash=0.14;
+            if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); ex.cash+=45; score+=100; ex.kills++; Sound.kill(); shake(10,.3); toast('BOSS DOWN! +$45'); } } }
+      } }
+    ex.pshots=ex.pshots.filter(s=>!s._land);
+    for(const b of ex.blasts) b.t+=dt;
+    ex.blasts=ex.blasts.filter(b=>b.t<0.4);
+  }
   // zombies march on the flag; attack the flag or anything blocking them
   const f=ex.flag;
+  const SCL=defScale(ex);   // late-game pressure: tougher/faster/meaner basics, boss-led charges at 3000+
   for(const z of zombies){
     if(z.dying){ tickDying(z,dt,1.05); continue; }
     if(!z.alive) continue;
@@ -3607,22 +3618,28 @@ function updateDefense(dt){
     let slow=1;
     if(ex.spikes) for(const sp of ex.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
     if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); continue; }
-    // plasma orb pull: if a live orb is within 200px, this zombie is drawn to it and zapped on contact
-    let orb=null, obd=1e9; if(ex.orbs) for(const o of ex.orbs){ const od=Math.hypot((z.x+z.w/2)-o.x,(z.y+z.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
-    if(orb){ const odx=orb.x-(z.x+z.w/2), ody=orb.y-(z.y+z.h/2), od=Math.hypot(odx,ody)||1; z.face=Math.atan2(ody,odx);
-      if(od < orb.r + z.w*0.4){ spawnBlood(z.x+z.w/2,z.y+z.h/2,'#c48bff',10,200,1); killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); Sound.zHit(); continue; }
-      defMove(z, odx/od, ody/od, dt, 74*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true); z.atk=clamp((z.atk||0)-dt*4,0,1); continue;
+    // 3000+ kills: bosses command the horde — zombies rally on a waiting boss, then charge in as a pack
+    if(SCL.cmd && !ex.orbActive){
+      let rally=null, rd=1e9;
+      for(const bo of ex.bosses){ if(bo.dead||bo._charge) continue; const bdd=Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2)); if(bdd<620 && bdd<rd){ rd=bdd; rally=bo; } }
+      if(rally){ const rdx=(rally.x+rally.w/2)-(z.x+z.w/2), rdy=(rally.y+rally.h/2)-(z.y+z.h/2), rdd=Math.hypot(rdx,rdy)||1;
+        z.face=Math.atan2(rdy,rdx);
+        if(rdd>150) defMove(z, rdx/rdd, rdy/rdd, dt, 78*(z.spdMul||1)*slow*SCL.spd*DIFF[difficulty].zSpd, true);
+        z.atk=clamp((z.atk||0)-dt*4,0,1); continue;   // gathered at the boss — hold until it charges
+      }
     }
+    let packMul=1;   // charging boss nearby → the pack hits twice as hard
+    if(SCL.cmd) for(const bo of ex.bosses){ if(!bo.dead && bo._charge && Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2))<190){ packMul=2; break; } }
     let attacked=false;
     const zapR = (ex.orbActive && ex.megaOrb) ? 260 : f.r;   // the mega orb zaps from much farther out
     if(d < zapR + z.w*0.42){
       if(ex.orbActive){ spawnBlood(z.x+z.w/2, z.y+z.h/2, '#8fe4ff', 10, 200, 1); killZombie(z); score+=10; ex.kills++; Sound.zHit(); continue; }   // zapped by the field
-      f.hp-=dt*10; attacked=true;
+      f.hp-=dt*10*SCL.atk*packMul; attacked=true;
     }
-    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*(ex.orbActive?(1.6*(ex.swarmSpeed||1)):1)*DIFF[difficulty].zSpd, true);   // mega swarm rushes the orb faster
-    for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
-    for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
-    if(ex.plasmas) for(const s of ex.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*SCL.spd*(ex.orbActive?(1.6*(ex.swarmSpeed||1)):1)*DIFF[difficulty].zSpd, true);   // mega swarm rushes the orb faster
+    for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
+    for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
+    if(ex.plasmas) for(const s of ex.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     if(!ex.orbActive && zombieTouchesPlayer(z) && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(12,.35);
       if(lives<=0){ if(ex.mission6||ex.mission7)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
@@ -3635,17 +3652,12 @@ function updateDefense(dt){
       if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
   // BOSSES: slow, tanky, march on the flag and smash anything in the way
-  const bossSmashOrbs = ex.kills>=3000;   // past 3000 kills a boss kill POPS the ball — the blast wrecks builds within 2 squares
   for(const bo of ex.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
-    {
-      // plasma orb lures & zaps bosses within its attract radius
-      let orb=null,obd=1e9; if(ex.orbs) for(const o of ex.orbs){ const od=Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
-      if(orb){ const odx=orb.x-(bo.x+bo.w/2), ody=orb.y-(bo.y+bo.h/2), od=Math.hypot(odx,ody)||1; bo.face=Math.atan2(ody,odx);
-        if(od < orb.r + bo.w*0.45){ bo.dead=true; spawnBlood(bo.x+bo.w/2,bo.y+bo.h/2,'#c48bff',18,240,1); spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); score+=100; ex.kills++; Sound.kill(); shake(10,.3);
-          if(bossSmashOrbs){ orb.life=0; spawnBlood(orb.x,orb.y,'#c48bff',14,200,1); orbShatter(ex, orb.x, orb.y); }   // the ball breaks and takes nearby builds with it
-          continue; }
-        defMove(bo, odx/od, ody/od, dt, 44*DIFF[difficulty].zSpd, true); continue;
-      }
+    // 3000+ kills: the boss is a commander — it waits until 20 zombies rally around it, then leads the charge
+    if(SCL.cmd && !ex.orbActive && !bo._charge){
+      let packN=0; for(const z of zombies){ if(!z.alive) continue; if(Math.hypot((z.x+z.w/2)-(bo.x+bo.w/2),(z.y+z.h/2)-(bo.y+bo.h/2))<190) packN++; }
+      if(packN>=20){ bo._charge=true; toast('THE BOSS LEADS A CHARGE!'); Sound.bossRoar(); shake(9,.32); }
+      else { bo.face=Math.atan2(f.y-(bo.y+bo.h/2), f.x-(bo.x+bo.w/2)); continue; }   // holding position, calling the horde in
     }
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face = Math.atan2(bdy,bdx);   // angle toward the flag (sprite head points that way)
@@ -3672,7 +3684,7 @@ function updateDefense(dt){
   for(const b of bullets){ if(b.dead) continue;
     let hitBoss=false;
     for(const bo of ex.bosses){ if(bo.dead) continue;
-      if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=b.dmg||1; bo.flash=0.12; Sound.zHit();
+      if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=(b.turret ? (b.dmg||1)*0.7 : (b.dmg||1)*5); bo.flash=0.12; Sound.zHit();   // YOUR shots hit bosses 5× as hard; turrets slightly less
         spawnBlood(b.x,b.y,'#7a0f1a',6,120,basicBloodMul()); if(!b.pierce)b.dead=true;
         if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); ex.cash+=45; score+=100; ex.kills++; Sound.kill(); shake(10,.3); toast('BOSS DOWN! +$45'); }
         hitBoss=true; break; } }
@@ -3827,16 +3839,14 @@ function drawDefenseTurrets(ex){
 }
 function drawDefensePlasma(ex){
   const t=performance.now()/1000;
-  // active orb fields — a smaller version of the campaign electric field, with the 200px attract ring
-  if(ex.orbs) for(const o of ex.orbs){ const pulse=0.5+0.5*Math.sin(t*6+o.t*2), fade=Math.min(1,o.life/2);
-    ctx.save(); ctx.globalAlpha=fade;
-    ctx.strokeStyle='rgba(180,140,255,0.16)'; ctx.lineWidth=2; ctx.setLineDash([7,7]); ctx.beginPath(); ctx.arc(o.x,o.y,o.attract,0,6.28); ctx.stroke(); ctx.setLineDash([]);   // attract radius
-    const gr=ctx.createRadialGradient(o.x,o.y,3, o.x,o.y, o.r+18+pulse*8);
-    gr.addColorStop(0,'rgba(200,170,255,0.55)'); gr.addColorStop(0.5,'rgba(150,110,255,0.24)'); gr.addColorStop(1,'rgba(120,80,255,0)');
-    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(o.x,o.y,o.r+22,0,6.28); ctx.fill();
-    ctx.strokeStyle='rgba(200,160,255,'+(0.5+0.4*pulse)+')'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(o.x,o.y,o.r*0.7+pulse*4,0,6.28); ctx.stroke();
-    if(typeof FieldOrb!=='undefined' && FieldOrb){ const s=o.r*1.5+pulse*5, w=s, h=s*FieldOrbAH/FieldOrbAW; ctx.imageSmoothingEnabled=true; ctx.drawImage(FieldOrb, o.x-w/2, o.y-h/2, w, h); }
-    else { ctx.fillStyle='#c48bff'; ctx.beginPath(); ctx.arc(o.x,o.y,o.r*0.55,0,6.28); ctx.fill(); }
+  // plasma blast shockwaves — a fast expanding ring where a bolt just detonated
+  if(ex.blasts) for(const b of ex.blasts){ const k=Math.min(1, b.t/0.4);
+    ctx.save(); ctx.globalAlpha=(1-k);
+    const rr=b.r*(0.35+0.65*k);
+    const gr=ctx.createRadialGradient(b.x,b.y,2, b.x,b.y, rr);
+    gr.addColorStop(0,'rgba(230,205,255,0.8)'); gr.addColorStop(0.55,'rgba(170,120,255,0.4)'); gr.addColorStop(1,'rgba(130,80,255,0)');
+    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(b.x,b.y,rr,0,6.28); ctx.fill();
+    ctx.strokeStyle='rgba(210,170,255,0.9)'; ctx.lineWidth=3*(1-k)+1; ctx.beginPath(); ctx.arc(b.x,b.y,rr,0,6.28); ctx.stroke();
     ctx.restore();
   }
   // plasma projectiles in flight
@@ -3941,7 +3951,7 @@ function drawBuildTile(bb, cash, sel){
     ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.5;   // little crystal
     ctx.beginPath(); ctx.moveTo(icx,bb.y+6); ctx.lineTo(icx+5,bb.y+13); ctx.lineTo(icx,bb.y+20); ctx.lineTo(icx-5,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('RANGE+', icx, bb.y+31);
-    ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX ×4':('5 crystals · Lv '+lvl+'/2'), icx, bb.y+41);
+    ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX BLAST':('blast +50% · Lv '+lvl+'/2'), icx, bb.y+41);
     ctx.globalAlpha=1; ctx.restore(); return;
   }
   if(bb.type==='crysell'){   // CASH IN tile — sell one boss crystal for $150
@@ -3971,7 +3981,9 @@ function drawBuildTile(bb, cash, sel){
     ctx.fillStyle='#c9b06a'; ctx.font='bold 8px '+CF; ctx.fillText('full refund', icx, bb.y+41);
     ctx.restore(); return;
   }
-  const hasCrystal = !(bb.type==='plasma') || (explore && (explore.crystals||0)>=1);
+  const dctx2=(state===STATE.COOPDEF&&codef)?codef:explore;
+  const plasmaN=(bb.type==='plasma'&&dctx2&&dctx2.plasmas)?dctx2.plasmas.filter(t=>t.hp>0).length:0;
+  const hasCrystal = !(bb.type==='plasma') || (dctx2 && (dctx2.crystals||0)>=1 && plasmaN<15);
   const afford=(cash>=bb.cost) && hasCrystal, spec=BUILD_SPEC[bb.type];
   ctx.save();
   ctx.fillStyle=afford?'rgba(24,44,24,.94)':'rgba(38,38,38,.86)';
@@ -4007,10 +4019,10 @@ function drawBuildTile(bb, cash, sel){
   else if(spec.kind==='spike'){ ctx.fillStyle='#cfd6dd'; for(let i=0;i<3;i++){ const sx=icx-9+i*9; ctx.beginPath(); ctx.moveTo(sx-3,icy+7); ctx.lineTo(sx,icy-8); ctx.lineTo(sx+3,icy+7); ctx.closePath(); ctx.fill(); } }
   ctx.globalAlpha=1;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  ctx.fillStyle=afford?'#eafff0':'#999'; ctx.font='bold 9px '+CF; ctx.fillText(bb.label, icx, bb.y+31);
+  ctx.fillStyle=afford?'#eafff0':'#999'; ctx.font='bold 9px '+CF; ctx.fillText(bb.label+(bb.type==='plasma'?(' '+plasmaN+'/15'):''), icx, bb.y+31);
   ctx.fillStyle=afford?'#ffe14b':'#888'; ctx.font='bold 11px '+CF; ctx.fillText('$'+bb.cost, icx, bb.y+42);
   if(bb.type==='plasma'){   // needs 1 boss crystal — small badge, top-right
-    const bx=bb.x+bb.w-9, by=bb.y+9, has=(explore&&(explore.crystals||0)>=1);
+    const bx=bb.x+bb.w-9, by=bb.y+9, has=(dctx2&&(dctx2.crystals||0)>=1);
     ctx.fillStyle=has?'#c48bff':'#5a4a6a'; ctx.strokeStyle=has?'#e6c2ff':'#3a2f4a'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(bx,by-5); ctx.lineTo(bx+4,by); ctx.lineTo(bx,by+5); ctx.lineTo(bx-4,by); ctx.closePath(); ctx.fill(); ctx.stroke();
   }
@@ -5432,22 +5444,25 @@ function tutIllo(page, bx,by,bw,bh){
   if(im && im.width){ const s=Math.min(bw/im.width, bh/im.height), dw=im.width*s, dh=im.height*s;
     ctx.drawImage(im, bx+(bw-dw)/2, by+(bh-dh)/2, dw, dh); }
   else if(page===5){
-    // drawn scene: boss dropping a crystal + a plasma orb luring zombies
-    const gy=by+bh-26;
+    // drawn scene: boss dropping a crystal + a plasma bolt DETONATING on the horde
+    const gy=by+bh-26, t=performance.now()/1000;
     ctx.fillStyle='#0d1410'; ctx.fillRect(bx,gy,bw,26);
-    tutBoss(bx+bw*0.24, gy+6, 128);
-    tutCrystal(bx+bw*0.24, by+34);
-    tutArrow(bx+bw*0.24, by+56, bx+bw*0.24, by+16, '#ffe86b', 2.4);
-    // plasma orb
-    const ox=bx+bw*0.68, oy=by+bh*0.42, t=performance.now()/1000;
-    const pr=30+3*Math.sin(t*3);
-    const g=ctx.createRadialGradient(ox,oy,4,ox,oy,pr);
-    g.addColorStop(0,'rgba(240,220,255,.95)'); g.addColorStop(0.5,'rgba(180,110,255,.55)'); g.addColorStop(1,'rgba(140,70,255,0)');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(ox,oy,pr,0,6.28); ctx.fill();
-    ctx.strokeStyle='rgba(200,140,255,.8)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(ox,oy,14,0,6.28); ctx.stroke();
-    // zombies pulled toward the orb
-    tutZombie(bx+bw*0.9, gy+8, 92); tutArrow(bx+bw*0.87, oy+34, ox+20, oy+12, '#c58bff', 2.2);
-    tutZombie(bx+bw*0.52, gy+8, 92); tutArrow(bx+bw*0.55, oy+34, ox-20, oy+12, '#c58bff', 2.2);
+    tutBoss(bx+bw*0.22, gy+6, 128);
+    tutCrystal(bx+bw*0.22, by+34);
+    tutArrow(bx+bw*0.22, by+56, bx+bw*0.22, by+16, '#ffe86b', 2.4);
+    // explosion where the bolt lands, zombies caught in the blast
+    const ox=bx+bw*0.7, oy=by+bh*0.55;
+    const k=(t%0.9)/0.9, rr=18+52*k;
+    tutZombie(ox-26, gy+2, 88); tutZombie(ox+30, gy+0, 84);
+    ctx.save(); ctx.globalAlpha=1-k*0.85;
+    const g=ctx.createRadialGradient(ox,oy,3,ox,oy,rr);
+    g.addColorStop(0,'rgba(240,220,255,.95)'); g.addColorStop(0.5,'rgba(180,110,255,.5)'); g.addColorStop(1,'rgba(140,70,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(ox,oy,rr,0,6.28); ctx.fill();
+    ctx.strokeStyle='rgba(210,170,255,.95)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(ox,oy,rr,0,6.28); ctx.stroke();
+    ctx.restore();
+    // incoming bolt streak
+    tutArrow(ox-90, oy-70, ox-14, oy-12, '#d8c2ff', 2.6);
+    ctx.fillStyle='#d8c2ff'; ctx.beginPath(); ctx.arc(ox-14,oy-12,5,0,6.28); ctx.fill();
   }
   ctx.restore();
   ctx.strokeStyle='rgba(126,224,106,.35)'; ctx.lineWidth=1.5; roundRectPath(bx,by,bw,bh,12); ctx.stroke();
@@ -5514,9 +5529,9 @@ function drawTutorial(){
     ctx.textAlign='center'; ctx.fillStyle='#ffe86b'; ctx.font='bold 15px '+CF;
     ctx.fillText('BOSSES & CRYSTALS', W/2, 254);
     section('#ffe86b','✦ BOSS CRYSTALS',
-      'Bosses raid defense mode too — every boss you kill drops the CRYSTAL from its head, a second currency shown above your money. 5 bosses at once storm in past 2000 kills, and past 3000 kills they smash plasma orbs on touch instead of dying to them!');
-    section('#c58bff','✦ PLASMA LAUNCHER',
-      'Costs 1 crystal + $500. Each launcher keeps one slow plasma orb out (a shot every 3s) that lures nearby zombies in and zaps them for 20s. Buy the 5-crystal RANGE upgrade up to 2 times to quadruple orb size. Selling a launcher refunds its crystal.');
+      'Every boss you kill drops the CRYSTAL from its head — a currency shown above your money (CASH IN sells one for $150). YOUR gun hits bosses 5× as hard as turrets do, so hunt them yourself! The horde also toughens up every 500 kills: more health, faster, harder-hitting. At 3000 kills bosses turn COMMANDER — each waits, rallies 20 zombies around it, then leads them in one devastating charge.');
+    section('#c58bff','✦ PLASMA CANNON',
+      'Costs 1 crystal + $500 (max 15). Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal RANGE+ upgrade grows the blast +50%, twice. Selling a cannon refunds its crystal.');
   } else if(tutPage===6){
     ctx.textAlign='center'; ctx.fillStyle='#c58bff'; ctx.font='bold 15px '+CF;
     ctx.fillText('SHOOTOUT', W/2, 254);
@@ -6640,7 +6655,7 @@ function netStartCoopDefense(count){
   codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
     cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:7, ammoRegen:0, reloadT:0, killAcc:0, mags:3, killLimit:defKillLimit,
     flag:(function(){ const fh=Math.round(700*DIFF[difficulty].flagHp); return {x:0,y:0,r:46,hp:fh,hpMax:fh}; })(),
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0, players };
+    turrets:[], walls:[], spikes:[], plasmas:[], pshots:[], blasts:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0, players };
   codef.meIdx = (net.role==='host') ? 0 : (net.mySlot||1);   // host is slot 0; guests get their slot from the lobby
   codef.p1=players[0]; codef.p2=players[1]||players[0];      // aliases kept for any shared helpers
   player=players[codef.meIdx] || players[0];                 // globals that helpers reference point at the local player
@@ -6667,7 +6682,7 @@ function codefMove(e,mvx,mvy,dt,spd,forZombie){
 }
 function coopSpawn(n){ const cd=codef; if(!cd) return;
   if(zombies.filter(z=>z.alive).length>62) return;
-  const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp));
+  const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp))+defScale(cd).hp;
   for(let i=0;i<n;i++){ const a=Math.random()*6.28;
     zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
       hp:zh, hpMax:zh, alive:true, dying:false, deadT:0, bob:rand(0,6.28), flash:0, chew:0, atk:0,
@@ -6727,27 +6742,36 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
         bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:t.hyper?6:7,h:t.hyper?6:7,vx:vx*sp,vy:vy*sp,col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true});
         if(t.hyper) Sound.rifle(); else Sound.shoot(); t.cd=t.fireCd||0.5; } }
   }
-  // PLASMA LAUNCHERS (same sim as solo defense): one slow orb per turret, lands as an attract-and-zap field
-  if(!cd.plasmas)cd.plasmas=[]; if(!cd.orbs)cd.orbs=[]; if(!cd.pshots)cd.pshots=[];
-  const cdBallOut=(t)=> cd.pshots.some(s=>s.owner===t) || cd.orbs.some(o=>o.owner===t);
+  // PLASMA CANNONS (same sim as solo defense): heavy splash bolt every 3s — no lure orbs
+  if(!cd.plasmas)cd.plasmas=[]; if(!cd.pshots)cd.pshots=[]; if(!cd.blasts)cd.blasts=[];
   for(const t of cd.plasmas){ if(t.hp<=0) continue;
     if(t.cd>0)t.cd-=dt;
-    if(cdBallOut(t)) continue;
     let best=null,bd=t.range;
     for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
     for(const bo of cd.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const a=t.aim, sp=440;
-        cd.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0, owner:t});
-        Sound.tank(); t.cd=t.fireCd||6; } }
+        cd.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0});
+        Sound.tank(); t.cd=t.fireCd||3; } }
   }
-  for(const s of cd.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
-    if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
-      { const rx=Math.pow(2, cd.plasmaRange||0); cd.orbs.push({x:s.x, y:s.y, r:26*rx, attract:50*rx, life:20, t:0, owner:s.owner}); } Sound.power(); shake(6,.2); } }
-  cd.pshots=cd.pshots.filter(s=>!s._land);
-  for(const o of cd.orbs){ o.life-=dt; o.t=(o.t||0)+dt; }
-  cd.orbs=cd.orbs.filter(o=>o.life>0);
+  { const PDMG=25, PBLAST=60*Math.pow(1.5, cd.plasmaRange||0);
+    for(const s of cd.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
+      if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
+        cd.blasts.push({x:s.x, y:s.y, r:PBLAST, t:0});
+        spawnBlood(s.x,s.y,'#c48bff',12,220,1); Sound.power(); shake(7,.22);
+        for(const z of zombies){ if(!z.alive) continue;
+          if(Math.hypot((z.x+z.w/2)-s.x,(z.y+z.h/2)-s.y)<=PBLAST+z.w*0.4){ z.hp-=PDMG; z.flash=0.14;
+            if(z.hp<=0){ spawnBlood(z.x+z.w/2,z.y+z.h/2,'#c48bff',8,180,1); killZombie(z); cd.kills++; magKill(cd); cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); } } }
+        for(const bo of cd.bosses){ if(bo.dead) continue;
+          if(Math.hypot((bo.x+bo.w/2)-s.x,(bo.y+bo.h/2)-s.y)<=PBLAST+bo.w*0.45){ bo.hp-=PDMG; bo.flash=0.14;
+            if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; Sound.kill(); toast('BOSS DOWN! +$45'); coopCheckWin(); } } }
+      } }
+    cd.pshots=cd.pshots.filter(s=>!s._land);
+    for(const b of cd.blasts) b.t+=dt;
+    cd.blasts=cd.blasts.filter(b=>b.t<0.4);
+  }
   const players=cd.players||[cd.p1,cd.p2];   // online uses a players[] array; local split-screen uses p1/p2
+  const SCL=defScale(cd);   // late-game pressure: tougher/faster/meaner basics, boss-led charges at 3000+
   for(const z of zombies){
     if(z.dying){ tickDying(z,dt,1.05); continue; }
     if(!z.alive) continue;
@@ -6757,34 +6781,36 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     let slow=1;
     if(cd.spikes) for(const sp of cd.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
     if(z.hp<=0){ killZombie(z); cd.kills++; magKill(cd); cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); continue; }
-    // plasma orb pull: a live orb within range draws this zombie in and zaps it on contact
-    let orb=null, obd=1e9; if(cd.orbs) for(const o of cd.orbs){ const od=Math.hypot((z.x+z.w/2)-o.x,(z.y+z.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
-    if(orb){ const odx=orb.x-(z.x+z.w/2), ody=orb.y-(z.y+z.h/2), od=Math.hypot(odx,ody)||1; z.face=Math.atan2(ody,odx);
-      if(od < orb.r + z.w*0.4){ spawnBlood(z.x+z.w/2,z.y+z.h/2,'#c48bff',10,200,1); killZombie(z); cd.kills++; magKill(cd); cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); Sound.zHit(); coopCheckWin(); continue; }
-      codefMove(z, odx/od, ody/od, dt, 74*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true); z.atk=clamp((z.atk||0)-dt*4,0,1); continue;
+    // 3000+ kills: zombies rally on a waiting boss, then charge in as a pack
+    if(SCL.cmd){
+      let rally=null, rd=1e9;
+      for(const bo of cd.bosses){ if(bo.dead||bo._charge) continue; const bdd=Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2)); if(bdd<620 && bdd<rd){ rd=bdd; rally=bo; } }
+      if(rally){ const rdx=(rally.x+rally.w/2)-(z.x+z.w/2), rdy=(rally.y+rally.h/2)-(z.y+z.h/2), rdd=Math.hypot(rdx,rdy)||1;
+        z.face=Math.atan2(rdy,rdx);
+        if(rdd>150) codefMove(z, rdx/rdd, rdy/rdd, dt, 78*(z.spdMul||1)*slow*SCL.spd*DIFF[difficulty].zSpd, true);
+        z.atk=clamp((z.atk||0)-dt*4,0,1); continue;
+      }
     }
+    let packMul=1;
+    if(SCL.cmd) for(const bo of cd.bosses){ if(!bo.dead && bo._charge && Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2))<190){ packMul=2; break; } }
     let attacked=false;
-    if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
-    else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true);
-    for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
-    for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
-    if(cd.plasmas) for(const s of cd.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    if(d < f.r + z.w*0.42){ f.hp-=dt*10*SCL.atk*packMul; attacked=true; }
+    else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*SCL.spd*DIFF[difficulty].zSpd, true);
+    for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
+    for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
+    if(cd.plasmas) for(const s of cd.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     for(const pl of players){ if(pl.down) continue; if(coopTouch(z,pl) && pl.invuln<=0){ pl.invuln=1.5; shake(12,.35);
       if(cd.local){ pl.lives=(pl.lives||1)-1; if(pl.lives<=0) pl.down=true; if(players.every(x=>x.down)) cd.over=true; }   // local: own hearts
       else { cd.lives--; if(cd.lives<=0) cd.over=true; } } }
   }
   // bosses
-  const cdBossSmash = cd.kills>=3000;   // past 3000 kills a boss kill POPS the ball — the blast wrecks builds within 2 squares
   for(const bo of cd.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
-    {
-      let orb=null,obd=1e9; if(cd.orbs) for(const o of cd.orbs){ const od=Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
-      if(orb){ const odx=orb.x-(bo.x+bo.w/2), ody=orb.y-(bo.y+bo.h/2), od=Math.hypot(odx,ody)||1; bo.face=Math.atan2(ody,odx);
-        if(od < orb.r + bo.w*0.45){ bo.dead=true; spawnBlood(bo.x+bo.w/2,bo.y+bo.h/2,'#c48bff',18,240,1); spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.kills++; Sound.kill(); shake(10,.3); coopCheckWin();
-          if(cdBossSmash){ orb.life=0; spawnBlood(orb.x,orb.y,'#c48bff',14,200,1); orbShatter(cd, orb.x, orb.y); }   // the ball breaks and takes nearby builds with it
-          continue; }
-        codefMove(bo, odx/od, ody/od, dt, 44*DIFF[difficulty].zSpd, true); continue;
-      }
+    // 3000+ kills: the boss waits until 20 zombies rally around it, then leads the charge
+    if(SCL.cmd && !bo._charge){
+      let packN=0; for(const z of zombies){ if(!z.alive) continue; if(Math.hypot((z.x+z.w/2)-(bo.x+bo.w/2),(z.y+z.h/2)-(bo.y+bo.h/2))<190) packN++; }
+      if(packN>=20){ bo._charge=true; toast('THE BOSS LEADS A CHARGE!'); Sound.bossRoar(); shake(9,.32); }
+      else { bo.face=Math.atan2(f.y-(bo.y+bo.h/2), f.x-(bo.x+bo.w/2)); continue; }
     }
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face=Math.atan2(bdy,bdx);
@@ -6809,7 +6835,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
   for(const b of bullets){ if(b.dead) continue;
     let hitBoss=false;
     for(const bo of cd.bosses){ if(bo.dead) continue;
-      if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=b.dmg||1; bo.flash=0.12; Sound.zHit();
+      if(rectHit(b,{x:bo.x,y:bo.y,w:bo.w,h:bo.h})){ bo.hp-=(b.turret ? (b.dmg||1)*0.7 : (b.dmg||1)*5); bo.flash=0.12; Sound.zHit();   // YOUR shots hit bosses 5× as hard; turrets slightly less
         spawnBlood(b.x,b.y,'#7a0f1a',6,120,basicBloodMul()); if(!b.pierce)b.dead=true;
         if(bo.hp<=0){ bo.dead=true; spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.cash+=45; cd.kills++; Sound.kill(); toast('BOSS DOWN! +$45'); coopCheckWin(); }
         hitBoss=true; break; } }
@@ -6859,10 +6885,10 @@ function coopSnapshot(){
   const sk=(cd.spikes||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),Math.round(s.hpMax)]);
   const bs=cd.bosses.filter(b=>!b.dead).map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.hp),Math.round(b.hpMax),+(b.face||0).toFixed(2)]);
   const pm=(cd.plasmas||[]).map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2),Math.round(t.hpMax)]);
-  const ob=(cd.orbs||[]).map(o=>[Math.round(o.x),Math.round(o.y),Math.round(o.r),Math.round(o.attract),+o.life.toFixed(1)]);
+  const bl=(cd.blasts||[]).map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.r),+b.t.toFixed(2)]);
   const ph=(cd.pshots||[]).map(s=>[Math.round(s.x),Math.round(s.y)]);
   return { t:'cst', ca:Math.floor(cd.cash), lv:cd.lives, ki:cd.kills, ov:cd.over?1:0, fh:Math.max(0,Math.round(cd.flag.hp)),
-    am:Math.floor(cd.ammo||0), wo:cd.won?1:0, cr:cd.crystals||0, pr:cd.plasmaRange||0, ps:cd.players.map(encP), zs, tu, wl, sk, bs, pm, ob, ph };
+    am:Math.floor(cd.ammo||0), wo:cd.won?1:0, cr:cd.crystals||0, pr:cd.plasmaRange||0, ps:cd.players.map(encP), zs, tu, wl, sk, bs, pm, ph, bl };
 }
 function coopApplySnapshot(s){
   const cd=codef;
@@ -6873,7 +6899,7 @@ function coopApplySnapshot(s){
   cd.spikes  = (s.sk||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[5]||240}));
   cd.bosses  = (s.bs||[]).map(a=>({x:a[0],y:a[1],w:96,h:96,hp:a[2],hpMax:a[3],face:a[4],flash:0,dead:false}));
   cd.plasmas = (s.pm||[]).map(a=>({x:a[0],y:a[1],w:44,h:44,hp:a[2],hpMax:a[4]||80,cd:0,range:420,aim:a[3]}));
-  cd.orbs    = (s.ob||[]).map(a=>({x:a[0],y:a[1],r:a[2],attract:a[3],life:a[4],t:0}));
+  cd.blasts  = (s.bl||[]).map(a=>({x:a[0],y:a[1],r:a[2],t:a[3]}));
   cd.pshots  = (s.ph||[]).map(a=>({x:a[0],y:a[1],vx:0,vy:0,t:0}));
   if(s.cr!=null)cd.crystals=s.cr; if(s.pr!=null)cd.plasmaRange=s.pr;
   cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1; if(s.am!=null)cd.ammo=s.am; if(s.wo)cd.won=true;
@@ -6937,7 +6963,7 @@ function startLocalCoop(){
   codef={ defense2:true, local:true, paused:false, camX:0, camY:0, zoom:EXPLORE_ZOOM, elapsed:0, kills:0, spawnT:1.0,
     cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:7, ammoRegen:0, reloadT:0, killAcc:0, mags:3, killLimit:defKillLimit,
     flag:{x:0,y:0,r:46,hp:fh,hpMax:fh},
-    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0, p1, p2 };
+    turrets:[], walls:[], spikes:[], plasmas:[], pshots:[], blasts:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0, p1, p2 };
   player=codef.p1; explore=codef;
   zombies=[]; bullets=[]; ebullets=[]; particles=[]; bloodPools=[]; boss=null;
   padPrev=[{},{}];
