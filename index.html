@@ -3253,7 +3253,7 @@ const BUILD_BAR=[
   {type:'wall',    label:'WALL'},
   {type:'wall2',   label:'STEEL'},
   {type:'spike',   label:'SPIKES'},
-  {type:'range',   label:'RANGE+'},   // plasma-range upgrade (5 crystals) — a bar tile so controller players can reach it
+  {type:'range',   label:'SPLASH+'},  // plasma-splash upgrade (5 crystals) — a bar tile so controller players can reach it
   {type:'crysell', label:'CASH IN'},  // sell a boss crystal for $150
   {type:'sell',    label:'SELL'},
 ];
@@ -3950,7 +3950,7 @@ function drawBuildTile(bb, cash, sel){
     const icx=bb.x+bb.w/2;
     ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.5;   // little crystal
     ctx.beginPath(); ctx.moveTo(icx,bb.y+6); ctx.lineTo(icx+5,bb.y+13); ctx.lineTo(icx,bb.y+20); ctx.lineTo(icx-5,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('RANGE+', icx, bb.y+31);
+    ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('SPLASH+', icx, bb.y+31);
     ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX BLAST':('blast +50% · Lv '+lvl+'/2'), icx, bb.y+41);
     ctx.globalAlpha=1; ctx.restore(); return;
   }
@@ -5531,7 +5531,7 @@ function drawTutorial(){
     section('#ffe86b','✦ BOSS CRYSTALS',
       'Every boss you kill drops the CRYSTAL from its head — a currency shown above your money (CASH IN sells one for $150). YOUR gun hits bosses 5× as hard as turrets do, so hunt them yourself! The horde also toughens up every 500 kills: more health, faster, harder-hitting. At 3000 kills bosses turn COMMANDER — each waits, rallies 20 zombies around it, then leads them in one devastating charge.');
     section('#c58bff','✦ PLASMA CANNON',
-      'Costs 1 crystal + $500 (max 15). Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal RANGE+ upgrade grows the blast +50%, twice. Selling a cannon refunds its crystal.');
+      'Costs 1 crystal + $500 (max 15). Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal SPLASH+ upgrade grows the blast +50%, twice. Selling a cannon refunds its crystal.');
   } else if(tutPage===6){
     ctx.textAlign='center'; ctx.fillStyle='#c58bff'; ctx.font='bold 15px '+CF;
     ctx.fillText('SHOOTOUT', W/2, 254);
@@ -7121,7 +7121,7 @@ function drawLocalHalfHUD(hv){
   ctx.fillStyle=am<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF; ctx.fillText(''+am, bx+43, by);
   const b=BUILD_BAR[pl.buildSel||0], spc=BUILD_SPEC[b.type], cost=spc?spc.cost:0;
   if(b.type==='sell'){ ctx.fillStyle='#ffc23f'; ctx.fillText('▸SELL (refund)', bx+76, by); }
-  else if(b.type==='range'){ const lvl=cd.plasmaRange||0; ctx.fillStyle=(lvl<2&&(cd.crystals||0)>=5)?'#c9a6ff':'#ff9a9a'; ctx.fillText(lvl>=2?'▸RANGE+ MAX':'▸RANGE+ 5 crystals', bx+76, by); }
+  else if(b.type==='range'){ const lvl=cd.plasmaRange||0; ctx.fillStyle=(lvl<2&&(cd.crystals||0)>=5)?'#c9a6ff':'#ff9a9a'; ctx.fillText(lvl>=2?'▸SPLASH+ MAX':'▸SPLASH+ 5 crystals', bx+76, by); }
   else if(b.type==='crysell'){ ctx.fillStyle=(cd.crystals||0)>=1?'#ffd24a':'#ff9a9a'; ctx.fillText('▸CASH IN crystal→$150', bx+76, by); }
   else if(b.type==='plasma'){ ctx.fillStyle = (cd.cash>=cost&&(cd.crystals||0)>=1) ? '#c9a6ff' : '#ff9a9a'; ctx.fillText('▸PLASMA $'+cost+'+1cry', bx+76, by); }
   else { ctx.fillStyle = cd.cash>=cost ? '#9fe27f' : '#ff9a9a'; ctx.fillText('▸'+b.label+' $'+cost, bx+76, by); }
