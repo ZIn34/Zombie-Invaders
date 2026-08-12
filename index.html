@@ -541,12 +541,12 @@ function canvasTap(p, pid){
   if(isAimState() && !(state===STATE.DUEL && duel && duel.over)){
     if(explore && explore.defense){   // defense build buttons take the tap before aiming
       for(const wb of defWeaponBtns){ if(inRect(p, wb)){ defBuyOrEquip(player, explore, wb); return; } }   // weapon shop
-      if(inRect(p, plasmaRangeBtn)){ buyPlasmaRange(); return; }   // 2x plasma range (5 crystals)
-      if(!explore.orbActive) for(const bb of buildBtns){ if(inRect(p, bb)){ if(bb.type==='range'){ buyPlasmaRange(); return; } if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else defBuild(bb.type); return; } }
+      if(!explore.orbActive) for(const bb of buildBtns){ if(inRect(p, bb)){ if(bb.type==='range'){ buyPlasmaRange(); return; } if(bb.type==='crysell'){ sellCrystal(); return; } if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else defBuild(bb.type); return; } }
     }
     if(state===STATE.COOPDEF && codef){   // co-op build buttons
       for(const bb of buildBtns){ if(inRect(p, bb)){
         if(bb.type==='range'){ if(codef.local) buyPlasmaRange(codef); else coopBuildRequest('range'); return; }
+        if(bb.type==='crysell'){ if(codef.local) sellCrystal(codef); else coopBuildRequest('crysell'); return; }
         if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else coopBuildRequest(bb.type); return; } }
     }
     tapAim.active=true; tapAim.id=pid; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
@@ -1742,8 +1742,9 @@ function buildWave(n, opts){
   const gapX=95, gapY=68, startX=(W-(cols-1)*gapX)/2;
   const startY = -50 - (rows-1)*gapY;   // whole formation starts above the top, marches in
   if(isBoss){
+    const bhp = Math.round((60+n*12) * (mode==='arcade' ? 0.7 : 1));   // NORMAL mode: boss at 70% health
     boss = {
-      x:W/2-55, y:-120, w:110, h:96, hpMax:60+n*12, hp:60+n*12,
+      x:W/2-55, y:-120, w:110, h:96, hpMax:bhp, hp:bhp,
       vx:80+n*5, t:0, shootCd:0, face:'', flash:0, dead:false, chew:0
     };
     Sound.bossRoar(); bossRoarT=3.5; // entrance roar
@@ -3253,6 +3254,7 @@ const BUILD_BAR=[
   {type:'wall2',   label:'STEEL'},
   {type:'spike',   label:'SPIKES'},
   {type:'range',   label:'RANGE+'},   // plasma-range upgrade (5 crystals) — a bar tile so controller players can reach it
+  {type:'crysell', label:'CASH IN'},  // sell a boss crystal for $150
   {type:'sell',    label:'SELL'},
 ];
 let buildBtns=[];
@@ -3268,6 +3270,11 @@ function buyPlasmaRange(ctx2){ const ex = ctx2 || ((state===STATE.COOPDEF && cod
   ex.crystals-=plasmaRangeBtn.crystals; ex.plasmaRange=(ex.plasmaRange||0)+1;
   if(ex.orbs) for(const o of ex.orbs){ o.r*=2; o.attract*=2; }   // upgrade any orbs already out (each level doubles)
   Sound.power(); toast('PLASMA RANGE x'+Math.pow(2,ex.plasmaRange)+'!');
+}
+function sellCrystal(ctx2){   // cash in one boss crystal for $150
+  const ex = ctx2 || ((state===STATE.COOPDEF && codef) ? codef : explore); if(!ex||!(ex.defense||ex.defense2)) return;
+  if((ex.crystals||0)<1){ toast('NO CRYSTALS'); Sound.empty(); return; }
+  ex.crystals--; ex.cash+=150; Sound.power(); toast('CRYSTAL SOLD — +$150');
 }
 function defWeaponEquipped(pl, wp){ return wp==='rifle' ? (!!pl.permRapid && !pl.permSpread) : !!pl.permSpread; }
 function defEquipWeapon(pl, wp){
@@ -3430,6 +3437,7 @@ function doBuild(ctx2, pl, type, isCoop){
   if(ctx2 && ctx2.orbActive){ toast('THE FIELD IS ONLINE'); Sound.empty(); return; }   // Mission 6: no building once the orb spawns
   if(type==='sell'){ sellNearest(ctx2, pl); return; }
   if(type==='range'){ buyPlasmaRange(ctx2); return; }   // RANGE+ tile: plasma range upgrade (5 crystals)
+  if(type==='crysell'){ sellCrystal(ctx2); return; }    // CASH IN tile: sell a crystal for $150
   if(type==='plasma' && (ctx2.crystals||0)<1){ toast('NEED 1 BOSS CRYSTAL'); Sound.empty(); return; }
   const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
   if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
@@ -3918,22 +3926,7 @@ function drawDefenseUI(ex){
     ctx.fillText(eq?'EQUIPPED':own?'EQUIP':('$'+b.cost), b.x+b.w-8, b.y+b.h/2);
     ctx.textBaseline='alphabetic'; ctx.restore();
   });
-  // 2x plasma range upgrade (costs boss crystals)
-  { const b=plasmaRangeBtn, lvl=ex.plasmaRange||0, maxed=lvl>=2, can=!maxed && (ex.crystals||0)>=b.crystals;
-    ctx.save();
-    ctx.fillStyle = maxed ? 'rgba(60,40,80,.94)' : (can?'rgba(44,30,64,.92)':'rgba(40,40,40,.85)');
-    roundRectPath(b.x,b.y,b.w,b.h,7); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle = maxed ? '#c48bff' : (can?'#b48bff':'#666'); roundRectPath(b.x,b.y,b.w,b.h,7); ctx.stroke();
-    ctx.textAlign='left'; ctx.textBaseline='middle';
-    ctx.fillStyle='#efe0ff'; ctx.font='bold 11px '+CF; ctx.fillText('2X PLASMA RANGE', b.x+8, b.y+b.h/2);
-    ctx.textAlign='right'; ctx.font='bold 11px '+CF;
-    if(maxed){ ctx.fillStyle='#c48bff'; ctx.fillText('MAX ×4', b.x+b.w-8, b.y+b.h/2); }
-    else { // level pips + crystal cost with a small diamond
-      const tx=b.x+b.w-8; ctx.fillStyle=can?'#e6c8ff':'#ff8a8a'; ctx.fillText(''+b.crystals, tx, b.y+b.h/2);
-      const dx=tx-16, dy=b.y+b.h/2; ctx.fillStyle=can?'#c48bff':'#7a5a7a'; ctx.strokeStyle='#e6c2ff'; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(dx,dy-5); ctx.lineTo(dx+4,dy); ctx.lineTo(dx,dy+5); ctx.lineTo(dx-4,dy); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle='#b48bff'; ctx.textAlign='center'; ctx.font='bold 9px '+CF; ctx.fillText('Lv '+lvl+'/2', dx-26, dy); }
-    ctx.textBaseline='alphabetic'; ctx.restore(); }
+  // (plasma-range upgrade lives on the build bar as the RANGE+ tile)
 }
 function drawBuildTile(bb, cash, sel){
   if(bb.type==='range'){   // RANGE+ tile — plasma-range upgrade, paid in boss crystals
@@ -3949,6 +3942,22 @@ function drawBuildTile(bb, cash, sel){
     ctx.beginPath(); ctx.moveTo(icx,bb.y+6); ctx.lineTo(icx+5,bb.y+13); ctx.lineTo(icx,bb.y+20); ctx.lineTo(icx-5,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('RANGE+', icx, bb.y+31);
     ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX ×4':('5 crystals · Lv '+lvl+'/2'), icx, bb.y+41);
+    ctx.globalAlpha=1; ctx.restore(); return;
+  }
+  if(bb.type==='crysell'){   // CASH IN tile — sell one boss crystal for $150
+    const dctx=(state===STATE.COOPDEF&&codef)?codef:explore;
+    const can=dctx && (dctx.crystals||0)>=1;
+    ctx.save();
+    ctx.fillStyle=can?'rgba(46,38,16,.94)':'rgba(38,38,38,.86)'; roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
+    if(sel){ ctx.save(); ctx.strokeStyle='#ffe14b'; ctx.lineWidth=3; ctx.setLineDash([7,4]); ctx.lineDashOffset=-(performance.now()/60)%11; roundRectPath(bb.x-3,bb.y-3,bb.w+6,bb.h+6,10); ctx.stroke(); ctx.restore(); }
+    ctx.lineWidth=2; ctx.strokeStyle=can?'#ffd24a':'#666'; roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.stroke();
+    ctx.globalAlpha=can?1:0.55;
+    const icx=bb.x+bb.w/2;
+    ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.5;   // crystal with a $ beside it
+    ctx.beginPath(); ctx.moveTo(icx-5,bb.y+6); ctx.lineTo(icx,bb.y+13); ctx.lineTo(icx-5,bb.y+20); ctx.lineTo(icx-10,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#ffd24a'; ctx.font='bold 13px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('$', icx+7, bb.y+13); ctx.textBaseline='alphabetic';
+    ctx.fillStyle='#ffe9b0'; ctx.font='bold 9px '+CF; ctx.fillText('CASH IN', icx, bb.y+31);
+    ctx.fillStyle='#c9b06a'; ctx.font='bold 8px '+CF; ctx.fillText('crystal → $150', icx, bb.y+41);
     ctx.globalAlpha=1; ctx.restore(); return;
   }
   if(bb.type==='sell'){   // SELL tile — refunds the nearest build at full price
@@ -6691,7 +6700,8 @@ function coopActor(pl, inp, dt, host){
   if(inp.aim!=null){ pl.aim=inp.aim; pl.aimManual=true; } else pl.aimManual=false;
   if(pl.invuln>0)pl.invuln-=dt; if(pl.cd>0)pl.cd-=dt; if(pl.recoil>0)pl.recoil-=dt*6;
   if(host && inp.fire && pl.cd<=0){   // shared ammo pool (codef.ammo), no cap
-    if(codef && codef.ammo>0){ exploreFire(pl); codef.ammo--; pl.cd=0.26; } else pl.cd=0.25;
+    const fireRate=Math.max(0.08,((pl.rapidT>0||pl.permRapid)?0.11:0.26)-(pl.fireCut||0));   // rifle shoots fast, shotgun slow
+    if(codef && codef.ammo>0){ exploreFire(pl); codef.ammo--; pl.cd=(pl.weapon==='spread')?fireRate*2.9:fireRate; } else pl.cd=0.25;
   }
 }
 function coopTouch(z, pl){
@@ -6980,7 +6990,9 @@ function ctrlToInput(c){
   return { mvx:mxv, mvy:myv, aim, fire:!!c.fire };
 }
 function localBuild(pl, c){
-  if(c.cycle) pl.buildSel=((pl.buildSel||0)+1)%BUILD_BAR.length;   // L1 (or D-pad) cycles the selected build
+  if(c.shopL) pl.buildSel=((pl.buildSel||0)-1+BUILD_BAR.length)%BUILD_BAR.length;        // D-pad ◀ — previous build
+  else if(c.shopR) pl.buildSel=((pl.buildSel||0)+1)%BUILD_BAR.length;                    // D-pad ▶ — next build
+  else if(c.cycle) pl.buildSel=((pl.buildSel||0)+1)%BUILD_BAR.length;                    // L1 still cycles forward
   if(c.place){ const t=BUILD_BAR[pl.buildSel||0].type; doBuild(codef, pl, t, true); }
 }
 function updateCoopLocal(dt){
@@ -6992,6 +7004,9 @@ function updateCoopLocal(dt){
   coopActor(cd.p1, ctrlToInput(c1), dt, true);
   coopActor(cd.p2, ctrlToInput(c2), dt, true);
   localBuild(cd.p1, c1); localBuild(cd.p2, c2);
+  // weapon shop: D-pad ▲ buys/equips the rifle, ▼ the shotgun (shared unlock, per-player equip)
+  if(c1.cmdU) defBuyOrEquip(cd.p1, cd, defWeaponBtns[0]); if(c1.cmdD) defBuyOrEquip(cd.p1, cd, defWeaponBtns[1]);
+  if(c2.cmdU) defBuyOrEquip(cd.p2, cd, defWeaponBtns[0]); if(c2.cmdD) defBuyOrEquip(cd.p2, cd, defWeaponBtns[1]);
   coopSimWorld(dt);
   if(cd.over || cd.flag.hp<=0) coopDefEnd(cd.kills);
 }
@@ -7081,10 +7096,12 @@ function drawLocalHalfHUD(hv){
   const b=BUILD_BAR[pl.buildSel||0], spc=BUILD_SPEC[b.type], cost=spc?spc.cost:0;
   if(b.type==='sell'){ ctx.fillStyle='#ffc23f'; ctx.fillText('▸SELL (refund)', bx+76, by); }
   else if(b.type==='range'){ const lvl=cd.plasmaRange||0; ctx.fillStyle=(lvl<2&&(cd.crystals||0)>=5)?'#c9a6ff':'#ff9a9a'; ctx.fillText(lvl>=2?'▸RANGE+ MAX':'▸RANGE+ 5 crystals', bx+76, by); }
+  else if(b.type==='crysell'){ ctx.fillStyle=(cd.crystals||0)>=1?'#ffd24a':'#ff9a9a'; ctx.fillText('▸CASH IN crystal→$150', bx+76, by); }
   else if(b.type==='plasma'){ ctx.fillStyle = (cd.cash>=cost&&(cd.crystals||0)>=1) ? '#c9a6ff' : '#ff9a9a'; ctx.fillText('▸PLASMA $'+cost+'+1cry', bx+76, by); }
   else { ctx.fillStyle = cd.cash>=cost ? '#9fe27f' : '#ff9a9a'; ctx.fillText('▸'+b.label+' $'+cost, bx+76, by); }
   ctx.fillStyle='rgba(200,220,190,.5)'; ctx.font='10px '+CF;
-  ctx.fillText('L1 pick · Y/△ build', bx, by-15);
+  const wep = pl.permSpread ? 'SHOTGUN' : (pl.permRapid ? 'RIFLE' : 'PISTOL');
+  ctx.fillText('◀ ▶ pick · Y/△ build · ▲ rifle $150 ▼ shotgun $120 · '+wep, bx, by-15);
   ctx.shadowBlur=0;
 }
 function drawLocalSharedHUD(cd){
@@ -9030,7 +9047,7 @@ function playerFlashMuzzle(p){
   const aim=(p.aim!=null)?p.aim:-Math.PI/2;
   const heavy=(p.weapon==='spread'||p.rapidT>0||p.permRapid);
   const pixel=(equippedSkin && equippedSkin!=='default');
-  const pixL = pixel ? (explore?9:49) : (explore ? (explore.defense2?-14:-4) : 0);   // matches the flash's extraLeft in drawPlayerObj (basic soldier nudged right in defense / split co-op)
+  const pixL = pixel ? (explore?9:49) : (explore ? (explore.defense2?-7:-4) : 0);   // matches the flash's extraLeft in drawPlayerObj (basic soldier nudged right in defense / split co-op)
   return unitFlashPoint(cx, scy, aim, heavy, 12, pixL);
 }
 function duelFlashPoint(pl){   // the exact world point the shootout muzzle flash is drawn at — bullets leave from here too
