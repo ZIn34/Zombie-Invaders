@@ -3440,7 +3440,6 @@ function doBuild(ctx2, pl, type, isCoop){
   if(type==='sell'){ sellNearest(ctx2, pl); return; }
   if(type==='range'){ buyPlasmaRange(ctx2); return; }   // RANGE+ tile: plasma range upgrade (5 crystals)
   if(type==='crysell'){ sellCrystal(ctx2); return; }    // CASH IN tile: sell a crystal for $150
-  if(type==='plasma' && (ctx2.plasmas||[]).filter(t=>t.hp>0).length>=15){ toast('PLASMA LIMIT — 15 MAX'); Sound.empty(); return; }
   if(type==='plasma' && (ctx2.crystals||0)<1){ toast('NEED 1 BOSS CRYSTAL'); Sound.empty(); return; }
   const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
   if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
@@ -3485,7 +3484,7 @@ function drawBuildGhost(ctx2, pl, type, isCoop){
   const spec=BUILD_SPEC[type]; if(!spec||!pl) return;
   const {cx,cy,ang}=buildGhostSpot(pl); const size=spec.size;
   const blocked = buildSpotBlocked(ctx2, type, cx, cy, isCoop) || (ctx2.cash<spec.cost)
-    || (type==='plasma' && ((ctx2.crystals||0)<1 || (ctx2.plasmas||[]).filter(t=>t.hp>0).length>=15));   // plasma: needs a crystal, 15 max
+    || (type==='plasma' && (ctx2.crystals||0)<1);   // plasma needs a boss crystal
   ctx.save(); ctx.globalAlpha=0.5;
   ctx.fillStyle = blocked ? 'rgba(255,80,80,.28)' : 'rgba(255,255,255,.30)';
   ctx.strokeStyle = blocked ? '#ff6b6b' : '#ffffff';
@@ -3982,8 +3981,7 @@ function drawBuildTile(bb, cash, sel){
     ctx.restore(); return;
   }
   const dctx2=(state===STATE.COOPDEF&&codef)?codef:explore;
-  const plasmaN=(bb.type==='plasma'&&dctx2&&dctx2.plasmas)?dctx2.plasmas.filter(t=>t.hp>0).length:0;
-  const hasCrystal = !(bb.type==='plasma') || (dctx2 && (dctx2.crystals||0)>=1 && plasmaN<15);
+  const hasCrystal = !(bb.type==='plasma') || (dctx2 && (dctx2.crystals||0)>=1);
   const afford=(cash>=bb.cost) && hasCrystal, spec=BUILD_SPEC[bb.type];
   ctx.save();
   ctx.fillStyle=afford?'rgba(24,44,24,.94)':'rgba(38,38,38,.86)';
@@ -4019,7 +4017,7 @@ function drawBuildTile(bb, cash, sel){
   else if(spec.kind==='spike'){ ctx.fillStyle='#cfd6dd'; for(let i=0;i<3;i++){ const sx=icx-9+i*9; ctx.beginPath(); ctx.moveTo(sx-3,icy+7); ctx.lineTo(sx,icy-8); ctx.lineTo(sx+3,icy+7); ctx.closePath(); ctx.fill(); } }
   ctx.globalAlpha=1;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  ctx.fillStyle=afford?'#eafff0':'#999'; ctx.font='bold 9px '+CF; ctx.fillText(bb.label+(bb.type==='plasma'?(' '+plasmaN+'/15'):''), icx, bb.y+31);
+  ctx.fillStyle=afford?'#eafff0':'#999'; ctx.font='bold 9px '+CF; ctx.fillText(bb.label, icx, bb.y+31);
   ctx.fillStyle=afford?'#ffe14b':'#888'; ctx.font='bold 11px '+CF; ctx.fillText('$'+bb.cost, icx, bb.y+42);
   if(bb.type==='plasma'){   // needs 1 boss crystal — small badge, top-right
     const bx=bb.x+bb.w-9, by=bb.y+9, has=(dctx2&&(dctx2.crystals||0)>=1);
@@ -5531,7 +5529,7 @@ function drawTutorial(){
     section('#ffe86b','✦ BOSS CRYSTALS',
       'Every boss you kill drops the CRYSTAL from its head — a currency shown above your money (CASH IN sells one for $150). YOUR gun hits bosses 5× as hard as turrets do, so hunt them yourself! The horde also toughens up every 500 kills: more health, faster, harder-hitting. At 3000 kills bosses turn COMMANDER — each waits, rallies 20 zombies around it, then leads them in one devastating charge.');
     section('#c58bff','✦ PLASMA CANNON',
-      'Costs 1 crystal + $500 (max 15). Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal SPLASH+ upgrade grows the blast +50%, twice. Selling a cannon refunds its crystal.');
+      'Costs 1 crystal + $500. Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal SPLASH+ upgrade grows the blast +50%, twice. Selling a cannon refunds its crystal.');
   } else if(tutPage===6){
     ctx.textAlign='center'; ctx.fillStyle='#c58bff'; ctx.font='bold 15px '+CF;
     ctx.fillText('SHOOTOUT', W/2, 254);
