@@ -3381,11 +3381,11 @@ function defScale(ctx2){
   return { hp: Math.min(6, steps),                    // +1 zombie HP per 500 kills (cap +6)
            spd: 1+Math.min(0.6, steps*0.08),          // +8% speed per 500 (cap +60%)
            atk: 1+Math.min(1.0, steps*0.12),          // +12% attack rate per 500 (cap +100%)
-           cmd: on && (ctx2.kills||0)>=3000 };        // 3000+: bosses command the horde — rally 20, then charge as a pack
+           swarm: on && (ctx2.kills||0)>=3000 };      // 3000+: the floodgates open — far more basics pour in at once
 }
 function defSpawn(n){
   const ex=explore; if(!ex) return;
-  if(zombies.filter(z=>z.alive).length>58) return;
+  if(zombies.filter(z=>z.alive).length>(defScale(ex).swarm?92:58)) return;   // 3000+: much bigger horde allowed on the field
   const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp))+defScale(ex).hp;
   for(let i=0;i<n;i++){ const a=Math.random()*6.28;
     zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
@@ -3559,7 +3559,9 @@ function updateDefense(dt){
   if(!ex.orbActive){
     // ramping spawns from all sides
     ex.spawnT-=dt;
-    if(ex.spawnT<=0){ defSpawn(Math.min(6, Math.round((1+Math.floor(ex.elapsed/24))*DIFF[difficulty].spawn))); ex.spawnT=Math.max(0.6, 1.7-ex.elapsed*0.02)/DIFF[difficulty].spawn; }
+    if(ex.spawnT<=0){ const sw=defScale(ex).swarm;
+      defSpawn(Math.min(6, Math.round((1+Math.floor(ex.elapsed/24))*DIFF[difficulty].spawn)) + (sw?5:0));   // 3000+: 5 extra basics per batch
+      ex.spawnT=(Math.max(0.6, 1.7-ex.elapsed*0.02)/DIFF[difficulty].spawn)*(sw?0.55:1); }   // …spawning nearly twice as often
     // a boss marches in every 20 kills — up to 3 at once past 1000 kills
     const maxBosses = ex.kills>=2000 ? 5 : ex.kills>=1000 ? 3 : 1;
     if(ex.bosses.length<maxBosses && ex.kills>=ex.bossMark){ defSpawnBoss(); ex.bossMark+=20; }
@@ -3617,28 +3619,16 @@ function updateDefense(dt){
     let slow=1;
     if(ex.spikes) for(const sp of ex.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
     if(z.hp<=0){ killZombie(z); score+=10; ex.kills++; ex.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); continue; }
-    // 3000+ kills: bosses command the horde — zombies rally on a waiting boss, then charge in as a pack
-    if(SCL.cmd && !ex.orbActive){
-      let rally=null, rd=1e9;
-      for(const bo of ex.bosses){ if(bo.dead||bo._charge) continue; const bdd=Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2)); if(bdd<620 && bdd<rd){ rd=bdd; rally=bo; } }
-      if(rally){ const rdx=(rally.x+rally.w/2)-(z.x+z.w/2), rdy=(rally.y+rally.h/2)-(z.y+z.h/2), rdd=Math.hypot(rdx,rdy)||1;
-        z.face=Math.atan2(rdy,rdx);
-        if(rdd>150) defMove(z, rdx/rdd, rdy/rdd, dt, 78*(z.spdMul||1)*slow*SCL.spd*DIFF[difficulty].zSpd, true);
-        z.atk=clamp((z.atk||0)-dt*4,0,1); continue;   // gathered at the boss — hold until it charges
-      }
-    }
-    let packMul=1;   // charging boss nearby → the pack hits twice as hard
-    if(SCL.cmd) for(const bo of ex.bosses){ if(!bo.dead && bo._charge && Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2))<190){ packMul=2; break; } }
     let attacked=false;
     const zapR = (ex.orbActive && ex.megaOrb) ? 260 : f.r;   // the mega orb zaps from much farther out
     if(d < zapR + z.w*0.42){
       if(ex.orbActive){ spawnBlood(z.x+z.w/2, z.y+z.h/2, '#8fe4ff', 10, 200, 1); killZombie(z); score+=10; ex.kills++; Sound.zHit(); continue; }   // zapped by the field
-      f.hp-=dt*10*SCL.atk*packMul; attacked=true;
+      f.hp-=dt*10*SCL.atk; attacked=true;
     }
     else defMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*SCL.spd*(ex.orbActive?(1.6*(ex.swarmSpeed||1)):1)*DIFF[difficulty].zSpd, true);   // mega swarm rushes the orb faster
-    for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
-    for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
-    if(ex.plasmas) for(const s of ex.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
+    for(const s of ex.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk; attacked=true; } }
+    for(const s of ex.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk; attacked=true; } }
+    if(ex.plasmas) for(const s of ex.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     if(!ex.orbActive && zombieTouchesPlayer(z) && p.invuln<=0 && p.shieldT<=0){ loseLife(); p.invuln=1.4; shake(12,.35);
       if(lives<=0){ if(ex.mission6||ex.mission7)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
@@ -3652,12 +3642,6 @@ function updateDefense(dt){
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
   // BOSSES: slow, tanky, march on the flag and smash anything in the way
   for(const bo of ex.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
-    // 3000+ kills: the boss is a commander — it waits until 20 zombies rally around it, then leads the charge
-    if(SCL.cmd && !ex.orbActive && !bo._charge){
-      let packN=0; for(const z of zombies){ if(!z.alive) continue; if(Math.hypot((z.x+z.w/2)-(bo.x+bo.w/2),(z.y+z.h/2)-(bo.y+bo.h/2))<190) packN++; }
-      if(packN>=20){ bo._charge=true; toast('THE BOSS LEADS A CHARGE!'); Sound.bossRoar(); shake(9,.32); }
-      else { bo.face=Math.atan2(f.y-(bo.y+bo.h/2), f.x-(bo.x+bo.w/2)); continue; }   // holding position, calling the horde in
-    }
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face = Math.atan2(bdy,bdx);   // angle toward the flag (sprite head points that way)
     const bzapR = (ex.orbActive && ex.megaOrb) ? 260 : f.r;
@@ -5527,7 +5511,7 @@ function drawTutorial(){
     ctx.textAlign='center'; ctx.fillStyle='#ffe86b'; ctx.font='bold 15px '+CF;
     ctx.fillText('BOSSES & CRYSTALS', W/2, 254);
     section('#ffe86b','✦ BOSS CRYSTALS',
-      'Every boss you kill drops the CRYSTAL from its head — a currency shown above your money (CASH IN sells one for $150). YOUR gun hits bosses 5× as hard as turrets do, so hunt them yourself! The horde also toughens up every 500 kills: more health, faster, harder-hitting. At 3000 kills bosses turn COMMANDER — each waits, rallies 20 zombies around it, then leads them in one devastating charge.');
+      'Every boss you kill drops the CRYSTAL from its head — a currency shown above your money (CASH IN sells one for $150). YOUR gun hits bosses 5× as hard as turrets do, so hunt them yourself! The horde also toughens up every 500 kills: more health, faster, harder-hitting. Past 3000 kills the floodgates open — basics pour in far faster and the field can hold a much bigger horde.');
     section('#c58bff','✦ PLASMA CANNON',
       'Costs 1 crystal + $500. Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal SPLASH+ upgrade grows the blast +50%, twice. Selling a cannon refunds its crystal.');
   } else if(tutPage===6){
@@ -6679,7 +6663,7 @@ function codefMove(e,mvx,mvy,dt,spd,forZombie){
   const ny=e.y+mvy*spd*dt; if(!codefBlocks(e.x,ny,e.w,e.h,forZombie)) e.y=ny;
 }
 function coopSpawn(n){ const cd=codef; if(!cd) return;
-  if(zombies.filter(z=>z.alive).length>62) return;
+  if(zombies.filter(z=>z.alive).length>(defScale(cd).swarm?95:62)) return;   // 3000+: much bigger horde allowed
   const R=DEF_HALF-34, zh=Math.max(1,Math.round(3*DIFF[difficulty].zHp))+defScale(cd).hp;
   for(let i=0;i<n;i++){ const a=Math.random()*6.28;
     zombies.push({ type:'walker', x:Math.cos(a)*R-22, y:Math.sin(a)*R-22, w:44, h:44,
@@ -6727,7 +6711,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
   const cd=codef, f=cd.flag;
   // shared ammo pool slowly refills for the team (no cap)
   magReload(cd, dt);
-  cd.spawnT-=dt; if(cd.spawnT<=0){ coopSpawn(Math.min(6, Math.round((2+Math.floor(cd.elapsed/22))*DIFF[difficulty].spawn))); cd.spawnT=Math.max(0.5, 1.6-cd.elapsed*0.02)/DIFF[difficulty].spawn; }
+  cd.spawnT-=dt; if(cd.spawnT<=0){ const sw=defScale(cd).swarm; coopSpawn(Math.min(6, Math.round((2+Math.floor(cd.elapsed/22))*DIFF[difficulty].spawn))+(sw?5:0)); cd.spawnT=(Math.max(0.5, 1.6-cd.elapsed*0.02)/DIFF[difficulty].spawn)*(sw?0.55:1); }
   const maxBosses = cd.kills>=1000 ? 3 : 1;
   if(cd.bosses.length<maxBosses && cd.kills>=cd.bossMark){ coopSpawnBoss(); cd.bossMark+=20; }
   // turrets fire
@@ -6779,24 +6763,12 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     let slow=1;
     if(cd.spikes) for(const sp of cd.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
     if(z.hp<=0){ killZombie(z); cd.kills++; magKill(cd); cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); continue; }
-    // 3000+ kills: zombies rally on a waiting boss, then charge in as a pack
-    if(SCL.cmd){
-      let rally=null, rd=1e9;
-      for(const bo of cd.bosses){ if(bo.dead||bo._charge) continue; const bdd=Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2)); if(bdd<620 && bdd<rd){ rd=bdd; rally=bo; } }
-      if(rally){ const rdx=(rally.x+rally.w/2)-(z.x+z.w/2), rdy=(rally.y+rally.h/2)-(z.y+z.h/2), rdd=Math.hypot(rdx,rdy)||1;
-        z.face=Math.atan2(rdy,rdx);
-        if(rdd>150) codefMove(z, rdx/rdd, rdy/rdd, dt, 78*(z.spdMul||1)*slow*SCL.spd*DIFF[difficulty].zSpd, true);
-        z.atk=clamp((z.atk||0)-dt*4,0,1); continue;
-      }
-    }
-    let packMul=1;
-    if(SCL.cmd) for(const bo of cd.bosses){ if(!bo.dead && bo._charge && Math.hypot((bo.x+bo.w/2)-(z.x+z.w/2),(bo.y+bo.h/2)-(z.y+z.h/2))<190){ packMul=2; break; } }
     let attacked=false;
-    if(d < f.r + z.w*0.42){ f.hp-=dt*10*SCL.atk*packMul; attacked=true; }
+    if(d < f.r + z.w*0.42){ f.hp-=dt*10*SCL.atk; attacked=true; }
     else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*SCL.spd*DIFF[difficulty].zSpd, true);
-    for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
-    for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
-    if(cd.plasmas) for(const s of cd.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk*packMul; attacked=true; } }
+    for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk; attacked=true; } }
+    for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk; attacked=true; } }
+    if(cd.plasmas) for(const s of cd.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16*SCL.atk; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     for(const pl of players){ if(pl.down) continue; if(coopTouch(z,pl) && pl.invuln<=0){ pl.invuln=1.5; shake(12,.35);
       if(cd.local){ pl.lives=(pl.lives||1)-1; if(pl.lives<=0) pl.down=true; if(players.every(x=>x.down)) cd.over=true; }   // local: own hearts
@@ -6804,12 +6776,6 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
   }
   // bosses
   for(const bo of cd.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
-    // 3000+ kills: the boss waits until 20 zombies rally around it, then leads the charge
-    if(SCL.cmd && !bo._charge){
-      let packN=0; for(const z of zombies){ if(!z.alive) continue; if(Math.hypot((z.x+z.w/2)-(bo.x+bo.w/2),(z.y+z.h/2)-(bo.y+bo.h/2))<190) packN++; }
-      if(packN>=20){ bo._charge=true; toast('THE BOSS LEADS A CHARGE!'); Sound.bossRoar(); shake(9,.32); }
-      else { bo.face=Math.atan2(f.y-(bo.y+bo.h/2), f.x-(bo.x+bo.w/2)); continue; }
-    }
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face=Math.atan2(bdy,bdx);
     if(bd < f.r + bo.w*0.5){ f.hp-=dt*14; }
