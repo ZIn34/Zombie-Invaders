@@ -206,6 +206,9 @@ function syncViewport(){
   const want = wide && !portraitOnlyState();   // full-land gameplay/menu AND card screens all use the wide canvas
   if(want!==_landActive){ _landActive=want; applyViewport(); }
 }
+function stagePortrait(){   // classic horde modes lay out against the tall canvas — switch BEFORE building the wave
+  if(_landActive){ _landActive=false; applyViewport(); }
+}
 // draw a portrait screen (430×560 layout) as a centred card on the wide landscape canvas
 function renderFrame(){
   if(uiCard()){
@@ -539,10 +542,12 @@ function canvasTap(p, pid){
     if(explore && explore.defense){   // defense build buttons take the tap before aiming
       for(const wb of defWeaponBtns){ if(inRect(p, wb)){ defBuyOrEquip(player, explore, wb); return; } }   // weapon shop
       if(inRect(p, plasmaRangeBtn)){ buyPlasmaRange(); return; }   // 2x plasma range (5 crystals)
-      if(!explore.orbActive) for(const bb of buildBtns){ if(inRect(p, bb)){ if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else defBuild(bb.type); return; } }
+      if(!explore.orbActive) for(const bb of buildBtns){ if(inRect(p, bb)){ if(bb.type==='range'){ buyPlasmaRange(); return; } if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else defBuild(bb.type); return; } }
     }
     if(state===STATE.COOPDEF && codef){   // co-op build buttons
-      for(const bb of buildBtns){ if(inRect(p, bb)){ if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else coopBuildRequest(bb.type); return; } }
+      for(const bb of buildBtns){ if(inRect(p, bb)){
+        if(bb.type==='range'){ if(codef.local) buyPlasmaRange(codef); else coopBuildRequest('range'); return; }
+        if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else coopBuildRequest(bb.type); return; } }
     }
     tapAim.active=true; tapAim.id=pid; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
   }
@@ -1007,11 +1012,22 @@ function acctAuth(mode){   // mode: 'signUp' (create) | 'signInWithPassword' (lo
     .then(r=>r.json()).then(d=>{ acctBusy=false;
       if(d&&d.idToken){ acct={uid:d.localId,email:d.email||email,uname:clean,idToken:d.idToken,refreshToken:d.refreshToken}; acctStoreToken(d.refreshToken); try{ localStorage.setItem('zi_acct_un', clean); }catch(e){}
         try{ document.getElementById('acctPass').value=''; }catch(e){}
-        acctShowInputs(false); acctMsg=''; Sound.power(); toast(mode==='signUp'?'ACCOUNT CREATED — synced':'SIGNED IN — synced'); acctPull(); }
+        acctShowInputs(false); acctMsg=''; Sound.power();
+        if(mode==='signUp'){ resetLocalProgress(); toast('ACCOUNT CREATED — fresh start'); }   // new account = clean slate, no progress transfers
+        else toast('SIGNED IN — synced');
+        acctPull(); }
       else { acctMsg=acctErr(d&&d.error&&d.error.message); Sound.hit(); }
     }).catch(()=>{ acctBusy=false; acctMsg='network error — try again'; });
 }
 function acctLogout(){ acct=null; acctStoreToken(null); acctMsg=''; acctShowInputs(true); Sound.hit(); toast('LOGGED OUT'); }
+function resetLocalProgress(){   // brand-new account starts from scratch — nothing carries over from this device
+  coins=0; campaignUnlocked=1; campaignWon=false; hi=0; score=0;
+  for(const k in upg) upg[k]=0;
+  ownedSkins=['default']; equippedSkin='default';
+  ownedZombieSkins=['classic']; equippedZombieSkin='classic';
+  ownedBossSkins=['classic']; equippedBossSkin='classic';
+  saveProgress();
+}
 function acctRestore(){   // silent auto-login on launch using the saved refresh token
   let rt=''; try{ rt=localStorage.getItem('zi_acct_rt')||''; }catch(e){}
   if(!rt||!acctReady()) return;
@@ -1817,6 +1833,7 @@ function maybeDropPower(x,y){
 function startGame(){
   mode='arcade'; wasEndless=false; wasDefense=false; defWon=false;
   explore=null;
+  stagePortrait();
   score=0; lives=3; wave=1;
   player=makePlayer();
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[];
@@ -1845,6 +1862,7 @@ function startMission(i){
   if(MISSIONS[i].shootout5){ setupShootout5(); return; }     // Mission 5: gun-zombie shootout
   if(MISSIONS[i].crystalRun){ setupCrystalRun(); return; }   // Mission 4: the crystal run (rifle)
   if(MISSIONS[i].explore){ setupExplore(); return; }    // Mission 3: open-world crystal run
+  stagePortrait();
   player=makePlayer();
   lives=clamp(3+(upg.hp||0),1,7);   // STARTING ARMOR upgrade
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; bgScroll=0;
@@ -1942,6 +1960,7 @@ function startCoop(advanced){
   mode='coop'; explore=null; coop=newCoop(advanced); state=STATE.COOP;
 }
 function startCoopDefense(){
+  stagePortrait();
   score=0; wave=4; lives=COOP_LIVES;
   player=makePlayer();
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; bgScroll=0;
@@ -2326,9 +2345,10 @@ function updatePlay(dt){
 
 function fire(p){
   p.recoil=1;   // kicks off the shooting animation
-  const m=playerMuzzle(p), cx=m.tipX, by=m.tipY;
-  spawnParticles(m.tipX, m.tipY, '#ffe14b', 3, 180);  // muzzle sparks
-  spawnParticles(m.tipX, m.tipY, '#fff2b0', 2, 90);
+  const fp=classicFlashMuzzle(p);             // bullets leave exactly from the muzzle flash
+  const cx=fp.x, by=fp.y;
+  spawnParticles(cx, by, '#ffe14b', 3, 180);  // muzzle sparks
+  spawnParticles(cx, by, '#fff2b0', 2, 90);
   const du=dmgUp();
   if(p.weapon==='spread'){
     Sound.spread();
@@ -2718,8 +2738,7 @@ function exploreFire(p){
   p.recoil=1;
   let vx=0,vy=-1;
   let cx, cy;
-  if(explore && explore.defense){ const fp=playerFlashMuzzle(p); cx=fp.x; cy=fp.y; }   // defense: bullets leave exactly from the muzzle flash
-  else { const mz=explorePlayerMuzzle(p); cx=mz.x; cy=mz.y; }
+  { const fp=playerFlashMuzzle(p); cx=fp.x-4; cy=fp.y-4; }   // all twin-stick modes: the 8×8 bullet is CENTRED on the muzzle flash point
   // always shoot exactly where the player is aiming — no auto-targeting
   if(p.aim!=null){ vx=Math.cos(p.aim); vy=Math.sin(p.aim); }
   const sp=740;
@@ -3233,6 +3252,7 @@ const BUILD_BAR=[
   {type:'wall',    label:'WALL'},
   {type:'wall2',   label:'STEEL'},
   {type:'spike',   label:'SPIKES'},
+  {type:'range',   label:'RANGE+'},   // plasma-range upgrade (5 crystals) — a bar tile so controller players can reach it
   {type:'sell',    label:'SELL'},
 ];
 let buildBtns=[];
@@ -3242,7 +3262,7 @@ const defWeaponBtns=[
   {wp:'shotgun', label:'SHOTGUN', cost:120, x:8, y:134, w:132, h:30},
 ];
 const plasmaRangeBtn={x:8, y:168, w:158, h:30, crystals:5};   // spend 5 boss crystals → double the range of every plasma ball
-function buyPlasmaRange(){ const ex=explore; if(!ex||!ex.defense) return;
+function buyPlasmaRange(ctx2){ const ex = ctx2 || ((state===STATE.COOPDEF && codef) ? codef : explore); if(!ex||!(ex.defense||ex.defense2)) return;
   if((ex.plasmaRange||0)>=2){ toast('PLASMA RANGE MAXED'); Sound.empty(); return; }   // stacks up to 2 times (4x)
   if((ex.crystals||0)<plasmaRangeBtn.crystals){ toast('NEED 5 CRYSTALS'); Sound.empty(); return; }
   ex.crystals-=plasmaRangeBtn.crystals; ex.plasmaRange=(ex.plasmaRange||0)+1;
@@ -3269,6 +3289,12 @@ function layoutBuildBar(){
 }
 layoutBuildBar();
 function defSnap(v){ return Math.floor(v/DEF_GRID)*DEF_GRID + DEF_GRID/2; }   // to grid-cell centre
+function orbShatter(ctx2, x, y){   // 3000+ kills: a boss pops the plasma ball — the blast wrecks every build within 2 grid squares
+  const R=DEF_GRID*2;
+  const wreck=(list)=>{ if(!list) return; for(const s of list){ if(s.hp>0 && Math.hypot(s.x-x,s.y-y)<=R+Math.max(s.w,s.h)/2){ s.hp=0; spawnParticles(s.x,s.y,'#c9d2cf',10,160); spawnBlood(s.x,s.y,'#c48bff',6,140,1); } } };
+  wreck(ctx2.turrets); wreck(ctx2.walls); wreck(ctx2.spikes); wreck(ctx2.plasmas);
+  shake(10,.32); Sound.power();
+}
 function defRectsOverlap(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by; }
 function setupDefense(){
   mode='arcade'; wasEndless=false; wasDefense=true; defWon=false;
@@ -3403,7 +3429,7 @@ function sellNearest(ctx2, pl){
 function doBuild(ctx2, pl, type, isCoop){
   if(ctx2 && ctx2.orbActive){ toast('THE FIELD IS ONLINE'); Sound.empty(); return; }   // Mission 6: no building once the orb spawns
   if(type==='sell'){ sellNearest(ctx2, pl); return; }
-  if(type==='plasma' && isCoop){ toast('PLASMA — SOLO DEFENSE ONLY'); Sound.empty(); return; }   // launcher runs on the solo-defense sim only
+  if(type==='range'){ buyPlasmaRange(ctx2); return; }   // RANGE+ tile: plasma range upgrade (5 crystals)
   if(type==='plasma' && (ctx2.crystals||0)<1){ toast('NEED 1 BOSS CRYSTAL'); Sound.empty(); return; }
   const spec=BUILD_SPEC[type]; if(!ctx2||!pl||!spec) return;
   if(ctx2.cash<spec.cost){ toast('NOT ENOUGH $'); Sound.empty(); return; }
@@ -3448,7 +3474,7 @@ function drawBuildGhost(ctx2, pl, type, isCoop){
   const spec=BUILD_SPEC[type]; if(!spec||!pl) return;
   const {cx,cy,ang}=buildGhostSpot(pl); const size=spec.size;
   const blocked = buildSpotBlocked(ctx2, type, cx, cy, isCoop) || (ctx2.cash<spec.cost)
-    || (type==='plasma' && (isCoop || (ctx2.crystals||0)<1));   // plasma: not in co-op, needs a boss crystal
+    || (type==='plasma' && (ctx2.crystals||0)<1);   // plasma needs a boss crystal
   ctx.save(); ctx.globalAlpha=0.5;
   ctx.fillStyle = blocked ? 'rgba(255,80,80,.28)' : 'rgba(255,255,255,.30)';
   ctx.strokeStyle = blocked ? '#ff6b6b' : '#ffffff';
@@ -3601,15 +3627,15 @@ function updateDefense(dt){
       if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
   // BOSSES: slow, tanky, march on the flag and smash anything in the way
-  const bossSmashOrbs = ex.kills>=3000;   // past 3000 kills bosses shrug off plasma orbs and smash them on contact
+  const bossSmashOrbs = ex.kills>=3000;   // past 3000 kills a boss kill POPS the ball — the blast wrecks builds within 2 squares
   for(const bo of ex.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
-    if(bossSmashOrbs){
-      if(ex.orbs) for(const o of ex.orbs){ if(o.life>0 && Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y) < o.r + bo.w*0.45){ o.life=0; spawnBlood(o.x,o.y,'#c48bff',14,200,1); shake(6,.22); } }   // boss destroys the orb, takes no damage
-    } else {
+    {
       // plasma orb lures & zaps bosses within its attract radius
       let orb=null,obd=1e9; if(ex.orbs) for(const o of ex.orbs){ const od=Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
       if(orb){ const odx=orb.x-(bo.x+bo.w/2), ody=orb.y-(bo.y+bo.h/2), od=Math.hypot(odx,ody)||1; bo.face=Math.atan2(ody,odx);
-        if(od < orb.r + bo.w*0.45){ bo.dead=true; spawnBlood(bo.x+bo.w/2,bo.y+bo.h/2,'#c48bff',18,240,1); spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); score+=100; ex.kills++; Sound.kill(); shake(10,.3); continue; }
+        if(od < orb.r + bo.w*0.45){ bo.dead=true; spawnBlood(bo.x+bo.w/2,bo.y+bo.h/2,'#c48bff',18,240,1); spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); score+=100; ex.kills++; Sound.kill(); shake(10,.3);
+          if(bossSmashOrbs){ orb.life=0; spawnBlood(orb.x,orb.y,'#c48bff',14,200,1); orbShatter(ex, orb.x, orb.y); }   // the ball breaks and takes nearby builds with it
+          continue; }
         defMove(bo, odx/od, ody/od, dt, 44*DIFF[difficulty].zSpd, true); continue;
       }
     }
@@ -3910,6 +3936,21 @@ function drawDefenseUI(ex){
     ctx.textBaseline='alphabetic'; ctx.restore(); }
 }
 function drawBuildTile(bb, cash, sel){
+  if(bb.type==='range'){   // RANGE+ tile — plasma-range upgrade, paid in boss crystals
+    const dctx=(state===STATE.COOPDEF&&codef)?codef:explore;
+    const lvl=(dctx&&dctx.plasmaRange)||0, maxed=lvl>=2, can=!maxed && dctx && (dctx.crystals||0)>=5;
+    ctx.save();
+    ctx.fillStyle=can?'rgba(40,26,54,.94)':'rgba(38,38,38,.86)'; roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
+    if(sel){ ctx.save(); ctx.strokeStyle='#ffe14b'; ctx.lineWidth=3; ctx.setLineDash([7,4]); ctx.lineDashOffset=-(performance.now()/60)%11; roundRectPath(bb.x-3,bb.y-3,bb.w+6,bb.h+6,10); ctx.stroke(); ctx.restore(); }
+    ctx.lineWidth=2; ctx.strokeStyle=can?'#c48bff':'#666'; roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.stroke();
+    ctx.globalAlpha=can?1:0.55;
+    const icx=bb.x+bb.w/2;
+    ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.5;   // little crystal
+    ctx.beginPath(); ctx.moveTo(icx,bb.y+6); ctx.lineTo(icx+5,bb.y+13); ctx.lineTo(icx,bb.y+20); ctx.lineTo(icx-5,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('RANGE+', icx, bb.y+31);
+    ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX ×4':('5 crystals · Lv '+lvl+'/2'), icx, bb.y+41);
+    ctx.globalAlpha=1; ctx.restore(); return;
+  }
   if(bb.type==='sell'){   // SELL tile — refunds the nearest build at full price
     ctx.save();
     ctx.fillStyle='rgba(44,32,12,.94)'; roundRectPath(bb.x,bb.y,bb.w,bb.h,8); ctx.fill();
@@ -4444,14 +4485,10 @@ function drawPlayerObj(p, faceAim){
   ctx.restore();
   // muzzle flash — EXACT same routine as shootout, around the soldier's sprite centre
   if(rec>0.05){
-    const heavy=(p.weapon==='spread'||p.rapidT>0||p.permRapid), isRifle=(p.rapidT>0||p.permRapid);
     const twin=(faceAim && p.aim!=null);
     const aim=twin? p.aim : -Math.PI/2;   // twin-stick aims; classic horde (normal mode) fires up
-    const pixel=(equippedSkin && equippedSkin!=='default');
-    let pixL=0;
-    if(pixel) pixL = twin ? (explore ? 9 : 49) : 2;   // pixel flash: open-world 9px left, other twin-stick 49px left; normal mode 2px left
-    else if(twin && explore) pixL = -4;   // basic soldier rifle in defense: nudge 4px right
-    drawUnitFlash(cx, scy, aim, heavy, isRifle, rec, 12, pixL);   // non-shootout: raise 12px
+    const fp = twin ? playerFlashMuzzle(p) : classicFlashMuzzle(p);   // ONE shared point — bullets spawn from the same fn
+    drawFlashAt(fp.x, fp.y, aim, rec, 26);
   }
 }
 
@@ -5328,7 +5365,7 @@ function wrapLines(text, maxW, font){
 }
 const TUT_WAR_IMG="data:image/jpeg;base64,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";
 let tutT=0, tutPage=0;
-const TUT_PAGES=10;
+const TUT_PAGES=11;
 let tutWarImg=null;   // WAR 10v10 how-to-play screenshot (embedded below)
 (function(){ if(typeof TUT_WAR_IMG!=='undefined' && TUT_WAR_IMG){ const im=new Image(); im.onload=()=>{tutWarImg=im;}; im.src=TUT_WAR_IMG; } })();
 function tutArrow(x1,y1,x2,y2,col,wid){
@@ -5382,9 +5419,27 @@ function tutIllo(page, bx,by,bw,bh){
   ctx.fillStyle='#080b0e'; roundRectPath(bx,by,bw,bh,12); ctx.fill();
   roundRectPath(bx,by,bw,bh,12); ctx.clip();
   ctx.fillStyle='#05070a'; ctx.fillRect(bx,by,bw,bh);
-  const im = (page===9 ? tutWarImg : tutImgs[page]);
+  const im = (page===10 ? tutWarImg : (page===5 ? null : tutImgs[page>5 ? page-1 : page]));
   if(im && im.width){ const s=Math.min(bw/im.width, bh/im.height), dw=im.width*s, dh=im.height*s;
     ctx.drawImage(im, bx+(bw-dw)/2, by+(bh-dh)/2, dw, dh); }
+  else if(page===5){
+    // drawn scene: boss dropping a crystal + a plasma orb luring zombies
+    const gy=by+bh-26;
+    ctx.fillStyle='#0d1410'; ctx.fillRect(bx,gy,bw,26);
+    tutBoss(bx+bw*0.24, gy+6, 128);
+    tutCrystal(bx+bw*0.24, by+34);
+    tutArrow(bx+bw*0.24, by+56, bx+bw*0.24, by+16, '#ffe86b', 2.4);
+    // plasma orb
+    const ox=bx+bw*0.68, oy=by+bh*0.42, t=performance.now()/1000;
+    const pr=30+3*Math.sin(t*3);
+    const g=ctx.createRadialGradient(ox,oy,4,ox,oy,pr);
+    g.addColorStop(0,'rgba(240,220,255,.95)'); g.addColorStop(0.5,'rgba(180,110,255,.55)'); g.addColorStop(1,'rgba(140,70,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(ox,oy,pr,0,6.28); ctx.fill();
+    ctx.strokeStyle='rgba(200,140,255,.8)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(ox,oy,14,0,6.28); ctx.stroke();
+    // zombies pulled toward the orb
+    tutZombie(bx+bw*0.9, gy+8, 92); tutArrow(bx+bw*0.87, oy+34, ox+20, oy+12, '#c58bff', 2.2);
+    tutZombie(bx+bw*0.52, gy+8, 92); tutArrow(bx+bw*0.55, oy+34, ox-20, oy+12, '#c58bff', 2.2);
+  }
   ctx.restore();
   ctx.strokeStyle='rgba(126,224,106,.35)'; ctx.lineWidth=1.5; roundRectPath(bx,by,bw,bh,12); ctx.stroke();
 }
@@ -5417,7 +5472,7 @@ function drawTutorial(){
     section('#9fe27f','✦ SHOOT',
       'Hold FIRE (or Space) to shoot. A basic zombie takes 2 hits. Killing zombies earns coins.');
     section('#ffd24a','✦ MAGAZINE',
-      'You carry a 7-round magazine. Empty it and it reloads automatically, and every 2 kills instantly snaps in a full mag. The counter (top-right) shows RELOAD while reloading.');
+      'You carry a 12-round magazine. Empty it and it reloads automatically, and every 2 kills instantly snaps in a full mag. The counter (top-right) shows RELOAD while reloading.');
   } else if(tutPage===1){
     ctx.textAlign='center'; ctx.fillStyle='#ffd24a'; ctx.font='bold 15px '+CF;
     ctx.fillText('WIRE & POWER-UPS', W/2, 254);
@@ -5436,38 +5491,45 @@ function drawTutorial(){
     ctx.textAlign='center'; ctx.fillStyle='#9fe27f'; ctx.font='bold 15px '+CF;
     ctx.fillText('CAMPAIGN & OPEN WORLD', W/2, 254);
     section('#9fe27f','✦ MISSIONS',
-      'Play the story in CAMPAIGN — clear each mission to unlock the next, and spend coins in the ARMORY between missions on armor, fire rate and more.');
+      'Play the story in CAMPAIGN — clear each mission to unlock the next, and spend coins in the ARMORY between missions on armor, fire rate, damage, bigger clips and more.');
     section('#ffd24a','✦ OPEN WORLD',
       'Endless twin-stick roaming: LEFT stick moves, RIGHT stick aims & fires. Roam freely and survive as long as you can.');
   } else if(tutPage===4){
     ctx.textAlign='center'; ctx.fillStyle='#7fd0ff'; ctx.font='bold 15px '+CF;
     ctx.fillText('DEFENSE', W/2, 254);
     section('#7fd0ff','✦ PROTECT THE FLAG',
-      'Hold off the horde and keep the flag alive. Earn cash from kills and spend it on the build bar up top: TURRETS shoot for you, WALLS block zombies, SPIKES hurt them. Builds can’t be stacked on the same spot; stand next to one and pick SELL to refund it.');
+      'Hold off the horde and keep the flag alive. Earn cash from kills and spend it on the build bar up top: TURRET, HEAVY and HYPER turrets shoot for you (HYPER is a $300 rapid rifle), WALLS block zombies, SPIKES hurt them. Builds can’t stack; stand next to one and pick SELL to refund it.');
     section('#9fe27f','✦ WIN OR ENDLESS',
       'Choose ENDLESS, or TYPE a kill target to win at. Play solo or 2-player co-op — each difficulty has its own leaderboard.');
   } else if(tutPage===5){
+    ctx.textAlign='center'; ctx.fillStyle='#ffe86b'; ctx.font='bold 15px '+CF;
+    ctx.fillText('BOSSES & CRYSTALS', W/2, 254);
+    section('#ffe86b','✦ BOSS CRYSTALS',
+      'Bosses raid defense mode too — every boss you kill drops the CRYSTAL from its head, a second currency shown above your money. 5 bosses at once storm in past 2000 kills, and past 3000 kills they smash plasma orbs on touch instead of dying to them!');
+    section('#c58bff','✦ PLASMA LAUNCHER',
+      'Costs 1 crystal + $500. Each launcher keeps one slow plasma orb out (a shot every 3s) that lures nearby zombies in and zaps them for 20s. Buy the 5-crystal RANGE upgrade up to 2 times to quadruple orb size. Selling a launcher refunds its crystal.');
+  } else if(tutPage===6){
     ctx.textAlign='center'; ctx.fillStyle='#c58bff'; ctx.font='bold 15px '+CF;
     ctx.fillText('SHOOTOUT', W/2, 254);
     section('#c58bff','✦ TWIN-STICK DUELS',
       'A gunfight on a big map with cover to hide behind. Play 1v1, 2v2 or 1v2 against tactical bots — or a friend in 2-PLAYER SPLIT.');
     section('#ffd24a','✦ GUNS & MAGS',
-      'Your pistol holds 7 rounds and reloads when empty. Grab SHOTGUN and RIFLE crates for more firepower, and toggle POWER-UPS on or off before the match.');
-  } else if(tutPage===6){
+      'Your pistol holds 12 rounds and reloads when empty. Grab SHOTGUN and RIFLE crates for more firepower, and toggle POWER-UPS on or off before the match.');
+  } else if(tutPage===7){
     ctx.textAlign='center'; ctx.fillStyle='#ffd24a'; ctx.font='bold 15px '+CF;
     ctx.fillText('STORE & SETTINGS', W/2, 254);
     section('#ffd24a','✦ STORE',
       'Spend coins on new looks — soldier skins plus the BASIC, SOLDIER and PIXEL zombie skins. Your equipped zombie even shows up in the online menus.');
     section('#7fd0ff','✦ SETTINGS',
       'Toggle screen shake, blood and MUSIC. Remap every controller button under BUTTONS — the right stick always aims. Press M any time to mute.');
-  } else if(tutPage===7){
+  } else if(tutPage===8){
     ctx.textAlign='center'; ctx.fillStyle='#5dff8a'; ctx.font='bold 15px '+CF;
     ctx.fillText('PLAY ONLINE', W/2, 254);
     section('#5dff8a','✦ CONNECT',
       'In VERSUS → ONLINE: QUICK MATCH auto-pairs you with anyone searching, HOST gives a code to share, or JOIN with a friend’s code. Use a real browser, not the app preview.');
     section('#ff8a3d','✦ TWO MODES',
       'HORDE DEFENSE — one defends while the other sends zombies, then swap. SHOOTOUT — a live 1v1 twin-stick duel on a big map with cover to hide behind.');
-  } else if(tutPage===8){
+  } else if(tutPage===9){
     ctx.textAlign='center'; ctx.fillStyle='#ffb347'; ctx.font='bold 15px '+CF;
     ctx.fillText('TARGET PRACTICE', W/2, 254);
     section('#ffb347','✦ FREE SHOOTING RANGE',
@@ -6351,6 +6413,7 @@ function netStartRound(r){ net.round=r; net.ended=false;
 }
 function netStartDefense(){
   mode='net'; explore=null; coop=null;
+  stagePortrait();
   score=0; wave=4; lives=3; net.killed=0;
   player=makePlayer(); player.ammo=14; player.permRapid=net.adv;   // advanced = rapid fire for a fairer fight
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null; bgScroll=0;
@@ -6360,6 +6423,7 @@ function netStartDefense(){
 }
 function netStartAttack(){
   mode='net'; explore=null; coop=null; net.charge=3; net.snapshot=null; net.killed=0; net.timeLeft=net.roundTime;
+  stagePortrait();
   player=makePlayer(); player.x=W/2-24; player.y=H-96;
   zombies=[]; bullets=[]; ebullets=[]; particles=[]; boss=null; buildBarricades();
   state=STATE.NETATTACK; toast('SEND THE HORDE! tap up top');
@@ -6567,7 +6631,7 @@ function netStartCoopDefense(count){
   codef={ defense2:true, camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0,
     cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:7, ammoRegen:0, reloadT:0, killAcc:0, mags:3, killLimit:defKillLimit,
     flag:(function(){ const fh=Math.round(700*DIFF[difficulty].flagHp); return {x:0,y:0,r:46,hp:fh,hpMax:fh}; })(),
-    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, players };
+    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0, players };
   codef.meIdx = (net.role==='host') ? 0 : (net.mySlot||1);   // host is slot 0; guests get their slot from the lobby
   codef.p1=players[0]; codef.p2=players[1]||players[0];      // aliases kept for any shared helpers
   player=players[codef.meIdx] || players[0];                 // globals that helpers reference point at the local player
@@ -6583,6 +6647,7 @@ function codefBlocks(x,y,w,h,forZombie){ const cd=codef; if(!cd) return false; c
   if(forZombie){   // barricades + turrets block zombies only; players walk through their own builds
     for(const s of cd.walls){ if(s.hp>0 && defRectsOverlap(x,y,w,h, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) return true; }
     for(const t of cd.turrets){ if(t.hp>0 && defRectsOverlap(x,y,w,h, t.x-t.w/2,t.y-t.h/2,t.w,t.h)) return true; }
+    if(cd.plasmas) for(const t of cd.plasmas){ if(t.hp>0 && defRectsOverlap(x,y,w,h, t.x-t.w/2,t.y-t.h/2,t.w,t.h)) return true; }
   }
   return false;
 }
@@ -6652,6 +6717,26 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
         bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:t.hyper?6:7,h:t.hyper?6:7,vx:vx*sp,vy:vy*sp,col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true});
         if(t.hyper) Sound.rifle(); else Sound.shoot(); t.cd=t.fireCd||0.5; } }
   }
+  // PLASMA LAUNCHERS (same sim as solo defense): one slow orb per turret, lands as an attract-and-zap field
+  if(!cd.plasmas)cd.plasmas=[]; if(!cd.orbs)cd.orbs=[]; if(!cd.pshots)cd.pshots=[];
+  const cdBallOut=(t)=> cd.pshots.some(s=>s.owner===t) || cd.orbs.some(o=>o.owner===t);
+  for(const t of cd.plasmas){ if(t.hp<=0) continue;
+    if(t.cd>0)t.cd-=dt;
+    if(cdBallOut(t)) continue;
+    let best=null,bd=t.range;
+    for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot((z.x+z.w/2)-t.x,(z.y+z.h/2)-t.y); if(d<bd){bd=d;best=z;} }
+    for(const bo of cd.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
+    if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
+      if(t.cd<=0){ const a=t.aim, sp=440;
+        cd.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0, owner:t});
+        Sound.tank(); t.cd=t.fireCd||6; } }
+  }
+  for(const s of cd.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
+    if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
+      { const rx=Math.pow(2, cd.plasmaRange||0); cd.orbs.push({x:s.x, y:s.y, r:26*rx, attract:50*rx, life:20, t:0, owner:s.owner}); } Sound.power(); shake(6,.2); } }
+  cd.pshots=cd.pshots.filter(s=>!s._land);
+  for(const o of cd.orbs){ o.life-=dt; o.t=(o.t||0)+dt; }
+  cd.orbs=cd.orbs.filter(o=>o.life>0);
   const players=cd.players||[cd.p1,cd.p2];   // online uses a players[] array; local split-screen uses p1/p2
   for(const z of zombies){
     if(z.dying){ tickDying(z,dt,1.05); continue; }
@@ -6662,24 +6747,42 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     let slow=1;
     if(cd.spikes) for(const sp of cd.spikes){ if(sp.hp>0 && defRectsOverlap(z.x,z.y,z.w,z.h, sp.x-sp.w/2,sp.y-sp.h/2,sp.w,sp.h)){ z.hp-=dt*11; sp.hp-=dt*7; slow=0.4; z.flash=0.12; break; } }
     if(z.hp<=0){ killZombie(z); cd.kills++; magKill(cd); cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); continue; }
+    // plasma orb pull: a live orb within range draws this zombie in and zaps it on contact
+    let orb=null, obd=1e9; if(cd.orbs) for(const o of cd.orbs){ const od=Math.hypot((z.x+z.w/2)-o.x,(z.y+z.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
+    if(orb){ const odx=orb.x-(z.x+z.w/2), ody=orb.y-(z.y+z.h/2), od=Math.hypot(odx,ody)||1; z.face=Math.atan2(ody,odx);
+      if(od < orb.r + z.w*0.4){ spawnBlood(z.x+z.w/2,z.y+z.h/2,'#c48bff',10,200,1); killZombie(z); cd.kills++; magKill(cd); cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); Sound.zHit(); coopCheckWin(); continue; }
+      codefMove(z, odx/od, ody/od, dt, 74*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true); z.atk=clamp((z.atk||0)-dt*4,0,1); continue;
+    }
     let attacked=false;
     if(d < f.r + z.w*0.42){ f.hp-=dt*10; attacked=true; }
     else codefMove(z, dx/d, dy/d, dt, 60*(z.spdMul||1)*slow*DIFF[difficulty].zSpd, true);
     for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
+    if(cd.plasmas) for(const s of cd.plasmas){ if(s.hp>0 && defRectsOverlap(z.x-3,z.y-3,z.w+6,z.h+6, s.x-s.w/2,s.y-s.h/2,s.w,s.h)){ s.hp-=dt*16; attacked=true; } }
     z.atk=clamp((z.atk||0)+(attacked?dt*5:-dt*4),0,1);
     for(const pl of players){ if(pl.down) continue; if(coopTouch(z,pl) && pl.invuln<=0){ pl.invuln=1.5; shake(12,.35);
       if(cd.local){ pl.lives=(pl.lives||1)-1; if(pl.lives<=0) pl.down=true; if(players.every(x=>x.down)) cd.over=true; }   // local: own hearts
       else { cd.lives--; if(cd.lives<=0) cd.over=true; } } }
   }
   // bosses
+  const cdBossSmash = cd.kills>=3000;   // past 3000 kills a boss kill POPS the ball — the blast wrecks builds within 2 squares
   for(const bo of cd.bosses){ if(bo.dead) continue; if(bo.flash>0)bo.flash-=dt;
+    {
+      let orb=null,obd=1e9; if(cd.orbs) for(const o of cd.orbs){ const od=Math.hypot((bo.x+bo.w/2)-o.x,(bo.y+bo.h/2)-o.y); if(od<o.attract && od<obd){ obd=od; orb=o; } }
+      if(orb){ const odx=orb.x-(bo.x+bo.w/2), ody=orb.y-(bo.y+bo.h/2), od=Math.hypot(odx,ody)||1; bo.face=Math.atan2(ody,odx);
+        if(od < orb.r + bo.w*0.45){ bo.dead=true; spawnBlood(bo.x+bo.w/2,bo.y+bo.h/2,'#c48bff',18,240,1); spawnDeathBlood({x:bo.x,y:bo.y,w:bo.w,h:bo.h}); cd.kills++; Sound.kill(); shake(10,.3); coopCheckWin();
+          if(cdBossSmash){ orb.life=0; spawnBlood(orb.x,orb.y,'#c48bff',14,200,1); orbShatter(cd, orb.x, orb.y); }   // the ball breaks and takes nearby builds with it
+          continue; }
+        codefMove(bo, odx/od, ody/od, dt, 44*DIFF[difficulty].zSpd, true); continue;
+      }
+    }
     const bdx=f.x-(bo.x+bo.w/2), bdy=f.y-(bo.y+bo.h/2), bd=Math.hypot(bdx,bdy)||1;
     bo.face=Math.atan2(bdy,bdx);
     if(bd < f.r + bo.w*0.5){ f.hp-=dt*14; }
     else codefMove(bo, bdx/bd, bdy/bd, dt, 40*DIFF[difficulty].zSpd, true);
     for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
+    if(cd.plasmas) for(const s of cd.plasmas){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     for(const pl of players){ if(pl.down) continue; if(pl.x+pl.w/2>bo.x-6 && pl.x+pl.w/2<bo.x+bo.w+6 && pl.y+pl.h/2>bo.y-6 && pl.y+pl.h/2<bo.y+bo.h+6 && pl.invuln<=0){ pl.lives=(pl.lives||1)-1; pl.invuln=1.5; shake(14,.4); if(pl.lives<=0) pl.down=true; if(players.every(x=>x.down)) cd.over=true; } }
   }
   // separation
@@ -6690,6 +6793,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
       if(sd===0){ sx=(a%2?1:-1); sy=(bI%2?1:-1); sd=Math.hypot(sx,sy); }
       if(sd<MINSEP){ const push=(MINSEP-sd)/2, ux=sx/sd, uy=sy/sd; za.x-=ux*push; za.y-=uy*push; zb.x+=ux*push; zb.y+=uy*push; } } }
   cd.turrets=cd.turrets.filter(t=>t.hp>0); cd.walls=cd.walls.filter(s=>s.hp>0); if(cd.spikes) cd.spikes=cd.spikes.filter(s=>s.hp>0);
+  if(cd.plasmas) cd.plasmas=cd.plasmas.filter(t=>t.hp>0);
   // bullets
   for(const b of bullets){ b.x+=(b.vx||0)*dt; b.y+=b.vy*dt; b.t=(b.t||0)+dt; if(codefBulletBlocks(b.x,b.y)) b.dead=true; }
   for(const b of bullets){ if(b.dead) continue;
@@ -6705,6 +6809,8 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
         spawnBlood(b.x,b.y,'#7a0f1a',7,120,basicBloodMul()); if(!b.pierce)b.dead=true;
         if(z.hp<=0){ killZombie(z); magKill(cd); cd.kills++; cd.cash+=Math.round(DEF_KILL_CASH*DIFF[difficulty].cash); coopCheckWin(); } break; } } }
   bullets=bullets.filter(b=> !b.dead && (b.t||0)<2.6);
+  for(const bo of cd.bosses){ if(bo.dead && !bo._crystal){ bo._crystal=true; cd.crystals=(cd.crystals||0)+1;   // every boss drops a head crystal
+    spawnBlood(bo.x+bo.w/2, bo.y+bo.h/2, '#c48bff', 12, 150, 1); toast('+1 CRYSTAL'); } }
   cd.bosses=cd.bosses.filter(bo=>!bo.dead);
   zombies=zombies.filter(z=> z.alive || z.dying);
 }
@@ -6742,8 +6848,11 @@ function coopSnapshot(){
   const wl=cd.walls.map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),s.tier||1,Math.round(s.hpMax)]);
   const sk=(cd.spikes||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),Math.round(s.hpMax)]);
   const bs=cd.bosses.filter(b=>!b.dead).map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.hp),Math.round(b.hpMax),+(b.face||0).toFixed(2)]);
+  const pm=(cd.plasmas||[]).map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2),Math.round(t.hpMax)]);
+  const ob=(cd.orbs||[]).map(o=>[Math.round(o.x),Math.round(o.y),Math.round(o.r),Math.round(o.attract),+o.life.toFixed(1)]);
+  const ph=(cd.pshots||[]).map(s=>[Math.round(s.x),Math.round(s.y)]);
   return { t:'cst', ca:Math.floor(cd.cash), lv:cd.lives, ki:cd.kills, ov:cd.over?1:0, fh:Math.max(0,Math.round(cd.flag.hp)),
-    am:Math.floor(cd.ammo||0), wo:cd.won?1:0, ps:cd.players.map(encP), zs, tu, wl, sk, bs };
+    am:Math.floor(cd.ammo||0), wo:cd.won?1:0, cr:cd.crystals||0, pr:cd.plasmaRange||0, ps:cd.players.map(encP), zs, tu, wl, sk, bs, pm, ob, ph };
 }
 function coopApplySnapshot(s){
   const cd=codef;
@@ -6753,6 +6862,10 @@ function coopApplySnapshot(s){
   cd.walls   = s.wl.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[6]||140,tier:a[5]||1}));
   cd.spikes  = (s.sk||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[5]||240}));
   cd.bosses  = (s.bs||[]).map(a=>({x:a[0],y:a[1],w:96,h:96,hp:a[2],hpMax:a[3],face:a[4],flash:0,dead:false}));
+  cd.plasmas = (s.pm||[]).map(a=>({x:a[0],y:a[1],w:44,h:44,hp:a[2],hpMax:a[4]||80,cd:0,range:420,aim:a[3]}));
+  cd.orbs    = (s.ob||[]).map(a=>({x:a[0],y:a[1],r:a[2],attract:a[3],life:a[4],t:0}));
+  cd.pshots  = (s.ph||[]).map(a=>({x:a[0],y:a[1],vx:0,vy:0,t:0}));
+  if(s.cr!=null)cd.crystals=s.cr; if(s.pr!=null)cd.plasmaRange=s.pr;
   cd.flag.hp=s.fh; cd.cash=s.ca; cd.lives=s.lv; cd.kills=s.ki; cd.over=s.ov===1; if(s.am!=null)cd.ammo=s.am; if(s.wo)cd.won=true;
   const ps=s.ps||[];
   for(let i=0;i<cd.players.length && i<ps.length;i++){ const a=ps[i], pl=cd.players[i];
@@ -6774,7 +6887,7 @@ function drawCoopDef(){
   ctx.fillStyle='#0e130c'; ctx.fillRect(0,0,W,H);
   ctx.save(); const z=cd.zoom||1; ctx.scale(z,z); ctx.translate(-Math.round(cd.camX),-Math.round(cd.camY));
   drawDefenseGround(cd); drawDefenseArena(); drawBloodPools();
-  drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd);
+  drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd); drawDefensePlasma(cd);
   drawZombies(); drawDefenseBoss(cd); drawBullets();
   for(const pl of cd.players) drawPlayerObj(pl, true);
   drawParticles();
@@ -6794,8 +6907,11 @@ function drawCoopUI(cd){
   ctx.font='bold 15px '+CF; ctx.fillStyle=am<=2?'#ff5b5b':'#ffe14b';
   const atxt=''+am; ctx.fillText(atxt, W-14, 84); drawBulletIcon(W-16-ctx.measureText(atxt).width-10, 79, 13); ctx.shadowBlur=0;
   ctx.textAlign='left'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=4;
-  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(cd.cash), 14, 66);
-  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+(cd.killLimit>0?(' / '+cd.killLimit):'')+'  ·  shared ammo', 14, 82); ctx.shadowBlur=0;
+  { const cyc=56; ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.5;   // boss-crystal count above the money
+    ctx.beginPath(); ctx.moveTo(18,cyc-7); ctx.lineTo(22,cyc); ctx.lineTo(18,cyc+7); ctx.lineTo(14,cyc); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#e6c8ff'; ctx.font='bold 12px '+CF; ctx.textBaseline='middle'; ctx.fillText('x'+(cd.crystals||0), 28, cyc); ctx.textBaseline='alphabetic'; }
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 20px '+CF; ctx.fillText('$'+Math.floor(cd.cash), 14, 78);
+  ctx.fillStyle='#9fe27f'; ctx.font='12px '+CF; ctx.fillText('kills '+cd.kills+(cd.killLimit>0?(' / '+cd.killLimit):'')+'  ·  shared ammo', 14, 94); ctx.shadowBlur=0;
   buildBtns.forEach((bb,i)=>drawBuildTile(bb, cd.cash, Pad.connected && i===Pad.buildSel));
 }
 
@@ -6811,7 +6927,7 @@ function startLocalCoop(){
   codef={ defense2:true, local:true, paused:false, camX:0, camY:0, zoom:EXPLORE_ZOOM, elapsed:0, kills:0, spawnT:1.0,
     cash:DEF_START_CASH+50, lives:6, over:false, won:false, _snap:null, ammo:7, ammoRegen:0, reloadT:0, killAcc:0, mags:3, killLimit:defKillLimit,
     flag:{x:0,y:0,r:46,hp:fh,hpMax:fh},
-    turrets:[], walls:[], spikes:[], bosses:[], bossMark:20, bossCount:0, p1, p2 };
+    turrets:[], walls:[], spikes:[], plasmas:[], orbs:[], pshots:[], crystals:0, plasmaRange:0, bosses:[], bossMark:20, bossCount:0, p1, p2 };
   player=codef.p1; explore=codef;
   zombies=[]; bullets=[]; ebullets=[]; particles=[]; bloodPools=[]; boss=null;
   padPrev=[{},{}];
@@ -6933,7 +7049,7 @@ function drawCoopDefLocal(){
     ctx.beginPath(); ctx.rect(hv.rx,hv.ry,hv.rw,hv.rh); ctx.clip();
     ctx.translate(hv.rx,hv.ry); ctx.scale(z,z); ctx.translate(-Math.round(camX),-Math.round(camY));
     drawDefenseGround(cd); drawDefenseArena(); drawBloodPools();
-    drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd);
+    drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd); drawDefensePlasma(cd);
     drawZombies(); drawDefenseBoss(cd); drawBullets();
     drawPlayerObj(cd.p1, true); drawPlayerObj(cd.p2, true);
     drawParticles();
@@ -6964,6 +7080,8 @@ function drawLocalHalfHUD(hv){
   ctx.fillStyle=am<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF; ctx.fillText(''+am, bx+43, by);
   const b=BUILD_BAR[pl.buildSel||0], spc=BUILD_SPEC[b.type], cost=spc?spc.cost:0;
   if(b.type==='sell'){ ctx.fillStyle='#ffc23f'; ctx.fillText('▸SELL (refund)', bx+76, by); }
+  else if(b.type==='range'){ const lvl=cd.plasmaRange||0; ctx.fillStyle=(lvl<2&&(cd.crystals||0)>=5)?'#c9a6ff':'#ff9a9a'; ctx.fillText(lvl>=2?'▸RANGE+ MAX':'▸RANGE+ 5 crystals', bx+76, by); }
+  else if(b.type==='plasma'){ ctx.fillStyle = (cd.cash>=cost&&(cd.crystals||0)>=1) ? '#c9a6ff' : '#ff9a9a'; ctx.fillText('▸PLASMA $'+cost+'+1cry', bx+76, by); }
   else { ctx.fillStyle = cd.cash>=cost ? '#9fe27f' : '#ff9a9a'; ctx.fillText('▸'+b.label+' $'+cost, bx+76, by); }
   ctx.fillStyle='rgba(200,220,190,.5)'; ctx.font='10px '+CF;
   ctx.fillText('L1 pick · Y/△ build', bx, by-15);
@@ -6977,7 +7095,11 @@ function drawLocalSharedHUD(cd){
   ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
   ctx.textAlign='left'; ctx.fillStyle='#ffe14b'; ctx.font='bold 16px '+CF;
   ctx.fillText('$'+Math.floor(cd.cash), bx+10, by+19);
-  ctx.textAlign='right'; ctx.fillStyle='#ffd6d6';
+  { const tw=ctx.measureText('$'+Math.floor(cd.cash)).width, cxx=bx+18+tw, cyc=by+13;   // crystal count next to the money
+    ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.moveTo(cxx,cyc-5); ctx.lineTo(cxx+3.5,cyc); ctx.lineTo(cxx,cyc+5); ctx.lineTo(cxx-3.5,cyc); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#e6c8ff'; ctx.font='bold 11px '+CF; ctx.textBaseline='middle'; ctx.fillText('x'+(cd.crystals||0), cxx+7, cyc+1); ctx.textBaseline='alphabetic'; }
+  ctx.textAlign='right'; ctx.fillStyle='#ffd6d6'; ctx.font='bold 16px '+CF;
   ctx.fillText('P1 ×'+Math.max(0,cd.p1.lives||0)+'  P2 ×'+Math.max(0,cd.p2.lives||0), bx+bw-10, by+19);
   ctx.shadowBlur=0;
   const f=cd.flag, fx=bx+10, fy=by+25, fw=bw-20, fbh=8;
@@ -7969,7 +8091,7 @@ function teamDuelActor(f, inp, dt){
   if(inp.fire && f.cd<=0 && hasAmmo){
     f.cd=cd; f.recoil=1; f.spawnProtT=0;   // firing drops your spawn protection
     if(wpn==='shotgun')Sound.spread(); else if(wpn==='rifle')Sound.rifle(); else Sound.shoot();
-    const m=duelMuzzle(f), cx=m.x, cy=m.y;
+    const m=duelFlashPoint(f), cx=m.x, cy=m.y;   // bullets leave exactly from the muzzle flash
     if(wpn==='shotgun'){ for(const a of[-0.17,0,0.17]){ const ang=f.aim+a; duel.bullets.push({x:cx,y:cy,vx:Math.cos(ang)*DUEL_BSPD,vy:Math.sin(ang)*DUEL_BSPD,team:f.team,t:0,owner:f,dmg}); } }
     else { const sp=(wpn==='rifle')?DUEL_BSPD*1.15:DUEL_BSPD; duel.bullets.push({x:cx,y:cy,vx:Math.cos(f.aim)*sp,vy:Math.sin(f.aim)*sp,team:f.team,t:0,owner:f,dmg}); }
     if(wpn==='pistol'){ f.mag--; if(f.mag<=0){ f.reloadT=DUEL_RELOAD; Sound.reload(); } } else { f.wammo--; if(f.wammo<=0){ f.weapon='pistol'; f.reloadT=0; } }
@@ -8713,7 +8835,7 @@ function duelActor(pl, inp, dt, spawn){
     pl.cd=cd; pl.recoil=1;
     if(wpn==='shotgun') Sound.spread(); else if(wpn==='rifle') Sound.rifle(); else Sound.shoot();
     if(spawn){
-      const own=(pl===duel.p1?1:2), m=duelMuzzle(pl), cx=m.x, cy=m.y;
+      const own=(pl===duel.p1?1:2), m=duelFlashPoint(pl), cx=m.x, cy=m.y;   // bullets leave exactly from the muzzle flash
       if(wpn==='shotgun'){ for(const a of [-0.17,0,0.17]){ const ang=pl.aim+a;
         duel.bullets.push({x:cx,y:cy,vx:Math.cos(ang)*DUEL_BSPD,vy:Math.sin(ang)*DUEL_BSPD,own,t:0}); } }
       else { const sp=(wpn==='rifle')?DUEL_BSPD*1.15:DUEL_BSPD;
@@ -8889,6 +9011,17 @@ function drawUnitFlash(cx, cy, aim, heavy, isRifle, recoil, extraFwd, extraLeft)
   const fp=unitFlashPoint(cx, cy, aim, heavy, extraFwd, extraLeft);
   drawFlashAt(fp.x, fp.y, aim, recoil, 26);
 }
+// where the flash sits for the CLASSIC-mode player (aim locked up) — bullets leave from here too
+function classicFlashMuzzle(p){
+  const art=playerArt(p), AW=art[1], AH=art[2], hasGun=art[3];
+  const dw=p.w*(hasGun?1.34:1.16), dh=dw*AH/AW;
+  const cx=p.x+p.w/2, scy=p.y+p.h-dh/2;
+  const heavy=(p.weapon==='spread'||p.rapidT>0||p.permRapid);
+  const pixel=(equippedSkin && equippedSkin!=='default');
+  const pixL = pixel ? 7 : (!heavy ? -2 : 0);       // pixel: 7px left; basic pistol: 2px right
+  const fwd = 12 + (pixel ? 5 : 0);                 // pixel: 5px higher
+  return unitFlashPoint(cx, scy, -Math.PI/2, heavy, fwd, pixL);
+}
 // where the flash sits for a twin-stick PLAYER (mirrors drawPlayerObj's flash call exactly)
 function playerFlashMuzzle(p){
   const art=playerArt(p), AW=art[1], AH=art[2], hasGun=art[3];
@@ -8897,12 +9030,17 @@ function playerFlashMuzzle(p){
   const aim=(p.aim!=null)?p.aim:-Math.PI/2;
   const heavy=(p.weapon==='spread'||p.rapidT>0||p.permRapid);
   const pixel=(equippedSkin && equippedSkin!=='default');
-  const pixL = pixel ? (explore?9:49) : (explore ? -4 : 0);   // matches the flash's extraLeft in drawPlayerObj (basic soldier rifle nudged 4px right in defense)
+  const pixL = pixel ? (explore?9:49) : (explore ? (explore.defense2?-14:-4) : 0);   // matches the flash's extraLeft in drawPlayerObj (basic soldier nudged right in defense / split co-op)
   return unitFlashPoint(cx, scy, aim, heavy, 12, pixL);
 }
+function duelFlashPoint(pl){   // the exact world point the shootout muzzle flash is drawn at — bullets leave from here too
+  const px = (equippedSkin && equippedSkin!=='default');
+  return unitFlashPoint(pl.x+DUEL_PS/2, pl.y+DUEL_PS/2, pl.aim, (pl.weapon==='shotgun'||pl.weapon==='rifle'), px?4:0, px?8:0);
+}
 function drawMuzzleFlash(pl){   // shootout fighters
-  const el = (equippedSkin && equippedSkin!=='default') ? 8 : 0;   // shootout: pixel soldiers' flash 8px left
-  drawUnitFlash(pl.x+DUEL_PS/2, pl.y+DUEL_PS/2, pl.aim, (pl.weapon==='shotgun'||pl.weapon==='rifle'), pl.weapon==='rifle', pl.recoil||0, 0, el);
+  if(!((pl.recoil||0)>0.05)) return;
+  const fp=duelFlashPoint(pl);
+  drawFlashAt(fp.x, fp.y, pl.aim, pl.recoil||0, 26);
 }
 function drawGunZombie(pl, ring, isMe){
   const cx=pl.x+DUEL_PS/2, cy=pl.y+DUEL_PS/2;
