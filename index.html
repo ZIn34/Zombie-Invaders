@@ -3340,8 +3340,8 @@ function setupDefense7(){   // Mission 7: plasma-orb defense — survive to 1000
 }
 function setupDefense9(){   // Mission 9 (finale): mega plasma orb — 3000 kills → plant 50 crystals → 10000-zombie swarm
   mode='campaign'; defWon=false;
-  preMissionDiff=difficulty; difficulty=0;   // forced EASY so the huge kill counts are feasible; all upgrades still apply
-  const fh=Math.round(600*DIFF[0].flagHp);
+  preMissionDiff=difficulty; difficulty=2;   // forced HARD — the finale earns its name (all upgrades still apply)
+  const fh=Math.round(600*DIFF[2].flagHp);
   explore={ defense:true, mission7:true, orbActive:false, m7phase:'build', crystalsPlanted:false, surviveToSpawn:0, surviveSpawnT:0,
     killGoal:3000, crystalCount:50, swarmCount:10000, swarmCap:95, swarmBatch:34, swarmInt:0.18, swarmNear:false, swarmSpeed:2.4, megaOrb:true,
     camX:0, camY:0, elapsed:0, kills:0, spawnT:1.0, killLimit:0,
