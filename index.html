@@ -3253,7 +3253,7 @@ const BUILD_BAR=[
   {type:'wall',    label:'WALL'},
   {type:'wall2',   label:'STEEL'},
   {type:'spike',   label:'SPIKES'},
-  {type:'range',   label:'SPLASH+'},  // plasma-splash upgrade (5 crystals) — a bar tile so controller players can reach it
+  {type:'range',   label:'BUFF'},     // BUFF upgrade (5 crystals): +30% turret damage & +30% plasma blast per level
   {type:'crysell', label:'CASH IN'},  // sell a boss crystal for $150
   {type:'sell',    label:'SELL'},
 ];
@@ -3265,10 +3265,10 @@ const defWeaponBtns=[
 ];
 const plasmaRangeBtn={x:8, y:168, w:158, h:30, crystals:5};   // 5 boss crystals → +50% plasma blast radius (stacks twice: 60→90→135px)
 function buyPlasmaRange(ctx2){ const ex = ctx2 || ((state===STATE.COOPDEF && codef) ? codef : explore); if(!ex||!(ex.defense||ex.defense2)) return;
-  if((ex.plasmaRange||0)>=2){ toast('PLASMA BLAST MAXED'); Sound.empty(); return; }   // stacks up to 2 times
+  if((ex.plasmaRange||0)>=2){ toast('BUFF MAXED'); Sound.empty(); return; }   // stacks up to 2 times
   if((ex.crystals||0)<plasmaRangeBtn.crystals){ toast('NEED 5 CRYSTALS'); Sound.empty(); return; }
   ex.crystals-=plasmaRangeBtn.crystals; ex.plasmaRange=(ex.plasmaRange||0)+1;
-  Sound.power(); toast('PLASMA BLAST +50% — now '+Math.round(60*Math.pow(1.5,ex.plasmaRange))+'px!');
+  Sound.power(); toast('BUFF! all turrets +30% damage · plasma blast now '+Math.round(60*Math.pow(1.3,ex.plasmaRange))+'px');
 }
 function sellCrystal(ctx2){   // cash in one boss crystal for $150
   const ex = ctx2 || ((state===STATE.COOPDEF && codef) ? codef : explore); if(!ex||!(ex.defense||ex.defense2)) return;
@@ -3540,6 +3540,10 @@ function updateDefense(dt){
   if(ex.mission7 && ex.m7phase==='plant'){
     const pcx=player.x+player.w/2, pcy=player.y+player.h/2;
     if(Math.hypot(pcx-ex.flag.x, pcy-ex.flag.y) < ex.flag.r+24){
+      if(ex.megaOrb){   // Mission 9 finale: crystals planted → cut straight to the General's closing words
+        Sound.power(); shake(16,.45);
+        difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.win(); missionComplete(); return;
+      }
       ex.m7phase='survive'; ex.crystalsPlanted=true; ex.surviveToSpawn=(ex.swarmCount||200); ex.surviveSpawnT=0.2;
       Sound.power(); shake(16,.45); toast((ex.crystalCount||20)+' CRYSTALS PLANTED — HERE THEY COME! ');
     }
@@ -3574,7 +3578,7 @@ function updateDefense(dt){
     for(const bo of ex.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim), vy=Math.sin(t.aim), sp=760;
-        bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:t.hyper?6:7,h:t.hyper?6:7, vx:vx*sp, vy:vy*sp, col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:t.dmg||1, t:0, turret:true});
+        bullets.push({x:t.x+vx*t.w*0.5, y:t.y+vy*t.w*0.5, w:t.hyper?6:7,h:t.hyper?6:7, vx:vx*sp, vy:vy*sp, col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'), dmg:(t.dmg||1)*Math.pow(1.3, ex.plasmaRange||0), t:0, turret:true});   // BUFF: +30% turret damage per level
         if(t.hyper) Sound.rifle(); else Sound.shoot();   // hyper = rifle sound; turret & heavy = pistol
         t.cd=t.fireCd||0.5; } }
   }
@@ -3590,7 +3594,7 @@ function updateDefense(dt){
         ex.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0});
         Sound.tank(); t.cd=t.fireCd||3; } }   // plasma cannon = tank sound
   }
-  { const PDMG=25, PBLAST=60*Math.pow(1.5, ex.plasmaRange||0);   // RANGE+ grows the blast: 60 → 90 → 135px
+  { const PDMG=25*Math.pow(1.3, ex.plasmaRange||0), PBLAST=60*Math.pow(1.3, ex.plasmaRange||0);   // BUFF grows damage & blast +30%/level
     for(const s of ex.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
       if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
         ex.blasts.push({x:s.x, y:s.y, r:PBLAST, t:0});
@@ -3933,8 +3937,8 @@ function drawBuildTile(bb, cash, sel){
     const icx=bb.x+bb.w/2;
     ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.5;   // little crystal
     ctx.beginPath(); ctx.moveTo(icx,bb.y+6); ctx.lineTo(icx+5,bb.y+13); ctx.lineTo(icx,bb.y+20); ctx.lineTo(icx-5,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('SPLASH+', icx, bb.y+31);
-    ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX BLAST':('blast +50% · Lv '+lvl+'/2'), icx, bb.y+41);
+    ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('BUFF', icx, bb.y+31);
+    ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX BUFF':('turrets +30% · Lv '+lvl+'/2'), icx, bb.y+41);
     ctx.globalAlpha=1; ctx.restore(); return;
   }
   if(bb.type==='crysell'){   // CASH IN tile — sell one boss crystal for $150
@@ -5513,7 +5517,7 @@ function drawTutorial(){
     section('#ffe86b','✦ BOSS CRYSTALS',
       'Every boss you kill drops the CRYSTAL from its head — a currency shown above your money (CASH IN sells one for $150). YOUR gun hits bosses 5× as hard as turrets do, so hunt them yourself! The horde also toughens up every 500 kills: more health, faster, harder-hitting. Past 3000 kills the floodgates open — basics pour in far faster and the field can hold a much bigger horde.');
     section('#c58bff','✦ PLASMA CANNON',
-      'Costs 1 crystal + $500. Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal SPLASH+ upgrade grows the blast +50%, twice. Selling a cannon refunds its crystal.');
+      'Costs 1 crystal + $500. Every 3s it fires a heavy plasma bolt that EXPLODES on impact — massive splash damage to everything in the blast. The 5-crystal BUFF upgrade (buyable twice) boosts damage for ALL turrets and the plasma blast by 30%. Selling a cannon refunds its crystal.');
   } else if(tutPage===6){
     ctx.textAlign='center'; ctx.fillStyle='#c58bff'; ctx.font='bold 15px '+CF;
     ctx.fillText('SHOOTOUT', W/2, 254);
@@ -6721,7 +6725,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     for(const bo of cd.bosses){ if(bo.dead) continue; const d=Math.hypot((bo.x+bo.w/2)-t.x,(bo.y+bo.h/2)-t.y); if(d<bd){bd=d;best=bo;} }
     if(best){ t.aim=Math.atan2((best.y+best.h/2)-t.y,(best.x+best.w/2)-t.x);
       if(t.cd<=0){ const vx=Math.cos(t.aim),vy=Math.sin(t.aim),sp=760;
-        bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:t.hyper?6:7,h:t.hyper?6:7,vx:vx*sp,vy:vy*sp,col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:t.dmg||1,t:0,turret:true});
+        bullets.push({x:t.x+vx*t.w*0.5,y:t.y+vy*t.w*0.5,w:t.hyper?6:7,h:t.hyper?6:7,vx:vx*sp,vy:vy*sp,col:(t.hyper?'#9fff8a':t.tier===2?'#ff9a6a':'#7fd0ff'),dmg:(t.dmg||1)*Math.pow(1.3, cd.plasmaRange||0),t:0,turret:true});   // BUFF: +30% turret damage per level
         if(t.hyper) Sound.rifle(); else Sound.shoot(); t.cd=t.fireCd||0.5; } }
   }
   // PLASMA CANNONS (same sim as solo defense): heavy splash bolt every 3s — no lure orbs
@@ -6736,7 +6740,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
         cd.pshots.push({x:t.x+Math.cos(a)*t.w*0.5, y:t.y+Math.sin(a)*t.w*0.5, tx:best.x+best.w/2, ty:best.y+best.h/2, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, t:0});
         Sound.tank(); t.cd=t.fireCd||3; } }
   }
-  { const PDMG=25, PBLAST=60*Math.pow(1.5, cd.plasmaRange||0);
+  { const PDMG=25*Math.pow(1.3, cd.plasmaRange||0), PBLAST=60*Math.pow(1.3, cd.plasmaRange||0);
     for(const s of cd.pshots){ s.t+=dt; s.x+=s.vx*dt; s.y+=s.vy*dt;
       if(Math.hypot(s.x-s.tx,s.y-s.ty)<20 || s.t>1.8){ s._land=true;
         cd.blasts.push({x:s.x, y:s.y, r:PBLAST, t:0});
@@ -7085,7 +7089,7 @@ function drawLocalHalfHUD(hv){
   ctx.fillStyle=am<=2?'#ff5b5b':'#ffe14b'; ctx.font='bold 13px '+CF; ctx.fillText(''+am, bx+43, by);
   const b=BUILD_BAR[pl.buildSel||0], spc=BUILD_SPEC[b.type], cost=spc?spc.cost:0;
   if(b.type==='sell'){ ctx.fillStyle='#ffc23f'; ctx.fillText('▸SELL (refund)', bx+76, by); }
-  else if(b.type==='range'){ const lvl=cd.plasmaRange||0; ctx.fillStyle=(lvl<2&&(cd.crystals||0)>=5)?'#c9a6ff':'#ff9a9a'; ctx.fillText(lvl>=2?'▸SPLASH+ MAX':'▸SPLASH+ 5 crystals', bx+76, by); }
+  else if(b.type==='range'){ const lvl=cd.plasmaRange||0; ctx.fillStyle=(lvl<2&&(cd.crystals||0)>=5)?'#c9a6ff':'#ff9a9a'; ctx.fillText(lvl>=2?'▸BUFF MAX':'▸BUFF 5 crystals', bx+76, by); }
   else if(b.type==='crysell'){ ctx.fillStyle=(cd.crystals||0)>=1?'#ffd24a':'#ff9a9a'; ctx.fillText('▸CASH IN crystal→$150', bx+76, by); }
   else if(b.type==='plasma'){ ctx.fillStyle = (cd.cash>=cost&&(cd.crystals||0)>=1) ? '#c9a6ff' : '#ff9a9a'; ctx.fillText('▸PLASMA $'+cost+'+1cry', bx+76, by); }
   else { ctx.fillStyle = cd.cash>=cost ? '#9fe27f' : '#ff9a9a'; ctx.fillText('▸'+b.label+' $'+cost, bx+76, by); }
