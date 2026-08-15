@@ -3946,7 +3946,7 @@ function drawBuildTile(bb, cash, sel){
     ctx.fillStyle='#e0c3ff'; ctx.strokeStyle='#6a3f8f'; ctx.lineWidth=1.5;   // little crystal
     ctx.beginPath(); ctx.moveTo(icx,bb.y+6); ctx.lineTo(icx+5,bb.y+13); ctx.lineTo(icx,bb.y+20); ctx.lineTo(icx-5,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle='#e6c8ff'; ctx.font='bold 9px '+CF; ctx.textAlign='center'; ctx.fillText('BUFF', icx, bb.y+31);
-    ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX BUFF':('turrets +30% · Lv '+lvl+'/2'), icx, bb.y+41);
+    ctx.fillStyle=maxed?'#9fe27f':'#c9a6ff'; ctx.font='bold 8px '+CF; ctx.fillText(maxed?'MAX':(bb.w>=56?('+30% · Lv '+lvl+'/2'):('Lv '+lvl+'/2')), icx, bb.y+41);   // keep the caption inside the tile
     ctx.globalAlpha=1; ctx.restore(); return;
   }
   if(bb.type==='crysell'){   // CASH IN tile — sell one boss crystal for $150
@@ -3962,7 +3962,7 @@ function drawBuildTile(bb, cash, sel){
     ctx.beginPath(); ctx.moveTo(icx-5,bb.y+6); ctx.lineTo(icx,bb.y+13); ctx.lineTo(icx-5,bb.y+20); ctx.lineTo(icx-10,bb.y+13); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle='#ffd24a'; ctx.font='bold 13px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('$', icx+7, bb.y+13); ctx.textBaseline='alphabetic';
     ctx.fillStyle='#ffe9b0'; ctx.font='bold 9px '+CF; ctx.fillText('CASH IN', icx, bb.y+31);
-    ctx.fillStyle='#c9b06a'; ctx.font='bold 8px '+CF; ctx.fillText('crystal → $150', icx, bb.y+41);
+    ctx.fillStyle='#c9b06a'; ctx.font='bold 8px '+CF; ctx.fillText(bb.w>=56?'crystal → $150':'$150', icx, bb.y+41);   // keep the caption inside the tile
     ctx.globalAlpha=1; ctx.restore(); return;
   }
   if(bb.type==='sell'){   // SELL tile — refunds the nearest build at full price
@@ -3973,7 +3973,7 @@ function drawBuildTile(bb, cash, sel){
     const icx=bb.x+bb.w/2;
     ctx.fillStyle='#ffc23f'; ctx.font='bold 18px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('$', icx, bb.y+15); ctx.textBaseline='alphabetic';
     ctx.fillStyle='#ffe9b0'; ctx.font='bold 9px '+CF; ctx.fillText('SELL', icx, bb.y+31);
-    ctx.fillStyle='#c9b06a'; ctx.font='bold 8px '+CF; ctx.fillText('full refund', icx, bb.y+41);
+    if(bb.w>=56){ ctx.fillStyle='#c9b06a'; ctx.font='bold 8px '+CF; ctx.fillText('full refund', icx, bb.y+41); }
     ctx.restore(); return;
   }
   const dctx2=(state===STATE.COOPDEF&&codef)?codef:explore;
@@ -6198,7 +6198,7 @@ const defLimitBtns=[{v:0,label:'ENDLESS'},{v:-1,label:'TYPE ▸',custom:true}];
 function layoutDefLimitBtns(){ const n=defLimitBtns.length, gap=8, m=22, bw=(W-2*m-gap*(n-1))/n, y=172, h=50;
   defLimitBtns.forEach((b,i)=>{ b.x=m+i*(bw+gap); b.y=y; b.w=bw; b.h=h; }); }
 layoutDefLimitBtns();
-const defStartBtn = {x:W/2-130, y:430, w:260, h:58};
+const defStartBtn = {x:W/2-130, y:414, w:260, h:58};   // sits clear of the DIFFICULTY row below
 let defWonKills=0;
 const defLeaderBtn = {x:W-150, y:18, w:134, h:30};   // open the leaderboard from the defense setup
 const lbTabDef  = {x:W/2-152, y:104, w:150, h:40};
@@ -7110,7 +7110,7 @@ function drawLocalHalfHUD(hv){
 }
 function drawLocalSharedHUD(cd){
   ctx.textBaseline='alphabetic';
-  const bw=200, bx=W/2-bw/2, by=5, bh=42;
+  const bw=252, bx=W/2-bw/2, by=5, bh=42;   // wide enough that cash + crystal + P1/P2 lives never collide
   ctx.fillStyle='rgba(8,12,6,.74)'; roundRectPath(bx,by,bw,bh,9); ctx.fill();
   ctx.strokeStyle='rgba(120,180,90,.35)'; ctx.lineWidth=1; roundRectPath(bx,by,bw,bh,9); ctx.stroke();
   ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
