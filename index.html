@@ -547,6 +547,7 @@ function canvasTap(p, pid){
       for(const bb of buildBtns){ if(inRect(p, bb)){
         if(bb.type==='range'){ if(codef.local) buyPlasmaRange(codef); else coopBuildRequest('range'); return; }
         if(bb.type==='crysell'){ if(codef.local) sellCrystal(codef); else coopBuildRequest('crysell'); return; }
+        if(codef.local){ doBuild(codef, codef.p1, bb.type, true); return; }   // local split: taps/clicks build for P1 directly (no net relay)
         if(lastPtr==='touch'){ touchBuild={type:bb.type}; Sound.hit(); } else coopBuildRequest(bb.type); return; } }
     }
     tapAim.active=true; tapAim.id=pid; tapAim.x=p.x; tapAim.y=p.y; return;   // tap-to-aim during gameplay (but let the win screen's "tap to leave" through)
@@ -603,7 +604,14 @@ function canvasTap(p, pid){
     if(tutPage<TUT_PAGES-1) tutPage++; else state=STATE.MENU;
   } else if(state===STATE.PAUSE){
     if(inRect(p, resumeBtn)) state=pauseReturn;
-    else if(inRect(p, homeBtn)){ chase=null; coop=null; if(duel){ try{netQuit();}catch(e){} duel=null; mode='arcade'; } state=STATE.MENU; }
+    else if(inRect(p, homeBtn)){ chase=null; coop=null; if(duel){ try{netQuit();}catch(e){} duel=null; mode='arcade'; }
+      if(explore && explore.defense){
+        if(explore.mission6||explore.mission7) difficulty=preMissionDiff;                 // forced-difficulty campaign missions: put the player's setting back
+        else if(explore.kills>0) lbSubmit('defense'+difficulty, explore.kills);           // quitting early still records the run on the leaderboard
+        explore=null; zombies=[]; bullets=[];
+      }
+      hi=Math.max(hi, score||0); saveProgress();   // keep the high score even when quitting mid-run
+      state=STATE.MENU; }
   } else if(state===STATE.PLAYPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
     else if(inRect(p, playNormalBtn)) startGame();
@@ -1047,7 +1055,7 @@ function acctApplySave(s){   // merge cloud save with local, keeping the best of
     campaignUnlocked=Math.max(campaignUnlocked||1, s.campaignUnlocked||1);
     hi=Math.max(hi||0, s.hi||0);
     campaignWon = campaignWon || !!s.campaignWon;
-    if(s.upg) for(const k in upg) if(k in s.upg) upg[k]=Math.max(upg[k]||0, s.upg[k]||0);
+    if(s.upg) for(const k in s.upg) upg[k]=Math.max(upg[k]||0, s.upg[k]||0);   // iterate the SAVED keys so ammocap (added later) round-trips
     const uni=(a,b)=>{ const o=(a||[]).slice(); for(const x of (b||[])) if(o.indexOf(x)<0) o.push(x); return o; };
     ownedSkins=uni(ownedSkins,s.ownedSkins); ownedZombieSkins=uni(ownedZombieSkins,s.ownedZombieSkins); ownedBossSkins=uni(ownedBossSkins,s.ownedBossSkins);
     if(s.equippedSkin && ownedSkins.indexOf(s.equippedSkin)>=0) equippedSkin=s.equippedSkin;
@@ -1309,7 +1317,7 @@ function loadProgress(){
   try{
     const s=JSON.parse(localStorage.getItem('zi_save'));
     if(s){ coins=s.coins||0; campaignUnlocked=s.campaignUnlocked||1; hi=s.hi||0; campaignWon=!!s.campaignWon;
-      if(s.upg) for(const k in upg) if(k in s.upg) upg[k]=s.upg[k];
+      if(s.upg) for(const k in s.upg) upg[k]=s.upg[k]||0;   // iterate the SAVED keys so ammocap (added later) round-trips
       if(Array.isArray(s.ownedSkins)) ownedSkins=s.ownedSkins.slice();
       if(ownedSkins.indexOf('default')<0) ownedSkins.push('default');
       if(s.equippedSkin && ownedSkins.indexOf(s.equippedSkin)>=0) equippedSkin=s.equippedSkin;
@@ -1701,7 +1709,7 @@ function makePlayer(){
 // Empty the current mag fully, then a reload (shootout speed) consumes one reserve mag. Every 2 kills earns +1 reserve mag.
 const MAG_SIZE=12, MAG_RELOAD=1.6, MAG_MAX=20, AMMOCAP_PER=3;   // AMMO CAPACITY upgrade adds this many rounds to the pistol clip per level
 function pistolMag(){ return MAG_SIZE + ((mode==='campaign') ? (upg.ammocap||0)*AMMOCAP_PER : 0); }   // bigger pistol clip in campaign
-function magSizeFor(p){ if(p && (p.rapidT>0||p.permRapid)) return 30; if(p && p.weapon==='spread') return 5; return pistolMag(); }   // rifle 30, shotgun 5, pistol 12(+upgrade)
+function magSizeFor(p){ if(p && p.weapon==='spread') return 5; if(p && (p.rapidT>0||p.permRapid)) return 30; return pistolMag(); }   // shotgun 5, rifle 30, pistol 12(+upgrade) — shotgun clip stays 5 even with a rapid perk
 function magReload(p, dt){
   if(!p) return;
   if(p.mags==null) p.mags=0;
@@ -2063,7 +2071,7 @@ function zombieTouchesPlayer(z){
 }
 function gameOver(){
   hi=Math.max(hi,score);
-  if(mode==='campaign') saveProgress();
+  saveProgress();   // persist the high score in every mode, not just campaign
   // play the death → zombie transformation, then show the OVERRUN screen
   deathT=0; deathGroaned=false; overT=0;
   deathPlayer={ x:player.x, y:player.y, w:player.w, h:player.h, fallDir:(Math.random()<0.5?-1:1) };
@@ -3663,7 +3671,7 @@ function updateDefense(dt){
         if(lives<=0){ if(ex.mission6||ex.mission7)difficulty=preMissionDiff; explore=null; zombies=[]; bullets=[]; Sound.over(); state=STATE.OVER; overT=0; return; } }
     }
   }
-  ex.turrets=ex.turrets.filter(t=>t.hp>0);
+  ex.turrets=ex.turrets.filter(t=>t.hp>0); if(ex.plasmas) ex.plasmas=ex.plasmas.filter(t=>t.hp>0);
   ex.walls=ex.walls.filter(s=>s.hp>0);
   if(ex.spikes) ex.spikes=ex.spikes.filter(s=>s.hp>0);
   // bullets (player + turret): move, blocked by barricades/arena, hit zombies
@@ -3723,7 +3731,7 @@ function drawDefense(){
 // YES / NO confirm bar shown at the top while a touch placement is pending
 function drawBuildConfirm(ctx2, isCoop){
   const spec=BUILD_SPEC[touchBuild.type];
-  const label = spec ? (touchBuild.type==='plasma'?'PLASMA':touchBuild.type.indexOf('turret')===0?'TURRET':touchBuild.type.indexOf('wall')===0?'WALL':'SPIKES') : 'BUILD';
+  const label = spec ? (touchBuild.type==='plasma'?'PLASMA':touchBuild.type==='hyper'?'HYPER TURRET':touchBuild.type.indexOf('turret')===0?'TURRET':touchBuild.type.indexOf('wall')===0?'WALL':'SPIKES') : (touchBuild.type==='sell'?'SELL':'BUILD');
   ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillStyle='rgba(10,16,10,.82)'; roundRectPath(W/2-150, 6, 300, 42, 10); ctx.fill();
   ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.fillText('Place '+label+' here?', W/2, 27);
@@ -4494,7 +4502,7 @@ function drawPlayerObj(p, faceAim){
   if(rec>0.05){
     const twin=(faceAim && p.aim!=null);
     const aim=twin? p.aim : -Math.PI/2;   // twin-stick aims; classic horde (normal mode) fires up
-    const fp = twin ? playerFlashMuzzle(p) : classicFlashMuzzle(p);   // ONE shared point — bullets spawn from the same fn
+    const fp = faceAim ? playerFlashMuzzle(p) : classicFlashMuzzle(p);   // ONE shared point — twin-stick always matches exploreFire, even before first aim
     drawFlashAt(fp.x, fp.y, aim, rec, 26);
   }
 }
@@ -6425,7 +6433,7 @@ function netStartDefense(){
   mode='net'; explore=null; coop=null;
   stagePortrait();
   score=0; wave=4; lives=3; net.killed=0;
-  player=makePlayer(); player.ammo=14; player.permRapid=net.adv;   // advanced = rapid fire for a fairer fight
+  player=makePlayer(); player.permRapid=net.adv; player.ammo=magSizeFor(player);   // advanced = rapid fire for a fairer fight
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null; bgScroll=0;
   buildBarricades(); zombies=[];
   net.timeLeft=net.roundTime; net.snapT=0; net.ended=false;
@@ -6716,7 +6724,7 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
   // shared ammo pool slowly refills for the team (no cap)
   magReload(cd, dt);
   cd.spawnT-=dt; if(cd.spawnT<=0){ const sw=defScale(cd).swarm; coopSpawn(Math.min(6, Math.round((2+Math.floor(cd.elapsed/22))*DIFF[difficulty].spawn))+(sw?5:0)); cd.spawnT=(Math.max(0.5, 1.6-cd.elapsed*0.02)/DIFF[difficulty].spawn)*(sw?0.55:1); }
-  const maxBosses = cd.kills>=1000 ? 3 : 1;
+  const maxBosses = cd.kills>=2000 ? 5 : cd.kills>=1000 ? 3 : 1;
   if(cd.bosses.length<maxBosses && cd.kills>=cd.bossMark){ coopSpawnBoss(); cd.bossMark+=20; }
   // turrets fire
   for(const t of cd.turrets){ if(t.hp<=0) continue; if(t.cd>0)t.cd-=dt;
@@ -6787,7 +6795,9 @@ function coopSimWorld(dt){   // host-only world simulation (zombies, boss, turre
     for(const s of cd.walls){   if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     for(const s of cd.turrets){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
     if(cd.plasmas) for(const s of cd.plasmas){ if(s.hp>0 && defRectsOverlap(bo.x-4,bo.y-4,bo.w+8,bo.h+8, s.x-s.w/2,s.y-s.h/2,s.w,s.h)) s.hp-=dt*28; }
-    for(const pl of players){ if(pl.down) continue; if(pl.x+pl.w/2>bo.x-6 && pl.x+pl.w/2<bo.x+bo.w+6 && pl.y+pl.h/2>bo.y-6 && pl.y+pl.h/2<bo.y+bo.h+6 && pl.invuln<=0){ pl.lives=(pl.lives||1)-1; pl.invuln=1.5; shake(14,.4); if(pl.lives<=0) pl.down=true; if(players.every(x=>x.down)) cd.over=true; } }
+    for(const pl of players){ if(pl.down) continue; if(pl.x+pl.w/2>bo.x-6 && pl.x+pl.w/2<bo.x+bo.w+6 && pl.y+pl.h/2>bo.y-6 && pl.y+pl.h/2<bo.y+bo.h+6 && pl.invuln<=0){ pl.invuln=1.5; shake(14,.4);
+      if(cd.local){ pl.lives=(pl.lives||1)-1; if(pl.lives<=0) pl.down=true; if(players.every(x=>x.down)) cd.over=true; }   // local split: own hearts
+      else { cd.lives--; if(cd.lives<=0) cd.over=true; } } }
   }
   // separation
   const MINSEP=40;
@@ -6848,7 +6858,7 @@ function encP(pl){ return [Math.round(pl.x),Math.round(pl.y), pl.aim==null?null:
 function coopSnapshot(){
   const cd=codef;
   const zs=[]; for(const z of zombies){ if(!z.alive && !z.dying) continue; zs.push([Math.round(z.x),Math.round(z.y), z.alive?0:1, +(z.face||0).toFixed(2)]); }
-  const tu=cd.turrets.map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2),t.tier||1,Math.round(t.hpMax)]);
+  const tu=cd.turrets.map(t=>[Math.round(t.x),Math.round(t.y),Math.round(t.hp),+(t.aim||0).toFixed(2),t.tier||1,Math.round(t.hpMax),t.hyper?1:0]);
   const wl=cd.walls.map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),s.tier||1,Math.round(s.hpMax)]);
   const sk=(cd.spikes||[]).map(s=>[Math.round(s.x),Math.round(s.y),s.w,s.h,Math.round(s.hp),Math.round(s.hpMax)]);
   const bs=cd.bosses.filter(b=>!b.dead).map(b=>[Math.round(b.x),Math.round(b.y),Math.round(b.hp),Math.round(b.hpMax),+(b.face||0).toFixed(2)]);
@@ -6862,7 +6872,7 @@ function coopApplySnapshot(s){
   const cd=codef;
   zombies = s.zs.map(a=>({ x:a[0], y:a[1], w:44, h:44, alive:a[2]===0, dying:a[2]===1, deadT:a[2]===1?0.3:0,
     face:a[3], bob:0, flash:0, atk:0, chew:0, type:'walker', hp:3, hpMax:3, spdMul:1 }));
-  cd.turrets = s.tu.map(a=>({x:a[0],y:a[1],w:44,h:44,hp:a[2],hpMax:a[5]||70,cd:0,range:250,aim:a[3],tier:a[4]||1}));
+  cd.turrets = s.tu.map(a=>({x:a[0],y:a[1],w:44,h:44,hp:a[2],hpMax:a[5]||70,cd:0,range:250,aim:a[3],tier:a[4]||1,hyper:!!a[6]}));
   cd.walls   = s.wl.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[6]||140,tier:a[5]||1}));
   cd.spikes  = (s.sk||[]).map(a=>({x:a[0],y:a[1],w:a[2],h:a[3],hp:a[4],hpMax:a[5]||240}));
   cd.bosses  = (s.bs||[]).map(a=>({x:a[0],y:a[1],w:96,h:96,hp:a[2],hpMax:a[3],face:a[4],flash:0,dead:false}));
@@ -6895,7 +6905,7 @@ function drawCoopDef(){
   drawZombies(); drawDefenseBoss(cd); drawBullets();
   for(const pl of cd.players) drawPlayerObj(pl, true);
   drawParticles();
-  { const me=cd.players[cd.meIdx]; const gt = touchBuild?touchBuild.type : (Pad.connected?BUILD_BAR[(me.buildSel||0)].type:hoverBuildType); if(gt) drawBuildGhost(cd, me, gt, true); }
+  { const me=cd.players[cd.meIdx]; const gt = touchBuild?touchBuild.type : (Pad.connected?BUILD_BAR[Pad.buildSel||0].type:hoverBuildType); if(gt) drawBuildGhost(cd, me, gt, true); }
   ctx.restore();
   drawGloom();
   drawCoopUI(cd);
@@ -9045,7 +9055,7 @@ function playerFlashMuzzle(p){
   return unitFlashPoint(cx, scy, aim, heavy, 12, pixL);
 }
 function duelFlashPoint(pl){   // the exact world point the shootout muzzle flash is drawn at — bullets leave from here too
-  const px = (equippedSkin && equippedSkin!=='default');
+  const px = (equippedSkin && equippedSkin!=='default') && pl.team!==2 && !pl.isGunZombie;   // enemies & gun zombies use their own sprites, not the skin
   return unitFlashPoint(pl.x+DUEL_PS/2, pl.y+DUEL_PS/2, pl.aim, (pl.weapon==='shotgun'||pl.weapon==='rifle'), px?4:0, px?8:0);
 }
 function drawMuzzleFlash(pl){   // shootout fighters
