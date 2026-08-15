@@ -4914,12 +4914,12 @@ function layoutMenu(){
 const setShakeBasicBtn={x:75,  y:206, w:120, h:44};
 const setShakeBossBtn ={x:235, y:206, w:120, h:44};
 // BLOOD — separate OFF/NORMAL/EXTRA rows for basic and boss
-const setBBasicOff ={x:86,  y:372, w:82, h:38};
-const setBBasicNorm={x:174, y:372, w:82, h:38};
-const setBBasicMore={x:262, y:372, w:82, h:38};
-const setBBossOff ={x:86,  y:440, w:82, h:38};
-const setBBossNorm={x:174, y:440, w:82, h:38};
-const setBBossMore={x:262, y:440, w:82, h:38};
+const setBBasicOff ={x:86,  y:378, w:82, h:38};
+const setBBasicNorm={x:174, y:378, w:82, h:38};
+const setBBasicMore={x:262, y:378, w:82, h:38};
+const setBBossOff ={x:86,  y:446, w:82, h:38};
+const setBBossNorm={x:174, y:446, w:82, h:38};
+const setBBossMore={x:262, y:446, w:82, h:38};
 const setMusicBtn={x:322, y:262, w:96, h:34};
 const setSwapBtn={x:322, y:306, w:96, h:34};   // swap the on-screen joysticks (left/right-handed)
 const setAimCycleBtn={x:16, y:306, w:196, h:34};   // shootout aim-stick scheme: tap / stick-fires / turn+button
@@ -5247,10 +5247,10 @@ function drawSettings(){
 
   // ---- BLOOD ----
   ctx.fillStyle='#ff6b6b'; ctx.font='bold 17px '+CF; ctx.textAlign='center';
-  ctx.fillText('BLOOD', W/2, 348);
+  ctx.fillText('BLOOD', W/2, 358);
   ctx.fillStyle='#c8cfc4'; ctx.font='bold 12px '+CF; ctx.textAlign='left';
-  ctx.fillText('BASIC', setBBasicOff.x, 366);
-  ctx.fillText('BOSS',  setBBossOff.x, 436);
+  ctx.fillText('BASIC', setBBasicOff.x, 374);
+  ctx.fillText('BOSS',  setBBossOff.x, 442);
   ctx.textAlign='center';
   drawBloodRow([setBBasicOff,setBBasicNorm,setBBasicMore], settings.bloodBasic);
   drawBloodRow([setBBossOff,setBBossNorm,setBBossMore], settings.bloodBoss);
