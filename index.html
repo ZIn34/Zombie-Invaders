@@ -956,6 +956,27 @@ function lbSubmit(mode, score){
   lbLocalAdd(mode, entry);
   if(LB_URL){ try{ fetch(LB_URL.replace(/\/+$/,'')+'/lb/'+mode+'.json', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(entry) }).catch(()=>{}); }catch(e){} }
 }
+// leaving mid-run (closing the tab, refreshing, switching apps) still records the run:
+// sendBeacon survives page teardown where a normal fetch gets cancelled
+function lbSubmitBeacon(mode, score){
+  score=Math.round(score||0); if(score<=0) return;
+  const entry={ n:(lbName()||'ANON').slice(0,12), s:score, t:Date.now() };
+  lbLocalAdd(mode, entry);
+  if(!LB_URL) return;
+  const url=LB_URL.replace(/\/+$/,'')+'/lb/'+mode+'.json';
+  try{
+    if(navigator.sendBeacon) navigator.sendBeacon(url, new Blob([JSON.stringify(entry)], {type:'application/json'}));
+    else fetch(url, {method:'POST', keepalive:true, headers:{'Content-Type':'application/json'}, body:JSON.stringify(entry)}).catch(()=>{});
+  }catch(e){}
+}
+window.addEventListener('pagehide', ()=>{ try{
+  const inPlay = (state===STATE.PLAY || state===STATE.PAUSE);
+  if(inPlay && explore && explore.defense && !explore.mission6 && !explore.mission7 && (explore.kills||0)>0)
+    lbSubmitBeacon('defense'+difficulty, explore.kills);                     // solo defense: quit-by-closing still counts
+  if(state===STATE.COOPDEF && codef && (codef.kills||0)>0)
+    lbSubmitBeacon('coopdef', codef.kills);                                  // co-op defense too
+  hi=Math.max(hi, score||0); saveProgress();                                 // and never lose the high score
+}catch(e){} });
 // keep only each player's BEST score (one row per name), highest first
 function lbDedupe(list){
   const best={};
