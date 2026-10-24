@@ -8594,17 +8594,6 @@ function teamCheckOver(){
 }
 function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST spot away from enemies, with brief spawn protection
   if(f.noResp){ f.dead=true; f.respawnT=null; return; }   // Mission 8 lab enemies stay down for good
-  const lead = f.bot && duel.humans && duel.humans.find(h=>h.team===f.team && !h.dead && !h._inVehicle);
-  if(lead){   // an ally rejoins the squad right behind its commander (when that spot is safe) — the army stays together
-    const face=(lead.aim!=null?lead.aim:-Math.PI/2);
-    for(let t=0;t<14;t++){
-      const a=face+Math.PI+rand(-1.3,1.3), r=rand(90,210), x=lead.x+Math.cos(a)*r, y=lead.y+Math.sin(a)*r;
-      if(duelBlocks(x,y,DUEL_PS,DUEL_PS) || enemyBarrierBlocks(f.team, y+DUEL_PS/2) || teamLineBlocked(lead,{x,y})) continue;
-      let nd=1e9; for(const g of duel.fighters){ if(g.dead||g.team===f.team) continue; const d=Math.hypot(g.x-x,g.y-y); if(d<nd)nd=d; }
-      if(nd<460) continue;
-      warRespawnAt(f, x, y, face); return;
-    }
-  }
   if(duel.campaign8 && duel.phase==='lab' && f.team===1 && duel.lab){   // inside the lab: back in at the entry hall
     const e=duel.lab.entry; warRespawnAt(f, e.x-DUEL_PS/2+rand(-60,60), e.y-DUEL_PS/2+rand(-20,20), -Math.PI/2); return;
   }
