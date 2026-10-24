@@ -1323,7 +1323,7 @@ const MISSIONS=[
    intro:[
      {bg:'dawn', art:'standoff', speaker:'U.S. GENERAL', text:'OK — now we know where all of the zombies are coming from. The enemy civilization we now call the Zombifiers are using science to grow zombies.'},
      {bg:'toxic', art:'boss', speaker:'U.S. GENERAL', text:'We found their lab and need you to destroy it. I’ll give you 9 allies to help — command them and lead us to victory.'},
-     {bg:'fire', art:'horde', speaker:'U.S. GENERAL', text:'Fight to 100 kills, then breach the lab at the enemy’s heart. Good luck, soldier.'},
+     {bg:'fire', art:'horde', speaker:'U.S. GENERAL', text:'Get 100 kills and the lab doors open. Walk your squad inside, hunt the scientists room by room, then blow up their reactor. Good luck, soldier.'},
    ]},
   {name:'The Last Stand', defense9:true,
    intro:[
@@ -4898,8 +4898,12 @@ function drawToast(){
   const a=clamp(toastT/0.5,0,1);
   ctx.globalAlpha=a;
   ctx.textAlign='center'; ctx.font='bold 19px "Comic Sans MS","Comic Neue",system-ui,sans-serif';
-  ctx.fillStyle='#0a2a06'; ctx.fillText(toastMsg, W/2+2, 78+2);
-  ctx.fillStyle='#ffe14b'; ctx.fillText(toastMsg, W/2, 78);
+  const pop=1+0.18*clamp((toastT-1.42)/0.18,0,1), tw=ctx.measureText(toastMsg).width;   // little pop as it appears
+  ctx.save(); ctx.translate(W/2, 72); ctx.scale(pop,pop);
+  ctx.fillStyle='rgba(6,12,6,.55)'; roundRectPath(-tw/2-18,-17,tw+36,30,15); ctx.fill();
+  ctx.fillStyle='#0a2a06'; ctx.fillText(toastMsg, 2, 6+2);
+  ctx.fillStyle='#ffe14b'; ctx.fillText(toastMsg, 0, 6);
+  ctx.restore();
   ctx.globalAlpha=1;
 }
 
@@ -5617,8 +5621,10 @@ function drawTutorial(){
 function drawCoin(cx,cy,r){
   ctx.save();
   ctx.fillStyle='#a9760f'; ctx.beginPath(); ctx.arc(cx,cy,r,0,6.28); ctx.fill();
-  ctx.fillStyle='#ffd94a'; ctx.beginPath(); ctx.arc(cx,cy,r*0.8,0,6.28); ctx.fill();
+  const g=ctx.createRadialGradient(cx-r*0.3,cy-r*0.35,r*0.1,cx,cy,r*0.85); g.addColorStop(0,'#fff2a8'); g.addColorStop(0.5,'#ffd94a'); g.addColorStop(1,'#e0a92a');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,r*0.8,0,6.28); ctx.fill();
   ctx.fillStyle='#c9911f'; drawStar(cx,cy,r*0.52,5);
+  ctx.fillStyle='rgba(255,255,255,.55)'; ctx.beginPath(); ctx.ellipse(cx-r*0.38,cy-r*0.42,r*0.22,r*0.12,-0.7,0,6.28); ctx.fill();
   ctx.restore();
 }
 function drawCoinsTag(rx,y){
@@ -5630,15 +5636,23 @@ function drawCoinsTag(rx,y){
 }
 function drawBackBtn(){
   const b=backBtn;
-  ctx.fillStyle='rgba(0,0,0,.45)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=1.5; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
+  const g=ctx.createLinearGradient(0,b.y,0,b.y+b.h); g.addColorStop(0,'rgba(40,52,40,.85)'); g.addColorStop(1,'rgba(14,20,14,.85)');
+  ctx.fillStyle=g; roundRectPath(b.x,b.y,b.w,b.h,b.h/2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.08)'; roundRectPath(b.x+2,b.y+2,b.w-4,b.h*0.42,b.h/2); ctx.fill();
+  ctx.strokeStyle='rgba(190,230,180,.45)'; ctx.lineWidth=1.5; roundRectPath(b.x,b.y,b.w,b.h,b.h/2); ctx.stroke();
   ctx.fillStyle='#eafff0'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='bold 14px '+CF; ctx.fillText('‹ BACK', b.x+b.w/2, b.y+b.h/2+1);
   ctx.textBaseline='alphabetic';
 }
-function panelBg(){
-  ctx.fillStyle='rgba(5,12,5,.94)'; ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle='rgba(126,224,106,.5)'; ctx.lineWidth=2; ctx.strokeRect(10,10,W-20,H-20);
+function panelBg(){   // shared menu backdrop: deep green gradient, soft vignette, rounded frame with corner brackets
+  const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'rgba(10,22,12,.96)'); g.addColorStop(1,'rgba(3,8,4,.97)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  const vg=ctx.createRadialGradient(W/2,H*0.4,Math.min(W,H)*0.2,W/2,H*0.5,Math.max(W,H)*0.75);
+  vg.addColorStop(0,'rgba(60,110,50,.10)'); vg.addColorStop(1,'rgba(0,0,0,.45)'); ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(126,224,106,.28)'; ctx.lineWidth=1.5; roundRectPath(10,10,W-20,H-20,14); ctx.stroke();
+  ctx.strokeStyle='rgba(126,224,106,.75)'; ctx.lineWidth=3; ctx.lineCap='round'; const c=22;
+  for(const [x,y,sx,sy] of [[10,10,1,1],[W-10,10,-1,1],[10,H-10,1,-1],[W-10,H-10,-1,-1]]){ ctx.beginPath(); ctx.moveTo(x,y+sy*c); ctx.lineTo(x,y+sy*6); ctx.quadraticCurveTo(x,y,x+sx*6,y); ctx.lineTo(x+sx*c,y); ctx.stroke(); }
+  ctx.lineCap='butt';
 }
 function drawCampaign(){
   panelBg(); drawBackBtn();
@@ -5655,18 +5669,24 @@ function drawCampaign(){
     if(locked){ c1='rgba(40,44,40,.85)'; c2='rgba(26,28,26,.85)'; edge='rgba(120,130,120,.4)'; }
     else if(done){ c1='rgba(30,74,26,.9)'; c2='rgba(20,52,18,.9)'; edge='rgba(126,224,106,.6)'; }
     else { c1='rgba(120,60,16,.95)'; c2='rgba(150,74,20,.95)'; edge='#ffb15a'; }
+    if(current){ ctx.save(); ctx.shadowColor='rgba(255,170,70,.75)'; ctx.shadowBlur=10+6*Math.sin(performance.now()/300); ctx.fillStyle=c2; roundRectPath(r.x,r.y,r.w,r.h,9); ctx.fill(); ctx.restore(); }
     const g=ctx.createLinearGradient(0,r.y,0,r.y+r.h); g.addColorStop(0,c1); g.addColorStop(1,c2);
     ctx.fillStyle=g; roundRectPath(r.x,r.y,r.w,r.h,9); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,'+(locked?0.03:0.08)+')'; roundRectPath(r.x+2,r.y+2,r.w-4,r.h*0.42,8); ctx.fill();
     ctx.lineWidth=current?2.2:1.4; ctx.strokeStyle=edge; roundRectPath(r.x,r.y,r.w,r.h,9); ctx.stroke();
     const cy=r.y+r.h/2;
+    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(r.x+23, cy+1.5, 13, 0, 6.28); ctx.fill();
     ctx.fillStyle=locked?'#5a625a':(done?'#7ee06a':'#ffd24a');
     ctx.beginPath(); ctx.arc(r.x+22, cy, 13, 0, 6.28); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(r.x+22, cy-4, 8, Math.PI*1.1, Math.PI*1.9); ctx.fill();
     ctx.fillStyle='#12210f'; ctx.font='bold 15px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(''+(i+1), r.x+22, cy+1);
     ctx.textAlign='left'; ctx.fillStyle=locked?'#9aa39a':'#f3ffee'; ctx.font='bold 15px '+CF;
     ctx.fillText(locked?'LOCKED':m.name, r.x+44, cy+1);
     ctx.textAlign='right';
-    if(locked){ ctx.fillStyle='#9aa39a'; ctx.font='15px '+CF; ctx.fillText('', r.x+r.w-14, cy+1); }
+    if(locked){ const lx=r.x+r.w-24, ly=cy;   // padlock
+      ctx.strokeStyle='#7d867d'; ctx.lineWidth=2.2; ctx.beginPath(); ctx.arc(lx, ly-3, 5, Math.PI, 0); ctx.stroke();
+      ctx.fillStyle='#7d867d'; roundRectPath(lx-7, ly-3, 14, 10, 2); ctx.fill(); ctx.fillStyle='#2a2e2a'; ctx.fillRect(lx-1, ly, 2, 4); }
     else if(done){ ctx.fillStyle='#7ee06a'; ctx.font='bold 15px '+CF; ctx.fillText('✓ CLEAR', r.x+r.w-14, cy+1); }
     else { ctx.fillStyle='#fff'; ctx.font='bold 14px '+CF; ctx.fillText('▶ PLAY', r.x+r.w-14, cy+1); }
     ctx.textBaseline='alphabetic';
@@ -5927,20 +5947,43 @@ function drawCutBg(bg){
   }
   g.addColorStop(0,a); g.addColorStop(1,b);
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  // ground line
-  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,300,W,20);
+  const hz=ctx.createRadialGradient(W/2,300,10,W/2,300,W*0.75);   // horizon glow behind the skyline
+  const glow={dawn:'255,170,110',fire:'255,110,40',lab:'90,220,255',toxic:'140,255,90'}[bg]||'120,150,210';
+  hz.addColorStop(0,'rgba('+glow+',.30)'); hz.addColorStop(1,'rgba('+glow+',0)'); ctx.fillStyle=hz; ctx.fillRect(0,0,W,H);
+  if(bg==='lab'){ ctx.strokeStyle='rgba(120,220,255,.07)'; ctx.lineWidth=1; ctx.beginPath(); for(let x=0;x<W;x+=28){ ctx.moveTo(x,0); ctx.lineTo(x,H); } for(let y=0;y<H;y+=28){ ctx.moveTo(0,y); ctx.lineTo(W,y); } ctx.stroke(); }
+  if(bg==='fire'||bg==='toxic'){ const t=performance.now()/1000;   // drifting embers / spores
+    for(let i=0;i<22;i++){ const p=((t*0.08+i*0.137)%1), x=(i*97%W)+Math.sin(t+i)*14, y=300-p*300; ctx.globalAlpha=(1-p)*0.8;
+      ctx.fillStyle=bg==='fire'?'#ffb04a':'#a6ff6a'; ctx.beginPath(); ctx.arc(x,y,1.6+(i%3)*0.6,0,6.28); ctx.fill(); } ctx.globalAlpha=1; }
+  const gg=ctx.createLinearGradient(0,300,0,H); gg.addColorStop(0,'rgba(0,0,0,.55)'); gg.addColorStop(1,'rgba(0,0,0,.85)');   // ground with a lit lip
+  ctx.fillStyle=gg; ctx.fillRect(0,300,W,H-300);
+  ctx.fillStyle='rgba('+glow+',.18)'; ctx.fillRect(0,300,W,2);
+  const vg=ctx.createRadialGradient(W/2,H*0.42,Math.min(W,H)*0.3,W/2,H*0.5,Math.max(W,H)*0.8);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.5)'); ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
 }
-function drawCity(gy){
-  const heights=[70,110,90,140,80,125,60,105,135,78], bw=W/heights.length;
+function drawCity(gy){   // two-layer skyline: hazy far blocks, then detailed near buildings with lit windows and rooftop kit
+  const far=[95,140,120,170,105,150,90,130,160,110,135,100], fw=W/far.length;
+  ctx.fillStyle='rgba(30,44,66,.55)';
+  for(let i=0;i<far.length;i++){ const h=far[i]; ctx.fillRect(i*fw-4, gy-h, fw-2, h); if(i%3===0){ ctx.fillRect(i*fw+fw*0.4, gy-h-18, 3, 18); } }
+  const heights=[70,110,90,140,80,125,60,105,135,78], bw=W/heights.length, t=performance.now()/1000;
   for(let i=0;i<heights.length;i++){ const h=heights[i], x=i*bw;
     ctx.fillStyle=i%2?'#0c1622':'#0e1a28'; ctx.fillRect(x, gy-h, bw-3, h);
-    ctx.fillStyle='rgba(255,214,120,.28)';
+    ctx.fillStyle='rgba(120,150,190,.10)'; ctx.fillRect(x, gy-h, 2, h); ctx.fillRect(x, gy-h, bw-3, 2);   // lit edge
+    ctx.fillStyle='#09111a'; ctx.fillRect(x+bw-8, gy-h, 5, h);                                         // shaded side
+    if(i%3===1){ ctx.fillStyle='#0a131e'; ctx.fillRect(x+bw*0.25, gy-h-14, bw*0.3, 14); ctx.fillRect(x+bw*0.32, gy-h-20, 3, 6); }   // water tank
+    if(i%4===2){ ctx.strokeStyle='#0a131e'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x+bw*0.6, gy-h); ctx.lineTo(x+bw*0.6, gy-h-26); ctx.stroke();
+      ctx.fillStyle='rgba(255,70,60,'+(0.5+0.5*Math.sin(t*3+i))+')'; ctx.beginPath(); ctx.arc(x+bw*0.6, gy-h-27, 2, 0, 6.28); ctx.fill(); }   // aerial light
     let r=0;
-    for(let wy=gy-h+10; wy<gy-8; wy+=14){ let c=0; for(let wx=x+5; wx<x+bw-9; wx+=12){ if(((i*5+r*3+c*7)%4)===0) ctx.fillRect(wx,wy,5,7); c++; } r++; }
+    for(let wy=gy-h+10; wy<gy-8; wy+=14){ let c=0; for(let wx=x+5; wx<x+bw-11; wx+=12){
+      const k=(i*5+r*3+c*7)%4;
+      if(k===0){ ctx.fillStyle=((i+r+c)%5===0)?'rgba(255,236,180,.55)':'rgba(255,214,120,.32)'; ctx.fillRect(wx,wy,5,7); }
+      else { ctx.fillStyle='rgba(120,150,190,.06)'; ctx.fillRect(wx,wy,5,7); }
+      c++; } r++; }
   }
 }
-function drawStars(){ ctx.fillStyle='rgba(255,255,255,.5)';
-  for(let i=0;i<28;i++){ const x=((i*61)%W), y=((i*37)%260)+16; ctx.fillRect(x,y,2,2); } }
+function drawStars(){ const t=performance.now()/1000;   // twinkling star field
+  for(let i=0;i<46;i++){ const x=((i*61+i*i*7)%W), y=((i*37+i*13)%250)+12, tw=0.45+0.4*Math.sin(t*(1.5+i%4)+i), r=(i%7===0)?1.6:1;
+    ctx.fillStyle='rgba(255,255,255,'+tw+')'; ctx.beginPath(); ctx.arc(x,y,r,0,6.28); ctx.fill();
+    if(i%11===0){ ctx.strokeStyle='rgba(255,255,255,'+(tw*0.4)+')'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x-4,y); ctx.lineTo(x+4,y); ctx.moveTo(x,y-4); ctx.lineTo(x,y+4); ctx.stroke(); } } }
 function drawMeteor(cx, cy, r){
   ctx.save();
   // tail
@@ -5954,12 +5997,17 @@ function drawMeteor(cx, cy, r){
   ctx.fillStyle='#eaffc8'; ctx.beginPath(); ctx.arc(cx-r*0.3,cy-r*0.3,r*0.42,0,6.28); ctx.fill();
   ctx.restore();
 }
-function drawCivilian(x, gy, s, tint){
-  ctx.save(); ctx.fillStyle=tint||'#3a4a5a';
-  ctx.fillRect(x-6*s, gy-26*s, 12*s, 20*s);           // torso
-  ctx.beginPath(); ctx.arc(x, gy-30*s, 6*s, 0, 6.28); ctx.fill();  // head
-  ctx.fillRect(x-5*s, gy-7*s, 4*s, 7*s); ctx.fillRect(x+1*s, gy-7*s, 4*s, 7*s); // legs
-  ctx.restore();
+function drawCivilian(x, gy, s, tint){   // rounded silhouette figure with a rim light
+  const col=tint||'#3a4a5a';
+  ctx.save(); ctx.translate(x, gy); ctx.scale(s, s);
+  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(0,0,9,2.4,0,0,6.28); ctx.fill();
+  ctx.fillStyle=col; ctx.lineCap='round'; ctx.strokeStyle=col;
+  ctx.lineWidth=3.6; ctx.beginPath(); ctx.moveTo(-2.4,-8); ctx.lineTo(-3.2,-0.8); ctx.moveTo(2.4,-8); ctx.lineTo(3.4,-0.8); ctx.stroke();   // legs
+  ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-5.6,-23); ctx.lineTo(-8,-13); ctx.moveTo(5.6,-23); ctx.lineTo(8,-13); ctx.stroke();          // arms
+  roundRectPath(-6,-26,12,19,5); ctx.fill();                                                                                          // torso
+  ctx.beginPath(); ctx.arc(0,-31,5.6,0,6.28); ctx.fill();                                                                             // head
+  ctx.fillStyle='rgba(255,255,255,.16)'; roundRectPath(-6,-26,4,18,3); ctx.fill(); ctx.beginPath(); ctx.arc(-1.8,-32.5,2.6,0,6.28); ctx.fill();
+  ctx.lineCap='butt'; ctx.restore();
 }
 function drawGeneral(x, gy, s, faceLeft){
   if(Gimg){ const h=s*62, w=h*GAW/GAH; ctx.drawImage(Gimg, x-w/2, gy-h, w, h); return; }   // uploaded general portrait
@@ -6045,8 +6093,11 @@ function drawCutscene(){
   const boxY=H-186, boxH=140;
   const hasText = (p.text&&p.text.length) || p.speaker;
   if(hasText){
-    ctx.fillStyle='rgba(0,0,0,.74)'; roundRectPath(16,boxY,W-32,boxH,12); ctx.fill();
-    ctx.strokeStyle='rgba(126,224,106,.5)'; ctx.lineWidth=2; roundRectPath(16,boxY,W-32,boxH,12); ctx.stroke();
+    const bg=ctx.createLinearGradient(0,boxY,0,boxY+boxH); bg.addColorStop(0,'rgba(10,18,12,.88)'); bg.addColorStop(1,'rgba(2,6,3,.92)');
+    ctx.fillStyle=bg; roundRectPath(16,boxY,W-32,boxH,14); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.05)'; roundRectPath(18,boxY+2,W-36,26,12); ctx.fill();
+    ctx.strokeStyle='rgba(126,224,106,.55)'; ctx.lineWidth=2; roundRectPath(16,boxY,W-32,boxH,14); ctx.stroke();
+    ctx.fillStyle='#7ee06a'; roundRectPath(16,boxY+18,4,boxH-36,2); ctx.fill();
     let ty=boxY+30; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     if(p.speaker){ ctx.fillStyle='#ffd24a'; ctx.font='bold 15px '+CF; ctx.fillText(p.speaker, 32, ty); ty+=25; }
     const shown=(p.text||'').slice(0, Math.floor(cut.charT));
@@ -7078,7 +7129,7 @@ function drawMateMarker(rx,ry,rw,rh, camX,camY,z, mate, col, hpMax, label, sc){
     ctx.globalAlpha=0.5+0.5*Math.abs(Math.sin(performance.now()/400));
     ctx.fillStyle=col; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.moveTo(sx,ay+11*s); ctx.lineTo(sx-7*s,ay); ctx.lineTo(sx+7*s,ay); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold '+Math.max(6,Math.round(9*s))+'px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText(label||'TEAMMATE', sx, ay-3*s);
+    ctx.globalAlpha=1; ctx.fillStyle=col; ctx.font='bold '+Math.max(6,Math.round(9*s))+'px '+CF; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; if(label!=='') ctx.fillText(label||'TEAMMATE', sx, ay-3*s);
     // HP bar under the marker (only when a max HP is supplied — shootout fighters)
     if(hpMax && typeof mate.hp==='number'){
       const bw=34*s, bh=Math.max(2,4*s), bx=sx-bw/2, by=ay+13*s, frac=Math.max(0,Math.min(1,mate.hp/hpMax));
@@ -7619,21 +7670,104 @@ function startBigWar(opts){
     pickups:[], obs:makeWarObs(WW,HH).concat(bld.walls), buildings:bld.buildings, vehicles:[], decals:makeWarDecals(WW,HH) };   // no auto-spawn vehicles or pickups — buy them with kill cash
   duel.squadMate = duel.fighters.find(f=>f.bot && f.team===duel.humans[0].team);   // only this ally follows your radio orders
   for(const h of duel.humans) h._squad = duel.fighters.find(f=>f.bot && f.team===h.team && f!==h);   // each player marks a squadmate on their OWN team
+  warClusterSquads();
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
   if(opts.split) toast('SPLIT-SCREEN WAR — P1 vs P2, bots fill the ranks!');
   else toast('10v10 WAR — first to 100 kills!');
 }
+function warClusterSquads(){   // your allies start the war in formation round you (mid-line), not strung out across the whole map
+  for(const h of duel.humans){
+    if(duel.humans.filter(q=>q.team===h.team).length!==1) continue;   // shared armies (online) keep the spread line
+    const back=h.team===1?1:-1, mates=duel.fighters.filter(g=>g.bot && g.team===h.team);
+    h.x=Math.round(duel.W/2-DUEL_PS/2);
+    mates.forEach((g,k)=>{ g.x=h.x+((k%5)-2)*82+(Math.floor(k/5)?41:0); g.y=h.y+back*(74+Math.floor(k/5)*70); g.aim=h.aim; });
+  }
+}
 function startWarSplit(){ startBigWar({ split:true, team1:[{ctrl:0}], team2:[{ctrl:1}] }); }   // 1 human per team, local split screen
 
 /* ===================== CAMPAIGN MISSION 8 — "The Zombifiers' Lab" =====================
-   Phase 1 ("war"): a 10v10 war to 100 kills — you + 9 ally bots vs 10 enemy bots. Zombies
-     pour in from the enemy side in bulk; shooting them does NOT count toward the 100.
-   Phase 2 ("lab"): breach the enemy lab at map centre. Everyone teleports to the door. 15
-     enemy soldiers inside DON'T respawn — clear them, then kill the 5 scientists at the back,
-     who each spawn a zombie every 3s. All 15 + all 5 dead → mission complete.  */
-const W8_LAB={w:1140, h:840};
+   Phase "war":     a 10v10 war to 100 kills — you + 9 ally bots vs 10 enemy bots. Zombies pour in from the enemy side
+                    (zombie kills don't count). The sealed lab compound sits at the centre of the map the whole time.
+   Phase "assault": at 100 kills the blast door opens, the enemy stops reinforcing and the horde stops — walk your
+                    squad over and go in on foot (vehicles don't fit through the door).
+   Phase "lab":     a big multi-room complex. Guards hold every room and never respawn; a scientist hides in each of the
+                    four wings. Kill all four and the CORE vault unseals: kill the chief scientist, then destroy the
+                    ZOMBIFIER REACTOR (heavily armoured, keeps spawning zombies) to bring the lab down. */
+const W8_LAB={w:2600, h:2000, t:30};
+const W8_ROOMS=[   // interior rects relative to the lab's top-left · guards = soldiers holding the room · sci = where its scientist hides
+  {id:'hall',  name:'ENTRY HALL',   x:930,  y:1110, w:770,  h:860, guards:4, floor:'#3b434f'},
+  {id:'serv',  name:'SERVER ROOM',  x:30,   y:1110, w:870,  h:860, guards:4, floor:'#2c333f', sci:{x:110, y:1890}},
+  {id:'incu',  name:'INCUBATORS',   x:1730, y:1110, w:840,  h:860, guards:4, floor:'#2d3b39', sci:{x:2500,y:1910}},
+  {id:'hallw', name:'CORRIDOR',     x:30,   y:790,  w:2540, h:290, guards:5, floor:'#383e47'},
+  {id:'clone', name:'CLONING BAY',  x:30,   y:30,   w:820,  h:730, guards:4, floor:'#2f3d3e', sci:{x:790, y:300}},
+  {id:'chem',  name:'CHEM LAB',     x:1780, y:30,   w:790,  h:730, guards:4, floor:'#3a3845', sci:{x:2510,y:100}},
+  {id:'core',  name:'REACTOR CORE', x:880,  y:30,   w:870,  h:730, guards:6, floor:'#262b36', sci:{x:1080,y:640}, chief:true},
+];
+const W8_PROPS=[   // cover + set dressing, relative to the lab's top-left
+  {sub:'desk',x:1000,y:1290,w:170,h:54},{sub:'desk',x:1460,y:1290,w:170,h:54},{sub:'pillar',x:1040,y:1640,w:60,h:60},{sub:'pillar',x:1530,y:1640,w:60,h:60},
+  {sub:'server',x:150,y:1230,w:56,h:230},{sub:'server',x:300,y:1230,w:56,h:230},{sub:'server',x:560,y:1230,w:56,h:230},{sub:'server',x:720,y:1230,w:56,h:230},
+  {sub:'server',x:150,y:1580,w:56,h:230},{sub:'server',x:300,y:1580,w:56,h:230},{sub:'server',x:560,y:1580,w:56,h:230},{sub:'server',x:720,y:1580,w:56,h:230},
+  {sub:'vat',x:1820,y:1250,w:96,h:96},{sub:'vat',x:1990,y:1250,w:96,h:96},{sub:'vat',x:2290,y:1250,w:96,h:96},{sub:'vat',x:2450,y:1250,w:96,h:96},
+  {sub:'vat',x:1820,y:1500,w:96,h:96},{sub:'vat',x:1990,y:1500,w:96,h:96},{sub:'vat',x:2290,y:1500,w:96,h:96},{sub:'vat',x:2450,y:1500,w:96,h:96},
+  {sub:'vat',x:1820,y:1750,w:96,h:96},{sub:'vat',x:2290,y:1750,w:96,h:96},
+  {sub:'barricade',x:600,y:880,w:44,h:120},{sub:'barricade',x:1080,y:830,w:120,h:44},{sub:'barricade',x:1420,y:990,w:120,h:44},{sub:'barricade',x:1950,y:880,w:44,h:120},
+  {sub:'tube',x:110,y:100,w:110,h:110},{sub:'tube',x:290,y:100,w:110,h:110},{sub:'tube',x:470,y:100,w:110,h:110},{sub:'tube',x:650,y:100,w:110,h:110},
+  {sub:'bench',x:110,y:420,w:240,h:50},{sub:'bench',x:500,y:420,w:240,h:50},
+  {sub:'bench',x:1860,y:180,w:250,h:50},{sub:'bench',x:2230,y:180,w:250,h:50},{sub:'bench',x:1860,y:420,w:250,h:50},{sub:'bench',x:2230,y:420,w:250,h:50},
+  {sub:'drum',x:1830,y:640,w:64,h:64},{sub:'drum',x:2470,y:640,w:64,h:64},
+  {sub:'coil',x:980,y:110,w:58,h:58},{sub:'coil',x:1590,y:110,w:58,h:58},{sub:'coil',x:980,y:520,w:58,h:58},{sub:'coil',x:1590,y:520,w:58,h:58},
+];
+function war8BuildLab(WW,HH){
+  const T=W8_LAB.t, LW=W8_LAB.w, LH=W8_LAB.h;
+  const L={x:Math.round(WW/2-LW/2), y:Math.round(HH/2-LH/2), w:LW, h:LH};
+  const walls=[];
+  const wall=(x,y,w,h)=>walls.push({x:L.x+x, y:L.y+y, w, h, kind:'lwall'});
+  const hwall=(y,x0,x1,gaps)=>{ let cx=x0; for(const [gc,gw] of gaps){ const gs=gc-gw/2; if(gs-cx>2) wall(cx,y,gs-cx,T); cx=gc+gw/2; } if(x1-cx>2) wall(cx,y,x1-cx,T); };   // gaps = doorways [centre, width]
+  const vwall=(x,y0,y1)=>wall(x,y0,T,y1-y0);
+  hwall(0, 0, LW, []);                    hwall(LH-T, 0, LW, [[1300,220]]);   // north · south (main blast door)
+  vwall(0, T, LH-T);                      vwall(LW-T, T, LH-T);               // west · east
+  hwall(760,  T, LW-T, [[440,130],[1300,150],[2175,130]]);                   // north wing ↔ corridor (centre = core vault)
+  hwall(1080, T, LW-T, [[450,130],[1300,200],[2150,130]]);                   // corridor ↔ south wing
+  vwall(850, T, 760);  vwall(1750, T, 760);  vwall(900, 1110, LH-T);  vwall(1700, 1110, LH-T);
+  const props=W8_PROPS.map((p,i)=>({x:L.x+p.x, y:L.y+p.y, w:p.w, h:p.h, kind:'lprop', sub:p.sub, ph:i*1.7}));
+  const rooms=W8_ROOMS.map(r=>({id:r.id, name:r.name, x:L.x+r.x, y:L.y+r.y, w:r.w, h:r.h, guards:r.guards, floor:r.floor,
+    sci:r.sci?{x:L.x+r.sci.x, y:L.y+r.sci.y}:null, chief:!!r.chief, seen:false, alert:0}));
+  const doorMain={x:L.x+1300-110, y:L.y+LH-T, w:220, h:T, kind:'ldoor', id:'main', open:0};
+  const doorCore={x:L.x+1300-75,  y:L.y+760,  w:150, h:T, kind:'ldoor', id:'core', open:0};
+  const reactor={x:L.x+1315, y:L.y+330, r:95, hp:900, hpMax:900, shield:true, spawnT:3, t:0, flash:0, dead:false, boomT:0};
+  const reactorBox={x:reactor.x-88, y:reactor.y-88, w:176, h:176, kind:'lprop', sub:'reactor'};
+  return {L, walls, props, rooms, doorMain, doorCore, reactor, reactorBox, entry:{x:L.x+1300, y:L.y+LH-170}};
+}
+const W8_DOORS=[   // the lab's doorway graph: [roomA, roomB, door centre x, y] (relative) — every door sits in a horizontal wall
+  ['out','hall',1300,1985], ['hall','hallw',1300,1095], ['serv','hallw',450,1095], ['incu','hallw',2150,1095],
+  ['clone','hallw',440,775], ['core','hallw',1300,775], ['chem','hallw',2175,775] ];
+function war8NodeAt(x,y){ if(!war8InRect(x,y,duel.lab.L,0)) return 'out'; const r=war8RoomAt(x,y); return r?r.id:null; }
+function war8NodeY(id){ if(id==='out') return W8_LAB.h+500; const r=W8_ROOMS.find(q=>q.id===id); return r.y+r.h/2; }
+function war8NextHop(a, b){   // BFS over open doors → the first door on the way from room a to room b
+  const open=d=>!(d[0]==='out' && !duel.labDoors[0].opening) && !(d[0]==='core' && !duel.labDoors[1].opening);
+  const prev={}; prev[a]=null; const q=[a];
+  while(q.length){ const n=q.shift(); if(n===b) break;
+    for(const d of W8_DOORS){ if(!open(d)) continue; const m=d[0]===n?d[1]:d[1]===n?d[0]:null; if(m && !(m in prev)){ prev[m]={from:n, door:d}; q.push(m); } } }
+  if(!(b in prev)) return null;
+  let n=b, step=null; while(prev[n]){ step=prev[n]; if(step.from===a) break; n=step.from; }
+  return step ? {door:step.door, to:(step.door[0]===a?step.door[1]:step.door[0])} : null;
+}
+function war8NavPoint(o, cx, cy, tx, ty){   // where to walk next (centre coords) to reach (tx,ty) through the lab's doors; null = straight there
+  if(!duel.lab) return null;
+  let a=war8NodeAt(cx,cy); if(a) o._navNode=a; else a=o._navNode;   // in a doorway → keep the room we came from
+  const b=war8NodeAt(tx,ty);
+  if(!a || !b || a===b) return null;
+  const hop=war8NextHop(a,b); if(!hop) return null;
+  const L=duel.lab.L, dx=L.x+hop.door[2], dy=L.y+hop.door[3], dir=Math.sign(war8NodeY(hop.to)-hop.door[3])||1;
+  if(Math.abs(cx-dx)<34 && Math.abs(cy-dy)<64) return {x:dx, y:dy+dir*90};   // lined up in the doorway → push through
+  return {x:dx, y:dy-dir*48};                                                  // line up on the door first
+}
+function war8InRect(x,y,r,inset){ return x>r.x+inset && x<r.x+r.w-inset && y>r.y+inset && y<r.y+r.h-inset; }
+function war8InLab(x,y){ return duel.lab && war8InRect(x,y,duel.lab.L,W8_LAB.t-4); }
+function war8RoomAt(x,y){ if(!duel.lab) return null; for(const r of duel.lab.rooms) if(war8InRect(x,y,r,0)) return r; return null; }
+function war8Radio(text){ duel.radio={text, t:5.5}; }
 function setupWar8(){
   try{ NetIO.cleanup(); }catch(e){} net=null;
   mode='campaign'; explore=null; coop=null; codef=null; defWon=false; netShowCodeInput(false);
@@ -7642,20 +7776,26 @@ function setupWar8(){
     fighters.push(mkFighter(x, y, -Math.PI/2, 1, i>0, i===0?'kb':null)); }   // fighter 0 = you; 1..9 = ally bots
   for(let i=0;i<N;i++){ const x=Math.round(220+(i+0.5)*(WW-440)/N + rand(-40,40)), y=180+(i%2)*80;
     fighters.push(mkFighter(x, y, Math.PI/2, 2, true, null)); }
-  const bld=makeWarBuildings(WW,HH);
+  const bld=makeWarBuildings(WW,HH), lab=war8BuildLab(WW,HH), L=lab.L, pad=170;
+  const clearOfLab=o=>o.x>L.x+L.w+pad || o.x+o.w<L.x-pad || o.y>L.y+L.h+pad || o.y+o.h<L.y-pad;   // keep the ground round the compound open
+  const goneB=bld.buildings.filter(b=>!clearOfLab(b));
+  const walls=bld.walls.filter(w=>clearOfLab(w) && !goneB.some(b=>w.x<b.x+b.w && w.x+w.w>b.x && w.y<b.y+b.h && w.y+w.h>b.y));
   duel={ W:WW, H:HH, camX:0, camY:0, bullets:[], over:false, winner:0, overT:0, t:0, team:true, split:false, war:true, paused:false,
-    campaign8:true, phase:'war', zombies:[], scientists:[], zSpawnT:1.2, labEnemyN:0, sciN:0, _toLab:false,
+    campaign8:true, phase:'war', zombies:[], scientists:[], zSpawnT:1.2, sciN:0, _toLab:false, lab, labDoors:[lab.doorMain, lab.doorCore],
     warGoal:100, score1:0, score2:0, driving:null, blasts:[], cash:0,
     fighters, humans:fighters.filter(f=>!f.bot),
-    pickups:[], obs:makeWarObs(WW,HH).concat(bld.walls), buildings:bld.buildings, vehicles:[], decals:makeWarDecals(WW,HH) };
+    pickups:[], obs:makeWarObs(WW,HH).filter(clearOfLab).concat(walls, lab.walls, lab.props, [lab.doorMain, lab.doorCore, lab.reactorBox]),
+    buildings:bld.buildings.filter(clearOfLab), vehicles:[],
+    decals:makeWarDecals(WW,HH).filter(d=>d.x<L.x-90||d.x>L.x+L.w+90||d.y<L.y-90||d.y>L.y+L.h+90) };
   duel.me = fighters[0];
   applyCampaignUpgrades(duel.me);   // your purchased upgrades (armor, trigger speed, bullet damage, ammo) carry into the lab war
   duel.squadMate = duel.fighters.find(f=>f.bot && f.team===1);
   for(const h of duel.humans) h._squad = duel.fighters.find(f=>f.bot && f.team===h.team && f!==h);
+  warClusterSquads();
   clearDuelSpawns();
   padPrev=[{},{}];
   state=STATE.DUEL;
-  toast('WAR — 100 KILLS, THEN BREACH THE LAB!');
+  toast('WAR — 100 KILLS OPENS THE LAB!');
 }
 function applyCampaignUpgrades(f){   // map the coin-bought campaign upgrades onto a war fighter
   f.hpMax = DUEL_HP + (upg.hp||0);          // STARTING ARMOR → extra hearts
@@ -7667,22 +7807,112 @@ function applyCampaignUpgrades(f){   // map the coin-bought campaign upgrades on
 }
 function spawnWarZombie(x,y){
   x=clamp(x,20,(duel.W||DUEL_W)-DUEL_PS-20); y=clamp(y,20,(duel.H||DUEL_H)-DUEL_PS-20);
+  if(duel.phase!=='war' && duelBlocks(x,y,DUEL_PS,DUEL_PS)) return false;   // never inside lab furniture
   duel.zombies.push({x,y,hp:2,flash:0,walkT:Math.random()*6,dead:false,spd:rand(46,68),cd:0});
+  return true;
 }
 function war8Update(dt){
   if(!duel||!duel.campaign8) return;
-  if(duel._toLab && duel.phase==='war'){ duel._toLab=false; war8ToLab(); return; }   // deferred transition (safe, outside the fighter loop)
+  if(duel._toLab && duel.phase==='war'){ duel._toLab=false; war8OpenLab(); }   // deferred transition (safe, outside the fighter loop)
   war8Bullets();
+  for(const d of duel.labDoors){ if(d.opening && d.open<1) d.open=Math.min(1, d.open+dt*0.9); }
+  if(duel.radio){ duel.radio.t-=dt; if(duel.radio.t<=0) duel.radio=null; }
+  if(duel.roomBanner){ duel.roomBanner.t-=dt; if(duel.roomBanner.t<=0) duel.roomBanner=null; }
+  if(duel._vehMsgT>0) duel._vehMsgT-=dt;
   if(duel.phase==='war'){
     duel.zSpawnT-=dt;
     if(duel.zSpawnT<=0 && duel.zombies.length<28){ duel.zSpawnT=rand(0.6,1.2);
       for(let k=0;k<3;k++) spawnWarZombie(rand(240,duel.W-240), rand(110,280)); }   // bulk horde from the enemy (top) side
+  } else if(duel.phase==='assault'){
+    const me=duel.me;
+    if(me && !me.dead && !me._inVehicle && war8InLab(me.x+DUEL_PS/2, me.y+DUEL_PS/2)) war8EnterLab();
   } else if(duel.phase==='lab'){
-    war8Scientists(dt);
+    war8LabTick(dt);
   }
+  war8KeepVehiclesOut();
   war8Zombies(dt);
 }
-function war8Bullets(){   // team-1 fire vs zombies (always) and scientists (once the 15 are down)
+function war8OpenLab(){   // 100 kills: the blast door rolls open, the enemy stops reinforcing, the horde stops
+  duel.phase='assault';
+  const d=duel.labDoors[0]; d.opening=true; duel.obs=duel.obs.filter(o=>o!==d);
+  for(const f of duel.fighters){ if(f.team!==2) continue; f.noResp=true; if(f.dead) f.respawnT=null; }
+  shake(14,.6); Sound.boss&&Sound.boss();
+  war8Radio('100 kills! The lab’s blast door is open — get your squad inside!');
+}
+function war8EnterLab(){   // you stepped inside: the field war is over, the lab wakes up
+  const lab=duel.lab, me=duel.me;
+  duel.phase='lab';
+  duel.fighters=duel.fighters.filter(f=>f.team===1);   // only your squad goes in
+  duel.zombies=[]; duel.bullets=duel.bullets.filter(b=>b.team===1);
+  let i=0;
+  for(const f of duel.fighters){
+    if(f._inVehicle) exitVehicle(f);
+    f._targetVeh=null; f._fp=null; f._crumb=null;
+    if(!f.bot) continue;
+    f.weapon='rifle'; f.wammo=999; f._fireMul=1.6;   // the squad goes in with rifles (a touch slower than yours)
+    if(f.dead || Math.hypot(f.x-me.x, f.y-me.y)>650){   // stragglers catch up at the door behind you
+      const x=lab.entry.x-120+(i%5)*60-DUEL_PS/2, y=lab.L.y+lab.L.h+60+Math.floor(i/5)*60;
+      warRespawnAt(f, x, y, -Math.PI/2); i++; }
+  }
+  for(const r of lab.rooms){   // guards: never respawn, hold their room
+    for(let k=0;k<r.guards;k++){
+      let x=0, y=0;
+      for(let t=0;t<40;t++){ x=rand(r.x+50, r.x+r.w-50-DUEL_PS); y = r.id==='hall' ? rand(r.y+40, r.y+r.h*0.42) : rand(r.y+50, r.y+r.h-50-DUEL_PS); if(!duelBlocks(x,y,DUEL_PS,DUEL_PS)) break; }
+      const g=mkFighter(Math.round(x), Math.round(y), Math.PI/2, 2, true, null);
+      g.noResp=true; g._room=r; g._home={x:g.x, y:g.y}; g.hpMax=DUEL_HP+3; g.hp=g.hpMax;
+      if(r.id==='core' || k===0){ g.weapon='rifle'; g.wammo=999; g._fireMul=1.9; }   // a rifleman in every room; the core is all rifles
+      duel.fighters.push(g);
+    }
+  }
+  duel.scientists=[];
+  for(const r of lab.rooms){ if(!r.sci) continue;
+    duel.scientists.push({x:r.sci.x, y:r.sci.y, hx:r.sci.x, hy:r.sci.y, room:r, chief:r.chief, hp:r.chief?16:6, hpMax:r.chief?16:6,
+      flash:0, spawnT:1.5, dead:false, t:Math.random()*6, alarm:0, walk:0, face:Math.PI/2}); }
+  duel.sciN=duel.scientists.length;
+  const hall=lab.rooms.find(r=>r.id==='hall'); if(hall){ hall.seen=true; duel.roomBanner={text:hall.name, t:2.4}; }
+  shake(10,.5); Sound.boss&&Sound.boss();
+  war8Radio('You’re in. Sweep it room by room — a scientist is hiding in each wing. Find them!');
+}
+function war8LabTick(dt){
+  const lab=duel.lab, me=duel.me;
+  if(me && !me.dead){ const r=war8RoomAt(me.x+DUEL_PS/2, me.y+DUEL_PS/2); if(r) duel.labRoom=r;
+    if(r && !r.seen){ r.seen=true; duel.roomBanner={text:r.name, t:2.2}; Sound.hit&&Sound.hit(); } }
+  for(const r of lab.rooms){ if(r.alert>0) r.alert-=dt; }
+  war8Scientists(dt);
+  const core=duel.labDoors[1], R=lab.reactor;
+  const wingLeft=duel.scientists.filter(s=>!s.dead && !s.chief).length;
+  if(wingLeft===0 && !core.opening){ core.opening=true; duel.obs=duel.obs.filter(o=>o!==core);
+    war8Radio('All four wings are clear — the CORE vault is open! Take out the chief scientist.'); shake(10,.5); Sound.boss&&Sound.boss(); }
+  if(R.shield && core.opening && !duel.scientists.some(s=>!s.dead && s.chief)){ R.shield=false;
+    war8Radio('The chief is down and the shield failed — DESTROY THE REACTOR!'); Sound.power&&Sound.power(); shake(8,.4); }
+  R.t+=dt; if(R.flash>0) R.flash-=dt;
+  if(!R.shield && !R.dead){   // the exposed reactor keeps pumping out zombies
+    R.spawnT-=dt;
+    if(R.spawnT<=0 && duel.zombies.length<30){ R.spawnT=4.2;
+      for(let k=0;k<3;k++){ const a=Math.random()*6.28, x=R.x+Math.cos(a)*160, y=R.y+Math.sin(a)*160; if(spawnWarZombie(x-DUEL_PS/2, y-DUEL_PS/2)) warFx(x,y,'zap'); } }
+  }
+  if(R.hp<=0 && !R.dead){ R.dead=true; R.boomT=0; duel.obs=duel.obs.filter(o=>o!==lab.reactorBox);
+    for(const z of duel.zombies) z.dead=true;
+    shake(22,1.1); Sound.boss&&Sound.boss(); war8Radio('Reactor’s going critical — the Zombifiers’ lab is finished!'); }
+  if(R.dead && !duel.over){ R.boomT+=dt;
+    if(Math.random()<dt*16) duel.blasts.push({x:R.x+rand(-380,380), y:R.y+rand(-300,300), t:0});
+    if(Math.random()<dt*6) shake(9,.25);
+    if(R.boomT>2.8){ duel.over=true; duel.winner=1; duel.campaign8win=true; duel.overT=0; shake(18,.7); Sound.power&&Sound.power(); } }
+}
+function war8KeepVehiclesOut(){   // tanks and jeeps don't fit through the lab door
+  if(!duel.lab||!duel.vehicles) return; const L=duel.lab.L;
+  for(const v of duel.vehicles){
+    if(v.x>L.x && v.x<L.x+L.w && v.y>L.y && v.y<L.y+L.h && v._ox!=null){ v.x=v._ox; v.y=v._oy;
+      if(v.driver && v.driver===duel.me && !(duel._vehMsgT>0)){ toast('TOO BIG FOR THE LAB — HOP OUT (E) AND GO IN ON FOOT'); duel._vehMsgT=3; } }
+    v._ox=v.x; v._oy=v.y; }
+}
+function war8BulletHitsWall(b){   // a bullet just hit something solid — the reactor takes damage once its shield is down
+  const lab=duel.lab; if(!lab) return; const R=lab.reactor;
+  if(R.dead || Math.hypot(b.x-R.x, b.y-R.y)>R.r+22) return;
+  if(R.shield || b.team!==1){ warFx(b.x,b.y,'ping'); return; }
+  R.hp-=(b.shell?25:(b.dmg||1)); R.flash=0.09; warFx(b.x,b.y,'spark');
+}
+function war8Bullets(){   // team-1 fire vs zombies (always) and scientists (once you're inside)
   for(const b of duel.bullets){ if(b.dead||b.team!==1) continue;
     let hit=false;
     for(const z of duel.zombies){ if(z.dead) continue;
@@ -7691,10 +7921,13 @@ function war8Bullets(){   // team-1 fire vs zombies (always) and scientists (onc
         if(z.hp<=0){ z.dead=true; duelSplat(z.x+DUEL_PS/2,z.y+DUEL_PS/2); if(b.owner){ b.owner.cash=(b.owner.cash||0)+10; } }   // +$10 per zombie
         if(!b.shell){ b.dead=true; hit=true; } break; } }
     if(hit||b.dead) continue;
-    if(duel.phase==='lab' && duel.labEnemyN<=0){
+    if(duel.phase==='lab'){
       for(const s of duel.scientists){ if(s.dead) continue;
-        if(Math.abs(b.x-s.x)<26 && Math.abs(b.y-s.y)<32){ s.hp-=(b.dmg||1); s.flash=0.16; b.dead=true; duelBlood(b.x,b.y, s.hp<=0?20:6);
-          if(s.hp<=0){ s.dead=true; duelSplat(s.x,s.y); shake(6,.25); Sound.over&&Sound.over(); } break; } }
+        if(Math.abs(b.x-s.x)<22 && Math.abs(b.y-s.y)<28){ s.hp-=(b.dmg||1); s.flash=0.16; s.alarm=3; b.dead=true; duelBlood(b.x,b.y, s.hp<=0?22:6);
+          if(s.hp<=0){ s.dead=true; duelSplat(s.x,s.y); shake(7,.3); Sound.over&&Sound.over();
+            const left=duel.scientists.filter(q=>!q.dead && !q.chief).length;
+            toast(s.chief ? 'CHIEF SCIENTIST DOWN!' : (left ? 'SCIENTIST DOWN — '+left+' TO GO' : 'LAST SCIENTIST DOWN!')); }
+          break; } }
     }
   }
 }
@@ -7706,8 +7939,11 @@ function war8Zombies(dt){
       const d=Math.hypot((f.x+DUEL_PS/2)-zx,(f.y+DUEL_PS/2)-zy); if(d<bd){bd=d;tgt=f;} }
     if(tgt){ const tx=(tgt.x+DUEL_PS/2)-zx, ty=(tgt.y+DUEL_PS/2)-zy, d=Math.hypot(tx,ty)||1;
       z.face=Math.atan2(ty,tx);
-      const nx=z.x+(tx/d)*z.spd*dt, ny=z.y+(ty/d)*z.spd*dt;
-      if(!duelBlocks(nx,z.y,DUEL_PS,DUEL_PS)) z.x=nx; else if(!duelBlocks(z.x+(tx/d)*z.spd*dt,z.y,DUEL_PS,DUEL_PS)){}
+      let hx=tx/d, hy=ty/d;
+      if(duel.phase==='lab'){ const n=war8NavPoint(z, zx, zy, zx+tx, zy+ty); if(n){ const nx=n.x-zx, ny=n.y-zy, nd=Math.hypot(nx,ny)||1; hx=nx/nd; hy=ny/nd; z.face=Math.atan2(ny,nx); } }   // find the door
+      const m=duelAvoid(z, hx, hy);   // shamble round walls and furniture instead of grinding into them
+      const nx=z.x+m.x*z.spd*dt, ny=z.y+m.y*z.spd*dt;
+      if(!duelBlocks(nx,z.y,DUEL_PS,DUEL_PS)) z.x=nx;
       if(!duelBlocks(z.x,ny,DUEL_PS,DUEL_PS)) z.y=ny;
       z.walkT+=dt*8;
       z.cd-=dt;
@@ -7718,48 +7954,94 @@ function war8Zombies(dt){
   }
   duel.zombies=duel.zombies.filter(z=>!z.dead);
 }
-function war8Scientists(dt){
-  let alive=0;
-  for(const s of duel.scientists){ if(s.dead) continue; alive++;
-    if(s.flash>0) s.flash-=dt; s.t=(s.t||0)+dt;
-    s.spawnT-=dt;
-    if(s.spawnT<=0){ s.spawnT=3; if(duel.zombies.length<40) spawnWarZombie(s.x-DUEL_PS/2+rand(-24,24), s.y+44); }   // one zombie every 3s
+function war8Scientists(dt){   // scientists hide; spotted, they panic, run from you round their room and grow zombies
+  const coreOpen=duel.labDoors[1].opening;
+  for(const s of duel.scientists){ if(s.dead) continue;
+    if(s.flash>0) s.flash-=dt; s.t+=dt;
+    if(s.chief && !coreOpen) continue;   // sealed in the vault
+    const r=s.room;
+    s.scanT=(s.scanT||0)-dt;
+    if(s.scanT<=0){ s.scanT=0.25; let th=null, td=1e9;
+      for(const f of duel.fighters){ if(f.team!==1||f.dead) continue;
+        const fx=f.x+DUEL_PS/2, fy=f.y+DUEL_PS/2, d=Math.hypot(fx-s.x, fy-s.y);
+        if(d<td && (war8InRect(fx,fy,r,-10) || (d<420 && !teamLineBlocked({x:s.x-DUEL_PS/2, y:s.y-DUEL_PS/2}, f)))){ td=d; th=f; } }
+      s.th=th; }
+    const th=(s.th && !s.th.dead) ? s.th : null;
+    if(th){ if(s.alarm<=0) warFx(s.x, s.y-34, 'alert'); s.alarm=3; r.alert=Math.max(r.alert||0,3); }
+    else if(s.alarm>0) s.alarm-=dt;
+    let mx=0, my=0;
+    if(th){ const ax=s.x-(th.x+DUEL_PS/2), ay=s.y-(th.y+DUEL_PS/2), ad=Math.hypot(ax,ay)||1; mx=ax/ad; my=ay/ad; }   // run from the closest threat
+    else if(s.alarm<=0){ const hx=s.hx-s.x, hy=s.hy-s.y, hd=Math.hypot(hx,hy); if(hd>16){ mx=hx/hd*0.5; my=hy/hd*0.5; } }   // calm → creep back to the hiding spot
+    if(mx||my){
+      const spd=(s.chief?112:94)*Math.hypot(mx,my), base=Math.atan2(my,mx);
+      for(const turn of [0,0.6,-0.6,1.2,-1.2,1.9,-1.9,2.6,-2.6]){   // slide along furniture and walls; never leave the room
+        const a=base+turn, nx=s.x+Math.cos(a)*spd*dt, ny=s.y+Math.sin(a)*spd*dt;
+        if(war8InRect(nx,ny,r,20) && !duelBlocks(nx-13,ny-13,26,26)){ s.x=nx; s.y=ny; s.face=a; s.walk+=dt*12; break; } }
+    }
+    if(s.alarm>0){ s.spawnT-=dt;
+      if(s.spawnT<=0 && duel.zombies.length<34){ s.spawnT=s.chief?2.3:3.4;
+        const a=Math.random()*6.28, x=s.x+Math.cos(a)*48, y=s.y+Math.sin(a)*48;
+        if(spawnWarZombie(x-DUEL_PS/2, y-DUEL_PS/2)) warFx(x,y,'zap'); } }
   }
-  duel.labEnemyN = duel.fighters.filter(f=>f.team===2 && f.noResp && !f.dead).length;
-  if(duel.labEnemyN<=0 && alive===0 && !duel.over){ duel.over=true; duel.winner=1; duel.campaign8win=true; duel.overT=0; shake(18,.7); Sound.power&&Sound.power(); }
 }
-function war8ToLab(){
-  duel.phase='lab';
-  const cx=Math.round(duel.W/2), cy=Math.round(duel.H/2), LW=W8_LAB.w, LH=W8_LAB.h;
-  const L={x:cx-LW/2, y:cy-LH/2, w:LW, h:LH}; duel.lab=L;
-  const tw=26, dg=160, half=(L.w-dg)/2;
-  const walls=[
-    {x:L.x, y:L.y, w:L.w, h:tw, kind:'bwall'},                       // top
-    {x:L.x, y:L.y, w:tw, h:L.h, kind:'bwall'},                       // left
-    {x:L.x+L.w-tw, y:L.y, w:tw, h:L.h, kind:'bwall'},                // right
-    {x:L.x, y:L.y+L.h-tw, w:half, h:tw, kind:'bwall'},               // bottom-left (door gap in the middle)
-    {x:L.x+L.w-half, y:L.y+L.h-tw, w:half, h:tw, kind:'bwall'},      // bottom-right
-  ];
-  duel.labWalls=walls; for(const w of walls) duel.obs.push(w);
-  duel.buildings.push({x:L.x, y:L.y, w:L.w, h:L.h});                 // floor + roof (roof lifts once you step inside)
-  // wipe the open-field war: only your squad survives into the assault
-  duel.fighters=duel.fighters.filter(f=>f.team===1);
-  duel.zombies=[]; duel.vehicles=[]; duel.bullets=[]; duel.blasts=[];
-  const doorX=cx, doorY=L.y+L.h-tw-46;
-  let i=0; for(const f of duel.fighters){ f.dead=false; f.hp=DUEL_HP; f.respawnT=null; f._inVehicle=false; f._veh=null; f._targetVeh=null;
-    f.weapon='pistol'; f.mag=DUEL_MAG; f.wammo=0; f.reloadT=0;
-    f.x=doorX-60+(i%5)*30-DUEL_PS/2; f.y=doorY-Math.floor(i/5)*36-DUEL_PS/2; f.aim=-Math.PI/2; f.spawnProtT=2.5;
-    f._labDoor={x:doorX, y:doorY}; i++; }
-  // 15 enemy soldiers inside — no respawn
-  for(let k=0;k<15;k++){ const ex=L.x+tw+80+(k%5)*((L.w-2*tw-160)/4), ey=L.y+tw+180+Math.floor(k/5)*100;
-    const e=mkFighter(Math.round(ex), Math.round(ey), Math.PI/2, 2, true, null); e.noResp=true; duel.fighters.push(e); }
-  duel.labEnemyN=15;
-  // 5 scientists lined along the back wall
-  duel.scientists=[]; for(let k=0;k<5;k++){ duel.scientists.push({x:Math.round(L.x+tw+130+k*((L.w-2*tw-260)/4)), y:L.y+tw+58, hp:3, flash:0, spawnT:3, dead:false, t:Math.random()*6}); }
-  duel.sciN=5;
-  duel.camX=doorX-200; duel.camY=doorY-200;
-  shake(16,.6); Sound.boss&&Sound.boss();
-  toast('BREACH THE LAB — clear it out!');
+function war8GuardAI(f, dt){   // lab guard: holds its room, wakes up when it sees you (or a roommate raises the alarm)
+  const r=f._room;
+  f._scanT=(f._scanT||0)-dt;
+  if(f._scanT<=0){ f._scanT=0.22+Math.random()*0.12; let best=null, bd=1e9;
+    for(const g of duel.fighters){ if(g.team===f.team||g.dead||g._inVehicle) continue;
+      const d=Math.hypot(g.x-f.x, g.y-f.y); if(d>=bd) continue;
+      if(war8InRect(g.x+DUEL_PS/2, g.y+DUEL_PS/2, r, -24) || (d<700 && !teamLineBlocked(f,g)) || (r.alert>0 && d<820)){ bd=d; best=g; } }
+    f._gfoe=best; if(best) r.alert=Math.max(r.alert||0, 2.5); }
+  const foe=(f._gfoe && !f._gfoe.dead) ? f._gfoe : null;
+  if(!foe){   // on watch: idle round your post, sweeping your aim
+    f._idleT=(f._idleT||0)-dt;
+    if(f._idleT<=0){ f._idleT=rand(1.4,3.2); f._idleA=Math.random()*6.28; f._idleGo=Math.random()<0.45; }
+    const hx=f._home.x-f.x, hy=f._home.y-f.y, hd=Math.hypot(hx,hy);
+    let mx=0, my=0; if(hd>90){ mx=hx/hd; my=hy/hd; } else if(f._idleGo){ mx=Math.cos(f._idleA)*0.4; my=Math.sin(f._idleA)*0.4; }
+    if(mx||my){ const m=Math.hypot(mx,my), a=duelAvoid(f,mx/m,my/m); mx=a.x*m; my=a.y*m; }
+    const da=Math.atan2(Math.sin(f._idleA-f.aim), Math.cos(f._idleA-f.aim)); f.aim+=da*Math.min(1,dt*2.2);
+    return {mvx:mx*0.55, mvy:my*0.55, aim:f.aim, fire:false};
+  }
+  const inp=aiTactical(f, foe, dt);
+  const cx=f.x+DUEL_PS/2, cy=f.y+DUEL_PS/2;
+  if(!war8InRect(cx,cy,r,-140)){ const rx=(r.x+r.w/2)-cx, ry=(r.y+r.h/2)-cy, rd=Math.hypot(rx,ry)||1; inp.mvx=rx/rd; inp.mvy=ry/rd; }   // never chase far past the doorway
+  const m=Math.hypot(inp.mvx,inp.mvy); if(m>0.05){ const a=duelAvoid(f,inp.mvx/m,inp.mvy/m); inp.mvx=a.x*m; inp.mvy=a.y*m; }
+  return inp;
+}
+function war8VirtualFoe(f, foe){   // zombies, scientists and the reactor as aim targets for your squad
+  const cx=f.x+DUEL_PS/2, cy=f.y+DUEL_PS/2;
+  const foeD = foe ? Math.hypot(foe.x-f.x, foe.y-f.y) : Infinity;
+  let best=null, bd=Math.min(foeD, 620);
+  for(const z of duel.zombies){ if(z.dead) continue; const d=Math.hypot(z.x-f.x, z.y-f.y); if(d<bd){ bd=d; best={x:z.x, y:z.y, hp:z.hp, dead:false, team:2}; } }
+  if(duel.phase!=='lab') return best;
+  for(const s of duel.scientists){ if(s.dead) continue;   // scientists are priority targets
+    const sx=s.x-DUEL_PS/2, sy=s.y-DUEL_PS/2, d=Math.hypot(sx-f.x, sy-f.y);
+    if(d<650 && d-260<bd && !teamLineBlocked(f,{x:sx,y:sy})){ bd=d-260; best={x:sx, y:sy, hp:s.hp, dead:false, team:2}; } }
+  const R=duel.lab.reactor;
+  if(!best && !R.shield && !R.dead && foeD>420){
+    const d=Math.hypot(R.x-cx, R.y-cy);
+    if(d<760){ const ex=R.x+(cx-R.x)/d*(R.r+14), ey=R.y+(cy-R.y)/d*(R.r+14), p={x:ex-DUEL_PS/2, y:ey-DUEL_PS/2};
+      if(!teamLineBlocked(f,p)) best={x:p.x, y:p.y, hp:R.hp, dead:false, team:2}; } }
+  return best;
+}
+// ---- small world effects: wall sparks, shield pings, zombie-spawn zaps, "!" alerts ----
+function warFx(x,y,kind){ if(!duel) return; const fx=duel.fx||(duel.fx=[]); fx.push({x,y,kind,t:0,a:Math.random()*6.28}); if(fx.length>90) fx.shift(); }
+function tickWarFx(dt){ if(!duel||!duel.fx) return; for(const e of duel.fx) e.t+=dt; duel.fx=duel.fx.filter(e=>e.t<(e.kind==='alert'?1.1:e.kind==='zap'?0.6:0.28)); }
+function drawWarFx(){
+  if(!duel||!duel.fx) return;
+  for(const e of duel.fx){
+    if(e.kind==='spark'||e.kind==='ping'){ const p=e.t/0.28, col=e.kind==='ping'?'127,224,255':'255,214,120';
+      ctx.strokeStyle='rgba('+col+','+(1-p)+')'; ctx.lineWidth=1.6; ctx.beginPath();
+      for(let i=0;i<5;i++){ const a=e.a+i*1.256, r0=2+p*4, r1=5+p*13; ctx.moveTo(e.x+Math.cos(a)*r0, e.y+Math.sin(a)*r0); ctx.lineTo(e.x+Math.cos(a)*r1, e.y+Math.sin(a)*r1); }
+      ctx.stroke();
+      if(e.kind==='ping'){ ctx.beginPath(); ctx.arc(e.x,e.y,4+p*16,0,6.28); ctx.stroke(); }
+    } else if(e.kind==='zap'){ const p=e.t/0.6;
+      ctx.strokeStyle='rgba(120,255,140,'+(1-p)+')'; ctx.lineWidth=3*(1-p)+1; ctx.beginPath(); ctx.arc(e.x,e.y,8+p*46,0,6.28); ctx.stroke();
+      ctx.fillStyle='rgba(120,255,140,'+(0.35*(1-p))+')'; ctx.beginPath(); ctx.arc(e.x,e.y,10+p*24,0,6.28); ctx.fill();
+    } else if(e.kind==='alert'){ const p=e.t/1.1, y=e.y-p*14; ctx.globalAlpha=p<0.75?1:(1-p)/0.25;
+      ctx.fillStyle='#ffdd3b'; ctx.strokeStyle='#3a2600'; ctx.lineWidth=3; ctx.font='bold 26px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.strokeText('!', e.x, y); ctx.fillText('!', e.x, y); ctx.globalAlpha=1; }
+  }
 }
 function drawWarZombie(z){   // uses the game's regular zombie art, rotated to crawl toward its target
   const cx=z.x+DUEL_PS/2, feetY=z.y+DUEL_PS;
@@ -7785,24 +8067,34 @@ let SciImg=new Image(), SciImgOK=false;   // scientist sprite
 SciImg.onload=()=>{ SciImgOK=true; };
 SciImg.src='data:image/png;base64,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';
 function drawScientist(s){
-  const invuln = duel.phase==='lab' && duel.labEnemyN>0;
+  const panic = s.alarm>0, bob = panic ? Math.abs(Math.sin(s.walk||0))*-2.5 : Math.sin(s.t*2)*0.8;
   ctx.save(); ctx.translate(s.x, s.y);
-  ctx.fillStyle='rgba(0,0,0,.30)'; ctx.beginPath(); ctx.ellipse(0,17,14,5,0,0,6.28); ctx.fill();
-  if(SciImgOK && SciImg){ const ih=52, iw=ih*(SciImg.width/SciImg.height||0.7); ctx.imageSmoothingEnabled=false; ctx.drawImage(SciImg, -iw/2, -ih/2-2, iw, ih); }
-  else {
-    // placeholder: a lab-coat figure
-    ctx.fillStyle=s.flash>0?'#ffffff':'#eef1f4'; roundRectPath(-11,-6,22,24,5); ctx.fill();   // coat
-    ctx.fillStyle='#c8ced6'; ctx.fillRect(-1,-6,2,24);                                          // coat seam
-    ctx.fillStyle='#5a6270'; ctx.fillRect(-4,-6,8,7);                                           // collar/tie
-    ctx.fillStyle=s.flash>0?'#ffffff':'#f0d3b0'; ctx.beginPath(); ctx.arc(0,-13,8,0,6.28); ctx.fill();  // head
-    ctx.fillStyle='#2a2a2a'; ctx.fillRect(-5,-15,3,2); ctx.fillRect(2,-15,3,2);                 // glasses
-    ctx.strokeStyle='#2a2a2a'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(-2,-14); ctx.lineTo(2,-14); ctx.stroke();
+  softShadow(0, 18, 15, 5.5, 0.32);
+  ctx.translate(0, bob);
+  if(SciImgOK && SciImg){ const ih=s.chief?60:52, iw=ih*(SciImg.width/SciImg.height||0.7);
+    ctx.imageSmoothingEnabled=false;
+    if(Math.cos(s.face||0)<0){ ctx.scale(-1,1); }   // face the way they're running
+    ctx.drawImage(SciImg, -iw/2, -ih/2-2, iw, ih);
+    if(s.flash>0){ ctx.globalAlpha=Math.min(1,s.flash*7); ctx.globalCompositeOperation='lighter'; ctx.drawImage(SciImg, -iw/2, -ih/2-2, iw, ih); ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1; }
+    ctx.imageSmoothingEnabled=true;
+  } else {   // fallback: a lab-coat figure
+    const hit=s.flash>0;
+    ctx.fillStyle=hit?'#ffffff':'#eef1f4'; roundRectPath(-11,-6,22,24,5); ctx.fill();
+    ctx.strokeStyle='rgba(60,70,90,.6)'; ctx.lineWidth=1.5; roundRectPath(-11,-6,22,24,5); ctx.stroke();
+    ctx.fillStyle='#c8ced6'; ctx.fillRect(-1,-6,2,24);
+    ctx.fillStyle='#5a6270'; ctx.fillRect(-4,-6,8,7);
+    ctx.fillStyle=hit?'#ffffff':'#f0d3b0'; ctx.beginPath(); ctx.arc(0,-13,8,0,6.28); ctx.fill();
+    ctx.fillStyle='#2a2a2a'; ctx.fillRect(-5,-15,3,2); ctx.fillRect(2,-15,3,2);
   }
-  ctx.fillStyle='#ff5b5b'; const hp=Math.max(0,s.hp)/3; ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(-14,-24,28,4);
-  ctx.fillStyle='#ff6b6b'; ctx.fillRect(-14,-24,28*hp,4);
-  if(invuln){ ctx.globalAlpha=0.35+0.25*Math.sin(performance.now()/140); ctx.strokeStyle='#7fd0ff'; ctx.lineWidth=2.5;
-    ctx.beginPath(); ctx.arc(0,-2,20,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
   ctx.restore();
+  // chief: gold tag · everyone: a slim HP bar once hurt
+  const ty=s.y-38+bob;
+  if(s.chief){ ctx.save(); ctx.font='bold 10px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(20,12,0,.75)'; roundRectPath(s.x-24, ty-17, 48, 14, 7); ctx.fill();
+    ctx.fillStyle='#ffd24a'; ctx.fillText('CHIEF', s.x, ty-10); ctx.restore(); }
+  if(s.hp<s.hpMax){ const fr=Math.max(0,s.hp)/s.hpMax, bw=34;
+    ctx.fillStyle='rgba(0,0,0,.6)'; roundRectPath(s.x-bw/2-1, ty-1, bw+2, 6, 3); ctx.fill();
+    ctx.fillStyle=fr>0.5?'#ffd14b':'#ff5b5b'; roundRectPath(s.x-bw/2, ty, bw*fr, 4, 2); ctx.fill(); }
 }
 
 /* ===================== ONLINE WAR (host-authoritative, up to 5 per team) ===================== */
@@ -7948,6 +8240,69 @@ function duelAvoid(f, dx, dy){
   }
   return {x:dx,y:dy};
 }
+// ---- WAR SQUAD: your bot army moves with you ----
+// Every human leaves a trail of footsteps; an ally that loses sight of you (round a corner, through a door) walks your
+// trail instead of grinding into the wall. With no order active each ally holds a formation slot fanned out behind you.
+function warTrailTick(){
+  for(const h of duel.humans){ if(h.dead) continue; const tr=h._trail||(h._trail=[]), l=tr[tr.length-1];
+    if(!l || Math.hypot(h.x-l.x,h.y-l.y)>500){ tr.length=0; tr.push({x:h.x,y:h.y}); continue; }   // respawned / teleported → fresh trail
+    if(Math.hypot(h.x-l.x,h.y-l.y)>38){ tr.push({x:h.x,y:h.y}); if(tr.length>80) tr.shift(); } }
+}
+function allyCrumb(f, lead, dt){   // the newest of your footsteps this bot can actually see
+  const tr=lead._trail; if(!tr||!tr.length) return null;
+  f._crT=(f._crT||0)-dt;
+  if(f._crT>0 && f._crumb!=null && f._crumb<tr.length){ const c=tr[f._crumb]; if(Math.hypot(c.x-f.x,c.y-f.y)>30) return c; }
+  f._crT=0.3;
+  for(let i=tr.length-1;i>=0;i-=2){ const c=tr[i]; if(teamLineBlocked(f,c)) continue;
+    f._crumb = (Math.hypot(c.x-f.x,c.y-f.y)<30 && i+1<tr.length) ? i+1 : i; return tr[f._crumb]; }
+  f._crumb=null; return null;
+}
+const FORM_ANG=[0.55,-0.55,1.15,-1.15,1.75,-1.75,0,2.4,-2.4,0.25,-0.25];
+function allyFormation(f, lead, dt){   // → {x,y: unit heading to my slot, w: how hard to pull (0..1), far, spd, aim}
+  const out={x:0,y:0,w:0,far:false,spd:0,aim:f.aim};
+  if(!lead) return out;
+  let slot=0; for(const g of duel.fighters){ if(g===f) break; if(g.bot && g.team===f.team) slot++; }
+  const lab = duel.campaign8 && duel.phase==='lab';   // indoors: a tighter stack
+  const R = (lab?70:105) + (slot%3)*(lab?32:55);
+  const face = (lead.aim!=null ? lead.aim : -Math.PI/2);
+  const ang = face + Math.PI + FORM_ANG[slot%FORM_ANG.length];   // fan out behind and beside where you're facing
+  let tx=lead.x+Math.cos(ang)*R, ty=lead.y+Math.sin(ang)*R;
+  if(duelBlocks(tx,ty,DUEL_PS,DUEL_PS)){ tx=lead.x; ty=lead.y; }
+  const dLead=Math.hypot(lead.x-f.x, lead.y-f.y);
+  f._losT=(f._losT||0)-dt;
+  if(f._losT<=0){ f._losT=0.25; f._sees = dLead<120 || !teamLineBlocked(f,lead); }
+  const sees = f._sees!==false;
+  if(!sees){   // inside the Mission 8 lab: route room to room through the doors; anywhere else: walk your footsteps
+    let c=null;
+    if(duel.lab && duel.phase!=='war'){ const n=war8NavPoint(f, f.x+DUEL_PS/2, f.y+DUEL_PS/2, lead.x+DUEL_PS/2, lead.y+DUEL_PS/2); if(n) c={x:n.x-DUEL_PS/2, y:n.y-DUEL_PS/2}; }
+    if(!c) c=allyCrumb(f, lead, dt);
+    if(c){ tx=c.x; ty=c.y; } }
+  const gx=tx-f.x, gy=ty-f.y, gd=Math.hypot(gx,gy);
+  const near=lab?190:230, far=lab?320:400;
+  if(gd>18){ out.x=gx/gd; out.y=gy/gd; }
+  if(!sees || dLead>far){ out.w=1; out.far=true; }
+  else if(dLead>near){ out.w=0.55+0.45*(dLead-near)/(far-near); }
+  else out.w = gd>60 ? 0.3 : 0;
+  out.spd = out.far ? 1.08 : (gd>40 ? 0.9 : 0);
+  out.aim = gd>40 ? Math.atan2(gy,gx) : face;
+  return out;
+}
+function steerBot(f, x, y){ const m=Math.hypot(x,y); if(m<0.05) return {x:0,y:0}; const a=duelAvoid(f,x/m,y/m); return {x:a.x, y:a.y}; }
+function allyPickFoe(f, lead, enemies, dt){   // threats around the commander first; visible ones first
+  if(!enemies.length) return null;
+  f._fpT=(f._fpT||0)-dt;
+  if(f._fpT>0 && f._fp && !f._fp.dead && f._fp.team!==f.team) return f._fp;
+  f._fpT=0.3;
+  let best=null, bs=Infinity;
+  for(const g of enemies){
+    const dl=Math.hypot(g.x-lead.x, g.y-lead.y); if(dl>820) continue;
+    const d=Math.hypot(g.x-f.x, g.y-f.y);
+    let s=d+dl*0.35; if(teamLineBlocked(f,g)) s+=650;
+    if(s<bs){ bs=s; best=g; }
+  }
+  if(!best){ for(const g of enemies){ const d=Math.hypot(g.x-f.x,g.y-f.y); if(d<420 && d<bs){ bs=d; best=g; } } }   // only what's right on top of me
+  f._fp=best; return best;
+}
 // Team-bot brain. Coordination scales with difficulty (same methods for the ally and the enemy bots):
 //   EASY   – independent (ally loosely follows you)
 //   NORMAL – the pair sticks together
@@ -7957,21 +8312,23 @@ function teamAI(f, dt){
   const D=difficulty;
   f._age=(f._age||0)+dt;   // time since this fighter spawned — used to ramp enemy cohesion
   f._holding=false; f._behind=false;
+  if(duel.campaign8 && f._room) return war8GuardAI(f, dt);   // Mission 8 lab guards hold their own room
   const enemies=duel.fighters.filter(g=>!g.dead && g.team!==f.team);
-  if(!enemies.length) return {mvx:0,mvy:0,aim:f.aim,fire:false};
   const human = duel.humans && duel.humans.find(h=>!h.dead && h.team===f.team && h!==f);
   const isAlly=!!human;
   const mate = human || duel.fighters.find(g=>g!==f && g.team===f.team && !g.dead);   // who this bot coordinates with
   // target: react to whoever's shooting you first; else HARD focus-fires the weakest, otherwise nearest
-  let foe;
+  let foe=null;
   if(f._threat && !f._threat.dead && f._threat.team!==f.team && (f._threatT||0)>0){ foe=f._threat; }
+  else if(isAlly && duel.war){ foe=allyPickFoe(f, human, enemies, dt); }   // war allies fight AROUND you, not across the map
+  else if(!enemies.length){ foe=null; }
   else if(D===2){ foe=enemies.reduce((a,b)=> b.hp<a.hp?b:a); }
   else { foe=enemies[0]; let bd=Infinity; for(const g of enemies){ const d=Math.hypot(g.x-f.x,g.y-f.y); if(d<bd){bd=d;foe=g;} } }
-  // Mission 8: your soldiers also gun down a nearby zombie when one is the closest threat
-  if(duel.campaign8 && f.team===1 && duel.zombies && duel.zombies.length){
-    let zb=null, zd=Infinity; for(const z of duel.zombies){ if(z.dead) continue; const d=Math.hypot(z.x-f.x, z.y-f.y); if(d<zd){zd=d;zb=z;} }
-    const foeD = foe ? Math.hypot(foe.x-f.x, foe.y-f.y) : Infinity;
-    if(zb && zd < Math.min(foeD, 620)) foe = {x:zb.x, y:zb.y, hp:zb.hp, dead:false, team:2};   // virtual foe so aiming/firing engages the zombie
+  // Mission 8: your soldiers also gun down zombies, scientists and the reactor when they're the closest threat
+  if(duel.campaign8 && f.team===1){ const v=war8VirtualFoe(f, foe); if(v) foe=v; }
+  if(!foe){   // nothing to shoot → war allies just keep formation on you
+    if(isAlly && duel.war){ const fo=allyFormation(f, human, dt); const r=steerBot(f, fo.x, fo.y, dt); return {mvx:r.x*fo.spd, mvy:r.y*fo.spd, aim:fo.aim, fire:false}; }
+    return {mvx:0,mvy:0,aim:f.aim,fire:false};
   }
   const base = aiTactical(f, foe, dt);
   const sp=Math.hypot(base.mvx,base.mvy)||1;   // keep the tactical move speed
@@ -7979,16 +8336,18 @@ function teamAI(f, dt){
   const commanded = isAlly && f===duel.squadMate;         // your marked squadmate (used for idle battle-buddy behavior)
   const teamCmd = duel.cmd && duel.cmd[f.team];   // orders are per-team: each player commands their own army
   const cmd = (isAlly && teamCmd && teamCmd.t>0) ? teamCmd.type : null;   // an active radio order controls EVERY teammate
-  const independent = isAlly && duel.war && !commanded && !cmd;   // no order active → the rest fight on their own & spread out
+  const independent = isAlly && duel.war && !cmd;   // no order active → the army moves WITH you in a loose formation
   if(mate){
     const dx=mate.x-f.x, dy=mate.y-f.y, dd=Math.hypot(dx,dy)||1;
     const fx=foe.x-f.x, fy=foe.y-f.y, fd=Math.hypot(fx,fy)||1;
     if(!teamLineBlocked(f,foe)){ f._belX=foe.x+DUEL_PS/2; f._belY=foe.y+DUEL_PS/2; }   // remember the enemy's last-seen spot for suppressing fire
-    if(independent){   // hunt independently, but push away from nearby teammates so the squad spreads across the field
-      let sx=0,sy=0,cnt=0;
-      for(const g of duel.fighters){ if(g===f||g.dead||g.team!==f.team) continue; const gx=f.x-g.x, gy=f.y-g.y, gd=Math.hypot(gx,gy); if(gd<340){ sx+=gx/(gd||1); sy+=gy/(gd||1); cnt++; } }
-      if(cnt){ const sl=Math.hypot(sx,sy)||1; base.mvx += sx/sl*0.95; base.mvy += sy/sl*0.95; }
-      action='hunt';
+    if(independent){   // fight, but never drift off: blend the tactical move with your formation slot — the farther away, the harder they pull in
+      const fo=allyFormation(f, human, dt);
+      const bl=Math.hypot(base.mvx,base.mvy)||1;
+      base.mvx = base.mvx/bl*(1-fo.w) + fo.x*fo.w*1.6;
+      base.mvy = base.mvy/bl*(1-fo.w) + fo.y*fo.w*1.6;
+      if(fo.far && !(fd<380 && !teamLineBlocked(f,foe))) base.fire=false;   // catching up → don't stop to snipe
+      action = fo.far ? 'regroup' : 'stick';
     } else if(cmd){
       if(cmd==='stay'){ if(dd>120){ base.mvx+=dx/dd*1.6; base.mvy+=dy/dd*1.6; }   // stay near you — but keep engaging the enemy
         base.aim=Math.atan2(foe.y-f.y, foe.x-f.x); base.fire=(fd<950 && !teamLineBlocked(f,foe)); action='stick'; }
@@ -8110,8 +8469,8 @@ function sendAllyCmd(c, team){
   if(c.cmd==='hold' && ally) duel.cmd[team].hold={x:ally.x, y:ally.y};  // lock the spot they're standing on
   duel.commsOpen=false;
 }
-const commsBtn={x:12, y:62, w:118, h:30};
-const driveBtn={x:12, y:98, w:132, h:32};   // war: enter/exit vehicle (touch)
+const commsBtn={x:12, y:72, w:118, h:30};
+const driveBtn={x:12, y:108, w:132, h:32};   // war: enter/exit vehicle (touch)
 function commsCmdRects(){ const n=ALLY_CMDS.length, w=250, h=34, gap=6, x=W/2-w/2, y0=H/2-(n*(h+gap))/2; return ALLY_CMDS.map((c,i)=>({x, y:y0+i*(h+gap), w, h, c})); }
 function humanDuelInputFor(f){
   let mvx=0,mvy=0;
@@ -8235,11 +8594,22 @@ function teamCheckOver(){
 }
 function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST spot away from enemies, with brief spawn protection
   if(f.noResp){ f.dead=true; f.respawnT=null; return; }   // Mission 8 lab enemies stay down for good
-  if(duel.campaign8 && duel.phase==='lab' && f.team===1 && f._labDoor){   // your squad respawns right at the lab door
-    f.x=f._labDoor.x-DUEL_PS/2+rand(-40,40); f.y=f._labDoor.y-DUEL_PS/2+rand(-10,20);
-    f.hp=(f.hpMax||DUEL_HP); f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
-    f.weapon='pistol'; f.mag=(f.magMax||DUEL_MAG); f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
-    f.aim=-Math.PI/2; f._age=0; f.spawnProtT=3; return;
+  const lead = f.bot && duel.humans && duel.humans.find(h=>h.team===f.team && !h.dead && !h._inVehicle);
+  if(lead){   // an ally rejoins the squad right behind its commander (when that spot is safe) — the army stays together
+    const face=(lead.aim!=null?lead.aim:-Math.PI/2);
+    for(let t=0;t<14;t++){
+      const a=face+Math.PI+rand(-1.3,1.3), r=rand(90,210), x=lead.x+Math.cos(a)*r, y=lead.y+Math.sin(a)*r;
+      if(duelBlocks(x,y,DUEL_PS,DUEL_PS) || enemyBarrierBlocks(f.team, y+DUEL_PS/2) || teamLineBlocked(lead,{x,y})) continue;
+      let nd=1e9; for(const g of duel.fighters){ if(g.dead||g.team===f.team) continue; const d=Math.hypot(g.x-x,g.y-y); if(d<nd)nd=d; }
+      if(nd<460) continue;
+      warRespawnAt(f, x, y, face); return;
+    }
+  }
+  if(duel.campaign8 && duel.phase==='lab' && f.team===1 && duel.lab){   // inside the lab: back in at the entry hall
+    const e=duel.lab.entry; warRespawnAt(f, e.x-DUEL_PS/2+rand(-60,60), e.y-DUEL_PS/2+rand(-20,20), -Math.PI/2); return;
+  }
+  if(duel.campaign8 && duel.phase==='assault' && f.team===1 && duel.lab){   // the door's open: no long walk back from the start line
+    const e=duel.lab.entry; warRespawnAt(f, e.x-DUEL_PS/2+rand(-90,90), duel.lab.L.y+duel.lab.L.h+200+rand(0,60), -Math.PI/2); return;
   }
   const band = f.team===1 ? (duel.H-240) : 200;
   let best=null, bestD=-1;
@@ -8255,6 +8625,12 @@ function warRespawn(f){   // drop a fighter back at its line, on the CLEAREST sp
   f.aim = f.team===1 ? -Math.PI/2 : Math.PI/2;
   f._age = 0;   // fresh spawn: start fanned out, cohesion ramps in over the next few seconds
   f.spawnProtT = 3;   // invulnerable for ~3s after respawn (ends early if you shoot) — no spawn camping
+}
+function warRespawnAt(f, x, y, aim){
+  f.x=x; f.y=y; f.hp=(f.hpMax||DUEL_HP); f.dead=false; f.respawnT=null; f.flash=0; f._targetVeh=null;
+  f.weapon='pistol'; f.mag=(f.magMax||DUEL_MAG); f.wammo=0; f.reloadT=0; f.cd=0; f.recoil=0;
+  f.aim=aim; f._age=0; f.spawnProtT=3; f._fp=null; f._crumb=null;
+  if(duel.campaign8 && duel.phase==='lab' && f.team===1 && f.bot){ f.weapon='rifle'; f.wammo=999; f._fireMul=1.6; }   // the lab squad keeps its rifles
 }
 // ---------- DRIVABLE VEHICLES (war mode) — anyone can drive; they blow up when wrecked ----------
 function vehRadius(v){ return Math.max(v.w,v.h)/2; }
@@ -8313,6 +8689,10 @@ function botDrive(f, dt){
     if(fd>want+80){ mvx=fx/fd; mvy=fy/fd; } else if(fd<want-80){ mvx=-fx/fd; mvy=-fy/fd; }
     mvx += -fy/fd*0.4*(f.flankSign||1); mvy += fx/fd*0.4*(f.flankSign||1);
   }
+  const lead=duel.humans && duel.humans.find(h=>!h.dead && h.team===f.team);   // an ally driver stays with its commander too
+  if(lead){ const lx=(lead.x+DUEL_PS/2)-v.x, ly=(lead.y+DUEL_PS/2)-v.y, ld=Math.hypot(lx,ly)||1;
+    if(ld>520){ const k=Math.min(1,(ld-520)/300); mvx=mvx*(1-k)+lx/ld*k*1.5; mvy=mvy*(1-k)+ly/ld*k*1.5; }
+    if(foe && Math.hypot((foe.x+DUEL_PS/2)-(lead.x+DUEL_PS/2),(foe.y+DUEL_PS/2)-(lead.y+DUEL_PS/2))>1100 && ld>260){ mvx=lx/ld; mvy=ly/ld; } }
   const mm=Math.hypot(mvx,mvy)||1; mvx/=mm; mvy/=mm;
   const spd=v.kind==='jeep'?DUEL_SPD*1.25:DUEL_SPD*0.7, hw=v.w/2, hh=v.h/2;
   const nx=v.x+mvx*spd*dt, ny=v.y+mvy*spd*dt;
@@ -8406,6 +8786,8 @@ function updateTeamDuel(dt){
     }
   }
   duel.t+=dt;
+  if(duel.war) warTrailTick();   // footsteps your squad follows
+  const botCars = duel.war && !(duel.campaign8 && duel.phase!=='war');   // no vehicles once the lab assault starts
   for(const f of duel.fighters){
     let inp;
     if(f.dead){
@@ -8421,7 +8803,7 @@ function updateTeamDuel(dt){
       continue;
     }
     if(f._inVehicle && !f.bot) continue;   // human driver handled by updateVehicles
-    if(f.bot){ if(duel.war && botVehicleStep(f, dt)) continue;   // bot is driving or heading for a vehicle
+    if(f.bot){ if(botCars && botVehicleStep(f, dt)) continue;   // bot is driving or heading for a vehicle
       inp=teamAI(f,dt); }
     else if(f.ctrl==='net') inp = (net && net.warIn && net.warIn[f._netP]) || {mvx:0,mvy:0,aim:null,fire:false};   // remote player's input
     else if(f.ctrl==='kb') inp=humanDuelInputFor(f);
@@ -8433,7 +8815,8 @@ function updateTeamDuel(dt){
   teamPickups(dt);
   for(const b of duel.bullets){ if(b.dead) continue;
     b.x+=b.vx*dt; b.y+=b.vy*dt; b.t+=dt;
-    if(duelBlocks(b.x-2,b.y-2,4,4)){ b.dead=true; if(b.shell) shellExplode(b); continue; }
+    if(duelBlocks(b.x-2,b.y-2,4,4)){ b.dead=true; if(b.shell) shellExplode(b); else if(duel.war) warFx(b.x-b.vx*0.008, b.y-b.vy*0.008, 'spark');
+      if(duel.campaign8) war8BulletHitsWall(b); continue; }
     if(enemyBarrierBlocks(b.team, b.y)){ b.dead=true; continue; }   // enemy fire can't cross into your spawn either
     if(duel.vehicles){ let vh=false; for(const v of duel.vehicles){ if(Math.abs(b.x-v.x)<vehRadius(v)+3 && Math.abs(b.y-v.y)<vehRadius(v)+3){
         b.dead=true;
@@ -8456,23 +8839,62 @@ function updateTeamDuel(dt){
         } break; } }
   }
   duel.bullets=duel.bullets.filter(b=>!b.dead && b.t<3);
-  tickDuelBlood(dt);
+  tickDuelBlood(dt); tickWarFx(dt);
   if(duel.campaign8) war8Update(dt);   // Mission 8: zombie horde, lab breach, scientists
   teamCheckOver();
   teamTickFlash(dt);
   teamCam();
 }
+// ---------- WAR FIELD ART ----------
+let _warGroundPat=null;
+function warGroundPattern(){   // one seamless 512px tile of churned dirt, grit, pebbles and dry grass (built once)
+  if(_warGroundPat) return _warGroundPat;
+  const S=512, c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d'), rnd=mulberry32(90210);
+  g.fillStyle='#5a4b35'; g.fillRect(0,0,S,S);
+  const wrap=(x,y,r,fn)=>{ for(const ox of [-S,0,S]) for(const oy of [-S,0,S]){ if(x+ox+r<0||x+ox-r>S||y+oy+r<0||y+oy-r>S) continue; fn(x+ox,y+oy); } };
+  for(let i=0;i<60;i++){ const x=rnd()*S, y=rnd()*S, r=40+rnd()*110, dark=rnd()<0.55, a=dark?0.15:0.12;
+    wrap(x,y,r,(px,py)=>{ const gr=g.createRadialGradient(px,py,0,px,py,r);
+      gr.addColorStop(0, dark?'rgba(36,28,17,'+a+')':'rgba(132,114,78,'+a+')'); gr.addColorStop(1,'rgba(0,0,0,0)');
+      g.fillStyle=gr; g.fillRect(px-r,py-r,r*2,r*2); }); }
+  for(let i=0;i<3200;i++){ const x=rnd()*S, y=rnd()*S, s=1+rnd()*1.8; g.fillStyle=rnd()<0.55?'rgba(28,22,13,.30)':'rgba(160,140,100,.20)'; g.fillRect(x,y,s,s); }
+  for(let i=0;i<80;i++){ const x=rnd()*S, y=rnd()*S, r=1.8+rnd()*3.4, col=['#7b7264','#8a7f6c','#686054','#93887a'][i%4];
+    wrap(x,y,r+2,(px,py)=>{
+      g.fillStyle='rgba(18,14,8,.35)'; g.beginPath(); g.ellipse(px+0.8,py+1.4,r,r*0.75,0,0,6.28); g.fill();
+      g.fillStyle=col; g.beginPath(); g.ellipse(px,py,r,r*0.75,0,0,6.28); g.fill();
+      g.fillStyle='rgba(255,255,255,.16)'; g.beginPath(); g.ellipse(px-r*0.3,py-r*0.28,r*0.42,r*0.3,0,0,6.28); g.fill(); }); }
+  g.lineWidth=1.2; g.lineCap='round';
+  for(let i=0;i<150;i++){ const x=rnd()*S, y=rnd()*S, n=4+Math.floor(rnd()*4), col=rnd()<0.5?'rgba(112,118,58,.55)':'rgba(146,136,72,.5)';
+    wrap(x,y,12,(px,py)=>{ g.strokeStyle=col; g.beginPath();
+      for(let k=0;k<n;k++){ const a=-Math.PI/2+(k-(n-1)/2)*0.32, l=5+((k*7+i)%5)*1.6;
+        g.moveTo(px,py); g.quadraticCurveTo(px+Math.cos(a)*l*0.5, py+Math.sin(a)*l*0.6, px+Math.cos(a)*l+(k%2?1.5:-1.5), py+Math.sin(a)*l); }
+      g.stroke(); }); }
+  _warGroundPat=ctx.createPattern(c,'repeat'); return _warGroundPat;
+}
+function hash2(ix,iy){ let h=(Math.imul(ix,374761393)+Math.imul(iy,668265263))|0; h=Math.imul(h^(h>>>13),1274126177); return ((h^(h>>>16))>>>0)/4294967296; }
 function drawWarGround(x0,y0,x1,y1){
-  const T=128, cols=['#5b4d38','#544629','#5f5138','#4c3f2c'];
-  for(let y=Math.floor(y0/T)*T; y<y1; y+=T) for(let x=Math.floor(x0/T)*T; x<x1; x+=T){
-    ctx.fillStyle=cols[(((x/T)*13+(y/T)*7)&3)]; ctx.fillRect(x,y,T,T); }
+  ctx.fillStyle=warGroundPattern(); ctx.fillRect(x0,y0,x1-x0,y1-y0);
+  const C=700;   // broad colour drift (grassy, muddy, sun-bleached) so the field never reads as one repeating tile
+  for(let iy=Math.floor(y0/C)-1; iy<=Math.floor(y1/C)+1; iy++) for(let ix=Math.floor(x0/C)-1; ix<=Math.floor(x1/C)+1; ix++){
+    const h=hash2(ix,iy); if(h>0.72) continue;
+    const px=(ix+hash2(ix+91,iy))*C, py=(iy+hash2(ix,iy+57))*C, r=320+h*260;
+    if(px+r<x0||px-r>x1||py+r<y0||py-r>y1) continue;
+    const gr=ctx.createRadialGradient(px,py,0,px,py,r);
+    gr.addColorStop(0, h<0.3?'rgba(86,100,44,.22)':h<0.52?'rgba(28,20,10,.14)':'rgba(146,124,84,.13)'); gr.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=gr; ctx.fillRect(px-r,py-r,r*2,r*2);
+  }
   if(duel.decals) for(const d of duel.decals){
     if(d.x<x0-90||d.x>x1+90||d.y<y0-90||d.y>y1+90) continue;
     if(d.t==='crater'){
-      ctx.fillStyle='#3a2f22'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.fill();
-      ctx.fillStyle='#271f16'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r*0.62,0,6.28); ctx.fill();
-      ctx.strokeStyle='#6d5b40'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.stroke();
-    } else if(d.t==='scorch'){ ctx.fillStyle='rgba(18,14,9,.5)'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.fill();
+      ctx.fillStyle='rgba(32,25,16,.22)'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r*1.5,0,6.28); ctx.fill();   // ejecta
+      const gr=ctx.createRadialGradient(d.x+d.r*0.18,d.y+d.r*0.22,d.r*0.05,d.x,d.y,d.r);
+      gr.addColorStop(0,'#231b12'); gr.addColorStop(0.65,'#33281b'); gr.addColorStop(1,'#46382679');
+      ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.28); ctx.fill();
+      ctx.lineWidth=3; ctx.strokeStyle='rgba(150,126,88,.55)'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r*0.95,Math.PI*0.95,Math.PI*1.9); ctx.stroke();   // sun-lit rim
+      ctx.strokeStyle='rgba(20,15,9,.45)'; ctx.beginPath(); ctx.arc(d.x,d.y,d.r*0.95,Math.PI*1.95,Math.PI*0.9); ctx.stroke();
+    } else if(d.t==='scorch'){
+      const gr=ctx.createRadialGradient(d.x,d.y,0,d.x,d.y,d.r*1.3); gr.addColorStop(0,'rgba(10,8,6,.62)'); gr.addColorStop(0.6,'rgba(22,16,10,.32)'); gr.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(d.x,d.y,d.r*1.3,0,6.28); ctx.fill();
     } else if(d.t==='wire'){ drawBarbedWire(d); }
   }
   // spawn barriers — enemies can't cross into your team's spawn
@@ -8480,7 +8902,7 @@ function drawWarGround(x0,y0,x1,y1){
   for(const s of [{y:bb.yB1,rgb:'106,208,106',down:true},{y:bb.yB2,rgb:'255,107,107',down:false}]){
     if(s.y<y0-50||s.y>y1+50) continue;
     const bandTop = s.down ? s.y : s.y-46;
-    const g=ctx.createLinearGradient(0, s.down?s.y:s.y, 0, s.down?s.y+46:s.y-46);
+    const g=ctx.createLinearGradient(0, s.y, 0, s.down?s.y+46:s.y-46);
     g.addColorStop(0,'rgba('+s.rgb+',0.20)'); g.addColorStop(1,'rgba('+s.rgb+',0)');
     ctx.fillStyle=g; ctx.fillRect(x0, bandTop, (x1-x0), 46);
     ctx.save(); ctx.globalAlpha=pulse; ctx.strokeStyle='rgba('+s.rgb+',1)'; ctx.lineWidth=3; ctx.setLineDash([22,14]);
@@ -8489,74 +8911,313 @@ function drawWarGround(x0,y0,x1,y1){
 }
 function drawBarbedWire(d){
   const ex=d.vert?d.x:d.x+d.len, ey=d.vert?d.y+d.len:d.y, steps=Math.max(4,Math.floor(d.len/20));
-  ctx.strokeStyle='#9aa0a8'; ctx.lineWidth=1.6; ctx.beginPath();
-  for(let i=0;i<=steps;i++){ const t=i/steps, px=d.x+(ex-d.x)*t, py=d.y+(ey-d.y)*t, off=(i%2?7:-7);
-    const wx=d.vert?px+off:px, wy=d.vert?py:py+off; if(i===0)ctx.moveTo(wx,wy); else ctx.lineTo(wx,wy); }
-  ctx.stroke();
-  // barbs
-  ctx.lineWidth=1; for(let i=1;i<steps;i+=1){ const t=i/steps, px=d.x+(ex-d.x)*t, py=d.y+(ey-d.y)*t;
+  const coil=(ox,oy,col,lw)=>{ ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.beginPath();
+    for(let i=0;i<=steps;i++){ const t=i/steps, px=d.x+(ex-d.x)*t+ox, py=d.y+(ey-d.y)*t+oy, off=(i%2?7:-7);
+      const wx=d.vert?px+off:px, wy=d.vert?py:py+off; if(i===0)ctx.moveTo(wx,wy); else ctx.lineTo(wx,wy); }
+    ctx.stroke(); };
+  coil(2,3,'rgba(10,8,4,.35)',2);      // shadow
+  coil(0,0,'#9aa0a8',1.6);
+  ctx.strokeStyle='#c4c9cf'; ctx.lineWidth=1;
+  for(let i=1;i<steps;i++){ const t=i/steps, px=d.x+(ex-d.x)*t, py=d.y+(ey-d.y)*t;
     ctx.beginPath(); ctx.moveTo(px-3,py-3); ctx.lineTo(px+3,py+3); ctx.moveTo(px+3,py-3); ctx.lineTo(px-3,py+3); ctx.stroke(); }
-  // angled end posts
-  ctx.strokeStyle='#4a3d28'; ctx.lineWidth=3;
+  ctx.lineCap='round'; ctx.strokeStyle='#4a3d28'; ctx.lineWidth=3.5;
   for(const [ox,oy] of [[d.x,d.y],[ex,ey]]){ ctx.beginPath(); ctx.moveTo(ox-7,oy-9); ctx.lineTo(ox+7,oy+9); ctx.moveTo(ox+7,oy-9); ctx.lineTo(ox-7,oy+9); ctx.stroke(); }
+  ctx.lineCap='butt';
 }
+function propShadow(x,y,w,h,r){ ctx.fillStyle='rgba(12,9,5,.30)'; roundRectPath(x+5,y+7,w,h,r||3); ctx.fill(); }
 function drawWarProp(o){
   const k=o.kind||'sandbag';
-  if(k==='bwall'){   // building wall — concrete blocks
-    ctx.fillStyle='#7a736a'; ctx.fillRect(o.x,o.y,o.w,o.h);
-    ctx.fillStyle='rgba(255,255,255,.08)'; ctx.fillRect(o.x,o.y,o.w,Math.max(3,o.h*0.28));
-    ctx.strokeStyle='#4c473f'; ctx.lineWidth=2; ctx.strokeRect(o.x+1,o.y+1,o.w-2,o.h-2);
-    ctx.strokeStyle='rgba(50,46,40,.5)'; ctx.lineWidth=1;
-    if(o.w>=o.h){ for(let bx=o.x+22;bx<o.x+o.w-4;bx+=24){ ctx.beginPath(); ctx.moveTo(bx,o.y+2); ctx.lineTo(bx,o.y+o.h-2); ctx.stroke(); } }
-    else { for(let by=o.y+22;by<o.y+o.h-4;by+=24){ ctx.beginPath(); ctx.moveTo(o.x+2,by); ctx.lineTo(o.x+o.w-2,by); ctx.stroke(); } }
+  if(k==='ldoor') return;                     // lab doors are drawn by drawLabDoors (they animate)
+  if(k==='lwall'){ drawLabWall(o); return; }
+  if(k==='lprop'){ drawLabProp(o); return; }
+  if(k==='bwall'){   // building wall — poured concrete blocks with a lit top edge
+    propShadow(o.x,o.y,o.w,o.h,2);
+    ctx.fillStyle='#857d72'; ctx.fillRect(o.x,o.y,o.w,o.h);
+    const lip=Math.min(6,Math.max(3,Math.min(o.w,o.h)*0.25));
+    ctx.fillStyle='rgba(255,248,236,.14)'; ctx.fillRect(o.x,o.y,o.w,lip); ctx.fillRect(o.x,o.y,lip,o.h);
+    ctx.fillStyle='rgba(0,0,0,.20)'; ctx.fillRect(o.x,o.y+o.h-lip,o.w,lip); ctx.fillRect(o.x+o.w-lip,o.y,lip,o.h);
+    ctx.strokeStyle='rgba(50,46,40,.45)'; ctx.lineWidth=1;
+    if(o.w>=o.h){ for(let bx=o.x+24;bx<o.x+o.w-4;bx+=24){ ctx.beginPath(); ctx.moveTo(bx,o.y+2); ctx.lineTo(bx,o.y+o.h-2); ctx.stroke(); } }
+    else { for(let by=o.y+24;by<o.y+o.h-4;by+=24){ ctx.beginPath(); ctx.moveTo(o.x+2,by); ctx.lineTo(o.x+o.w-2,by); ctx.stroke(); } }
+    ctx.strokeStyle='#4a443c'; ctx.lineWidth=2; ctx.strokeRect(o.x+1,o.y+1,o.w-2,o.h-2);
     return;
   }
-  if(k==='sandbag'){
-    ctx.fillStyle='#8a7a4e'; roundRectPath(o.x,o.y,o.w,o.h,7); ctx.fill();
-    ctx.fillStyle='rgba(255,240,200,.12)'; roundRectPath(o.x+2,o.y+2,o.w-4,Math.max(3,o.h*0.32),5); ctx.fill();
-    ctx.strokeStyle='rgba(74,63,38,.65)'; ctx.lineWidth=1.5;
-    if(o.w>=o.h){ for(let bx=o.x+16;bx<o.x+o.w-4;bx+=18){ ctx.beginPath(); ctx.moveTo(bx,o.y+2); ctx.lineTo(bx,o.y+o.h-2); ctx.stroke(); } }
-    else { for(let by=o.y+16;by<o.y+o.h-4;by+=18){ ctx.beginPath(); ctx.moveTo(o.x+2,by); ctx.lineTo(o.x+o.w-2,by); ctx.stroke(); } }
-    ctx.strokeStyle='#5f5233'; ctx.lineWidth=2; roundRectPath(o.x,o.y,o.w,o.h,7); ctx.stroke();
-  } else if(k==='crate'){
-    ctx.fillStyle='#7a5230'; ctx.fillRect(o.x,o.y,o.w,o.h);
-    ctx.fillStyle='rgba(255,235,190,.14)'; ctx.fillRect(o.x+3,o.y+3,o.w-6,5);
-    ctx.strokeStyle='#3f2a14'; ctx.lineWidth=3; ctx.strokeRect(o.x+1.5,o.y+1.5,o.w-3,o.h-3);
-    ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(o.x+2,o.y+2); ctx.lineTo(o.x+o.w-2,o.y+o.h-2); ctx.moveTo(o.x+o.w-2,o.y+2); ctx.lineTo(o.x+2,o.y+o.h-2); ctx.stroke();
-  } else if(k==='rubble'){
-    ctx.fillStyle='#6f7178'; roundRectPath(o.x,o.y,o.w,o.h,4); ctx.fill();
-    ctx.strokeStyle='#44464c'; ctx.lineWidth=2; roundRectPath(o.x,o.y,o.w,o.h,4); ctx.stroke();
-    ctx.fillStyle='#5a5c63'; for(let i=0;i<5;i++){ const rx=o.x+6+((i*29)%Math.max(1,o.w-16)), ry=o.y+6+((i*19)%Math.max(1,o.h-14)); ctx.fillRect(rx,ry,10,8); }
-    ctx.strokeStyle='#3a3c40'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(o.x+4,o.y+o.h*0.42); ctx.lineTo(o.x+o.w-6,o.y+o.h*0.28); ctx.stroke();
-  } else if(k==='tank'){
-    const bw=o.w, bh=o.h, cx=o.x+bw/2, cy=o.y+bh/2;
-    ctx.fillStyle='rgba(20,22,16,.34)'; ctx.beginPath(); ctx.ellipse(cx,cy+4,bw*0.52,bh*0.46,0,0,6.28); ctx.fill();   // ground shadow
-    // tracks (left & right)
-    ctx.fillStyle='#26281d'; ctx.fillRect(o.x, o.y, bw*0.2, bh); ctx.fillRect(o.x+bw*0.8, o.y, bw*0.2, bh);
-    ctx.fillStyle='#3a3d2c'; for(let ty=o.y+4; ty<o.y+bh-6; ty+=11){ ctx.fillRect(o.x+2,ty,bw*0.2-4,6); ctx.fillRect(o.x+bw*0.8+2,ty,bw*0.2-4,6); }
-    // hull
-    ctx.fillStyle='#4b5033'; roundRectPath(o.x+bw*0.16, o.y+bh*0.1, bw*0.68, bh*0.8, 6); ctx.fill();
-    ctx.strokeStyle='#2e3220'; ctx.lineWidth=2; roundRectPath(o.x+bw*0.16, o.y+bh*0.1, bw*0.68, bh*0.8, 6); ctx.stroke();
-    // barrel (points toward the battle)
-    ctx.fillStyle='#363b24'; const bl=bh*0.62; if(o.face>0) ctx.fillRect(cx-5, cy, 10, bl); else ctx.fillRect(cx-5, cy-bl, 10, bl);
-    // turret
-    ctx.fillStyle='#565c3a'; ctx.beginPath(); ctx.arc(cx,cy,bh*0.27,0,6.28); ctx.fill();
-    ctx.strokeStyle='#2e3220'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,bh*0.27,0,6.28); ctx.stroke();
-    ctx.fillStyle='rgba(255,250,220,.12)'; ctx.beginPath(); ctx.arc(cx-3,cy-3,bh*0.13,0,6.28); ctx.fill();
-  } else if(k==='jeep'){
-    const wr=o.h*0.2;
-    ctx.fillStyle='#1a1c14'; for(const [wx,wy] of [[o.x+o.w*0.22,o.y+wr],[o.x+o.w*0.78,o.y+wr],[o.x+o.w*0.22,o.y+o.h-wr],[o.x+o.w*0.78,o.y+o.h-wr]]){ ctx.beginPath(); ctx.arc(wx,wy,wr,0,6.28); ctx.fill(); }
-    ctx.fillStyle='#5b6238'; roundRectPath(o.x+o.w*0.1, o.y+o.h*0.16, o.w*0.8, o.h*0.68, 5); ctx.fill();
-    ctx.strokeStyle='#343a20'; ctx.lineWidth=2; roundRectPath(o.x+o.w*0.1, o.y+o.h*0.16, o.w*0.8, o.h*0.68, 5); ctx.stroke();
-    ctx.fillStyle='#3f4527'; ctx.fillRect(o.x+o.w*0.3, o.y+o.h*0.32, o.w*0.4, o.h*0.36);   // open cabin
-    ctx.fillStyle='rgba(200,220,255,.22)'; ctx.fillRect(o.x+o.w*0.32, o.y+o.h*0.18, o.w*0.36, o.h*0.12);   // windshield
+  if(k==='sandbag'){   // two staggered rows of plump bags
+    propShadow(o.x,o.y,o.w,o.h,8);
+    const horiz=o.w>=o.h, len=horiz?o.w:o.h, th=horiz?o.h:o.w, n=Math.max(2,Math.round(len/34)), bl=len/n;
+    for(let row=0;row<2;row++){ const off=row?bl/2:0, rt=th/2;
+      for(let i=-1;i<n;i++){ let a=i*bl+off, b=a+bl; a=Math.max(0,a); b=Math.min(len,b); if(b-a<6) continue;
+        const bx=horiz?o.x+a:o.x+row*rt, by=horiz?o.y+row*rt:o.y+a, bw=horiz?b-a:rt, bh=horiz?rt:b-a;
+        ctx.fillStyle=((i+row)&1)?'#93814f':'#9d8b58'; roundRectPath(bx+0.5,by+0.5,bw-1,bh-1,6); ctx.fill();
+        ctx.fillStyle='rgba(255,244,210,.16)'; roundRectPath(bx+2,by+2,horiz?bw-4:bw*0.45,horiz?bh*0.4:bh-4,4); ctx.fill();
+        ctx.strokeStyle='rgba(70,58,32,.8)'; ctx.lineWidth=1.3; roundRectPath(bx+0.5,by+0.5,bw-1,bh-1,6); ctx.stroke(); } }
+  } else if(k==='crate'){   // wooden ammo crate: planks, frame, brace and nails
+    propShadow(o.x,o.y,o.w,o.h,2);
+    ctx.fillStyle='#8a5c33'; ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.strokeStyle='rgba(60,36,16,.55)'; ctx.lineWidth=1.2;
+    for(let py=o.y+11; py<o.y+o.h-4; py+=11){ ctx.beginPath(); ctx.moveTo(o.x+3,py); ctx.lineTo(o.x+o.w-3,py); ctx.stroke(); }
+    ctx.strokeStyle='#5a3a1b'; ctx.lineWidth=5; ctx.strokeRect(o.x+2.5,o.y+2.5,o.w-5,o.h-5);
+    ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(o.x+5,o.y+o.h-5); ctx.lineTo(o.x+o.w-5,o.y+5); ctx.stroke();
+    ctx.fillStyle='rgba(255,232,190,.18)'; ctx.fillRect(o.x,o.y,o.w,3);
+    ctx.fillStyle='#c9b48a'; for(const [nx,ny] of [[5,5],[o.w-5,5],[5,o.h-5],[o.w-5,o.h-5]]){ ctx.beginPath(); ctx.arc(o.x+nx,o.y+ny,1.6,0,6.28); ctx.fill(); }
+    ctx.strokeStyle='#3b2410'; ctx.lineWidth=1.5; ctx.strokeRect(o.x+0.75,o.y+0.75,o.w-1.5,o.h-1.5);
+  } else if(k==='rubble'){   // broken concrete: a heap of shaded chunks
+    const sd=hash2(o.x|0,o.y|0);
+    ctx.fillStyle='rgba(12,10,8,.28)'; ctx.beginPath(); ctx.ellipse(o.x+o.w/2+5,o.y+o.h/2+7,o.w*0.55,o.h*0.5,0,0,6.28); ctx.fill();
+    ctx.fillStyle='#5d5f65'; ctx.beginPath(); ctx.ellipse(o.x+o.w/2,o.y+o.h/2,o.w*0.5,o.h*0.46,0,0,6.28); ctx.fill();
+    for(let i=0;i<7;i++){ const h1=hash2((o.x|0)+i*13,(o.y|0)+i*7), h2=hash2((o.y|0)+i*5,(o.x|0)-i*11);
+      const cw=o.w*(0.22+h1*0.2), ch=o.h*(0.2+h2*0.2), cx=o.x+o.w*(0.18+0.64*h2), cy=o.y+o.h*(0.18+0.64*h1);
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate((h1-0.5)*1.4+sd);
+      ctx.fillStyle=['#7a7c83','#6c6e74','#878991','#73757b'][i%4]; roundRectPath(-cw/2,-ch/2,cw,ch,3); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,.13)'; ctx.fillRect(-cw/2+2,-ch/2+2,cw-4,Math.max(2,ch*0.25));
+      ctx.strokeStyle='rgba(40,40,44,.7)'; ctx.lineWidth=1.2; roundRectPath(-cw/2,-ch/2,cw,ch,3); ctx.stroke(); ctx.restore(); }
+    ctx.strokeStyle='#5b4a33'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(o.x+o.w*0.2,o.y+o.h*0.3); ctx.lineTo(o.x+o.w*0.05,o.y+o.h*0.1); ctx.stroke();   // bent rebar
   } else {   // steel hedgehog tank-trap
-    ctx.fillStyle='rgba(24,26,30,.32)'; ctx.beginPath(); ctx.ellipse(o.x+o.w/2,o.y+o.h/2,o.w*0.5,o.h*0.4,0,0,6.28); ctx.fill();
+    ctx.fillStyle='rgba(24,26,30,.32)'; ctx.beginPath(); ctx.ellipse(o.x+o.w/2+5,o.y+o.h/2+6,o.w*0.5,o.h*0.4,0,0,6.28); ctx.fill();
     const cx=o.x+o.w/2, cy=o.y+o.h/2, r=Math.min(o.w,o.h)/2;
-    ctx.lineCap='round'; ctx.strokeStyle='#8c929c'; ctx.lineWidth=5;
-    ctx.beginPath(); ctx.moveTo(cx-r,cy-r); ctx.lineTo(cx+r,cy+r); ctx.moveTo(cx+r,cy-r); ctx.lineTo(cx-r,cy+r); ctx.moveTo(cx,cy-r); ctx.lineTo(cx,cy+r); ctx.stroke();
-    ctx.strokeStyle='#5f656e'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(cx-r,cy-r); ctx.lineTo(cx+r,cy+r); ctx.moveTo(cx+r,cy-r); ctx.lineTo(cx-r,cy+r); ctx.stroke();
+    ctx.lineCap='round';
+    for(const [col,lw,dx] of [['#3d4249',7,0],['#8c929c',5,0],['#c5cad2',1.5,-1]]){ ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.beginPath();
+      ctx.moveTo(cx-r+dx,cy-r+dx); ctx.lineTo(cx+r+dx,cy+r+dx); ctx.moveTo(cx+r+dx,cy-r+dx); ctx.lineTo(cx-r+dx,cy+r+dx); ctx.moveTo(cx+dx,cy-r); ctx.lineTo(cx+dx,cy+r); ctx.stroke(); }
+    ctx.fillStyle='#5f656e'; ctx.beginPath(); ctx.arc(cx,cy,4,0,6.28); ctx.fill();
     ctx.lineCap='butt';
+  }
+}
+// ---------- ZOMBIFIERS' LAB ART ----------
+function drawLabGround(x0,y0,x1,y1){   // concrete apron round the compound + every room's floor
+  const lab=duel.lab, L=lab.L, A=140;
+  if(L.x-A>x1||L.x+L.w+A<x0||L.y-A>y1||L.y+L.h+A<y0) return;
+  ctx.fillStyle='rgba(0,0,0,.25)'; roundRectPath(L.x-A-8,L.y-A-6,L.w+2*A+16,L.h+2*A+16,26); ctx.fill();
+  ctx.fillStyle='#55534e'; roundRectPath(L.x-A,L.y-A,L.w+2*A,L.h+2*A,22); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=2;
+  for(let x=L.x-A+120; x<L.x+L.w+A; x+=120){ if(x<x0-4||x>x1+4) continue; ctx.beginPath(); ctx.moveTo(x,L.y-A); ctx.lineTo(x,L.y+L.h+A); ctx.stroke(); }
+  for(let y=L.y-A+120; y<L.y+L.h+A; y+=120){ if(y<y0-4||y>y1+4) continue; ctx.beginPath(); ctx.moveTo(L.x-A,y); ctx.lineTo(L.x+L.w+A,y); ctx.stroke(); }
+  // painted approach to the blast door
+  const dx=L.x+1300, dy=L.y+L.h;
+  ctx.fillStyle='rgba(255,210,60,.75)';
+  for(let i=0;i<4;i++){ const yy=dy+20+i*28; ctx.beginPath(); ctx.moveTo(dx-34,yy+16); ctx.lineTo(dx,yy); ctx.lineTo(dx+34,yy+16); ctx.lineTo(dx+34,yy+24); ctx.lineTo(dx,yy+8); ctx.lineTo(dx-34,yy+24); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle='#1d2127'; ctx.fillRect(L.x,L.y,L.w,L.h);   // subfloor / door thresholds
+  const t=performance.now()/1000;
+  for(const r of lab.rooms){ if(r.x>x1||r.x+r.w<x0||r.y>y1||r.y+r.h<y0) continue;
+    ctx.fillStyle=r.floor; ctx.fillRect(r.x,r.y,r.w,r.h);
+    const TS=80, tx0=Math.max(r.x, Math.floor((x0-r.x)/TS)*TS+r.x), ty0=Math.max(r.y, Math.floor((y0-r.y)/TS)*TS+r.y);
+    for(let ty=ty0; ty<Math.min(r.y+r.h,y1); ty+=TS) for(let tx=tx0; tx<Math.min(r.x+r.w,x1); tx+=TS){
+      const h=hash2(tx|0,ty|0); if(h<0.18){ ctx.fillStyle='rgba(255,255,255,.03)'; ctx.fillRect(tx,ty,TS,TS); } else if(h>0.9){ ctx.fillStyle='rgba(0,0,0,.08)'; ctx.fillRect(tx,ty,TS,TS); } }
+    ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.lineWidth=2; ctx.beginPath();
+    for(let x=r.x+TS; x<r.x+r.w; x+=TS){ if(x<x0||x>x1) continue; ctx.moveTo(x,r.y); ctx.lineTo(x,r.y+r.h); }
+    for(let y=r.y+TS; y<r.y+r.h; y+=TS){ if(y<y0||y>y1) continue; ctx.moveTo(r.x,y); ctx.lineTo(r.x+r.w,y); }
+    ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1; ctx.beginPath();
+    for(let x=r.x+TS; x<r.x+r.w; x+=TS){ if(x<x0||x>x1) continue; ctx.moveTo(x+2,r.y); ctx.lineTo(x+2,r.y+r.h); }
+    for(let y=r.y+TS; y<r.y+r.h; y+=TS){ if(y<y0||y>y1) continue; ctx.moveTo(r.x,y+2); ctx.lineTo(r.x+r.w,y+2); }
+    ctx.stroke();
+    // soft contact shadow along every wall
+    const S=34, sh=(gx0,gy0,gx1,gy1,x,y,w,h)=>{ const g=ctx.createLinearGradient(gx0,gy0,gx1,gy1); g.addColorStop(0,'rgba(0,0,0,.38)'); g.addColorStop(1,'rgba(0,0,0,0)'); ctx.fillStyle=g; ctx.fillRect(x,y,w,h); };
+    sh(0,r.y,0,r.y+S, r.x,r.y,r.w,S); sh(r.x,0,r.x+S,0, r.x,r.y,S,r.h);
+    sh(0,r.y+r.h,0,r.y+r.h-S, r.x,r.y+r.h-S,r.w,S); sh(r.x+r.w,0,r.x+r.w-S,0, r.x+r.w-S,r.y,S,r.h);
+    if(r.id==='hallw'){   // corridor: a painted guide line
+      ctx.strokeStyle='rgba(255,210,60,.45)'; ctx.lineWidth=5; ctx.setLineDash([40,30]); ctx.beginPath(); ctx.moveTo(r.x+40,r.y+r.h/2); ctx.lineTo(r.x+r.w-40,r.y+r.h/2); ctx.stroke(); ctx.setLineDash([]);
+    } else if(r.id==='hall'){   // entry hall: the Zombifier emblem inlaid in the floor
+      const ex=r.x+r.w/2, ey=r.y+r.h*0.62;
+      ctx.strokeStyle='rgba(125,255,106,.22)'; ctx.lineWidth=10; ctx.beginPath(); ctx.arc(ex,ey,120,0,6.28); ctx.stroke();
+      ctx.lineWidth=3; ctx.beginPath(); ctx.arc(ex,ey,96,0,6.28); ctx.stroke();
+      ctx.fillStyle='rgba(125,255,106,.20)'; ctx.font='bold 130px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('Z', ex, ey+6); ctx.textBaseline='alphabetic';
+    } else if(r.id==='core'){   // hazard ring round the reactor
+      const R=lab.reactor; ctx.lineWidth=14; ctx.strokeStyle='#d9b01f'; ctx.beginPath(); ctx.arc(R.x,R.y,150,0,6.28); ctx.stroke();
+      ctx.strokeStyle='#1d1d1d'; ctx.setLineDash([18,18]); ctx.lineDashOffset=-t*20; ctx.beginPath(); ctx.arc(R.x,R.y,150,0,6.28); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset=0;
+    } else if(r.id==='incu'||r.id==='clone'){   // green spill glow under the vats
+      const gx=r.x+r.w/2, gy=r.y+r.h/2, gr=ctx.createRadialGradient(gx,gy,0,gx,gy,Math.max(r.w,r.h)*0.6);
+      gr.addColorStop(0,'rgba(90,255,120,.07)'); gr.addColorStop(1,'rgba(90,255,120,0)'); ctx.fillStyle=gr; ctx.fillRect(r.x,r.y,r.w,r.h);
+    }
+  }
+}
+function drawLabWall(o){   // reinforced steel-and-concrete lab wall
+  ctx.fillStyle='rgba(0,0,0,.30)'; ctx.fillRect(o.x+4,o.y+6,o.w,o.h);
+  ctx.fillStyle='#4d5563'; ctx.fillRect(o.x,o.y,o.w,o.h);
+  const horiz=o.w>=o.h, lip=4;
+  ctx.fillStyle='rgba(255,255,255,.16)'; ctx.fillRect(o.x,o.y,o.w,lip); ctx.fillRect(o.x,o.y,lip,o.h);
+  ctx.fillStyle='rgba(0,0,0,.28)'; ctx.fillRect(o.x,o.y+o.h-lip,o.w,lip); ctx.fillRect(o.x+o.w-lip,o.y,lip,o.h);
+  ctx.strokeStyle='rgba(0,0,0,.28)'; ctx.lineWidth=2; ctx.beginPath();
+  if(horiz){ ctx.moveTo(o.x+4,o.y+o.h/2); ctx.lineTo(o.x+o.w-4,o.y+o.h/2); } else { ctx.moveTo(o.x+o.w/2,o.y+4); ctx.lineTo(o.x+o.w/2,o.y+o.h-4); }
+  ctx.stroke();
+  ctx.fillStyle='rgba(205,215,230,.35)';
+  if(horiz){ for(let x=o.x+24; x<o.x+o.w-10; x+=56){ ctx.beginPath(); ctx.arc(x,o.y+7,1.8,0,6.28); ctx.arc(x,o.y+o.h-7,1.8,0,6.28); ctx.fill(); } }
+  else { for(let y=o.y+24; y<o.y+o.h-10; y+=56){ ctx.beginPath(); ctx.arc(o.x+7,y,1.8,0,6.28); ctx.arc(o.x+o.w-7,y,1.8,0,6.28); ctx.fill(); } }
+  ctx.strokeStyle='#262b33'; ctx.lineWidth=2; ctx.strokeRect(o.x+1,o.y+1,o.w-2,o.h-2);
+}
+function hazardFill(x,y,w,h,col){   // yellow/black diagonal stripes clipped to a rect
+  ctx.save(); ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
+  ctx.fillStyle=col||'#d9b01f'; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='#1c1c1c'; for(let s=-h; s<w+h; s+=22){ ctx.beginPath(); ctx.moveTo(x+s,y+h); ctx.lineTo(x+s+11,y+h); ctx.lineTo(x+s+11+h,y); ctx.lineTo(x+s+h,y); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+function drawLabProp(o){
+  const t=performance.now()/1000, sub=o.sub, cx=o.x+o.w/2, cy=o.y+o.h/2;
+  if(sub==='reactor') return;   // drawn by drawLabReactor
+  if(sub==='vat'||sub==='tube'||sub==='drum'||sub==='coil'){ ctx.fillStyle='rgba(0,0,0,.32)'; ctx.beginPath(); ctx.ellipse(cx+5,cy+7,o.w/2,o.h/2,0,0,6.28); ctx.fill(); }
+  else propShadow(o.x,o.y,o.w,o.h,4);
+  if(sub==='vat'||sub==='tube'){   // growth vat: steel rim, glowing fluid, something growing inside, bubbles
+    const R=o.w/2, liq=sub==='tube'?'90,230,255':'110,255,120';
+    ctx.fillStyle='#59616e'; ctx.beginPath(); ctx.arc(cx,cy,R,0,6.28); ctx.fill();
+    const g=ctx.createRadialGradient(cx-R*0.25,cy-R*0.3,2,cx,cy,R*0.82);
+    g.addColorStop(0,'rgba('+liq+',.95)'); g.addColorStop(0.7,'rgba('+liq+',.55)'); g.addColorStop(1,'rgba(10,40,20,.9)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,R*0.8,0,6.28); ctx.fill();
+    ctx.fillStyle='rgba(20,40,25,.55)'; ctx.beginPath(); ctx.ellipse(cx,cy+R*0.08,R*0.26,R*0.36,Math.sin(t+o.ph)*0.15,0,6.28); ctx.fill();   // the specimen
+    ctx.beginPath(); ctx.arc(cx,cy-R*0.32,R*0.17,0,6.28); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.7)';
+    for(let i=0;i<4;i++){ const p=((t*0.6+o.ph+i*0.25)%1), bx=cx+Math.sin(o.ph*3+i*2.1)*R*0.4, by=cy+R*0.6-p*R*1.2; ctx.globalAlpha=1-p; ctx.beginPath(); ctx.arc(bx,by,1.6+i*0.5,0,6.28); ctx.fill(); }
+    ctx.globalAlpha=1;
+    ctx.fillStyle='rgba(255,255,255,.28)'; ctx.beginPath(); ctx.ellipse(cx-R*0.35,cy-R*0.35,R*0.18,R*0.32,-0.7,0,6.28); ctx.fill();   // glass glint
+    ctx.strokeStyle='#2a2f37'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(cx,cy,R-1.5,0,6.28); ctx.stroke();
+    ctx.strokeStyle='#8a93a1'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,R*0.8,0,6.28); ctx.stroke();
+    ctx.fillStyle='#3a404a'; for(let i=0;i<4;i++){ const a=i*Math.PI/2+0.78; ctx.fillRect(cx+Math.cos(a)*R*0.9-3,cy+Math.sin(a)*R*0.9-3,6,6); }
+  } else if(sub==='server'){   // server rack: dark cabinet, blinking status LEDs
+    ctx.fillStyle='#1b1f26'; roundRectPath(o.x,o.y,o.w,o.h,4); ctx.fill();
+    ctx.fillStyle='#262c35'; roundRectPath(o.x+4,o.y+4,o.w-8,o.h-8,3); ctx.fill();
+    for(let y=o.y+10, i=0; y<o.y+o.h-10; y+=13, i++){
+      ctx.fillStyle='#14181e'; ctx.fillRect(o.x+7,y,o.w-14,9);
+      for(let j=0;j<3;j++){ const on=Math.sin(t*(3+j)+o.ph+i*1.7+j)>0.2; ctx.fillStyle=on?(j===2?'#ff5b5b':'#5dff8a'):'#2d3a33'; ctx.fillRect(o.x+11+j*7,y+3,4,3); } }
+    ctx.strokeStyle='#0d1014'; ctx.lineWidth=2; roundRectPath(o.x,o.y,o.w,o.h,4); ctx.stroke();
+  } else if(sub==='desk'||sub==='bench'){   // white lab bench with glassware / reception desk with a monitor
+    ctx.fillStyle='#c9ced6'; roundRectPath(o.x,o.y,o.w,o.h,5); ctx.fill();
+    ctx.fillStyle='#e9edf2'; roundRectPath(o.x+3,o.y+3,o.w-6,o.h-9,4); ctx.fill();
+    ctx.strokeStyle='#6b7480'; ctx.lineWidth=2; roundRectPath(o.x,o.y,o.w,o.h,5); ctx.stroke();
+    if(sub==='desk'){ ctx.fillStyle='#1d2229'; roundRectPath(cx-22,o.y+8,44,24,3); ctx.fill(); ctx.fillStyle='rgba(120,220,255,.75)'; ctx.fillRect(cx-18,o.y+11,36,17); ctx.fillStyle='#8a929e'; ctx.fillRect(cx-5,o.y+32,10,5); }
+    else { const cols=['#7dff6a','#5fd3ff','#ff6bd0','#ffd24a'];
+      for(let i=0;i<Math.floor(o.w/42);i++){ const bx=o.x+22+i*42, by=cy-3; ctx.fillStyle='rgba(255,255,255,.65)'; ctx.beginPath(); ctx.arc(bx,by,8,0,6.28); ctx.fill();
+        ctx.fillStyle=cols[(i+Math.floor(o.ph))%4]; ctx.beginPath(); ctx.arc(bx,by+1,5.5,0,6.28); ctx.fill(); ctx.strokeStyle='rgba(60,70,80,.6)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(bx,by,8,0,6.28); ctx.stroke(); } }
+  } else if(sub==='pillar'){
+    ctx.fillStyle='#6a717c'; ctx.fillRect(o.x,o.y,o.w,o.h);
+    ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(o.x,o.y,o.w,6); ctx.fillRect(o.x,o.y,6,o.h);
+    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fillRect(o.x,o.y+o.h-6,o.w,6); ctx.fillRect(o.x+o.w-6,o.y,6,o.h);
+    hazardFill(o.x+10,o.y+o.h/2-5,o.w-20,10);
+    ctx.strokeStyle='#30353d'; ctx.lineWidth=2; ctx.strokeRect(o.x+1,o.y+1,o.w-2,o.h-2);
+  } else if(sub==='barricade'){
+    hazardFill(o.x,o.y,o.w,o.h);
+    ctx.fillStyle='rgba(255,255,255,.18)'; ctx.fillRect(o.x,o.y,o.w,3);
+    ctx.strokeStyle='#2b2b2b'; ctx.lineWidth=2.5; ctx.strokeRect(o.x+1,o.y+1,o.w-2,o.h-2);
+  } else if(sub==='drum'){   // chemical drum
+    const R=o.w/2; ctx.fillStyle='#c79a1c'; ctx.beginPath(); ctx.arc(cx,cy,R,0,6.28); ctx.fill();
+    ctx.strokeStyle='#7a5c0c'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(cx,cy,R-2,0,6.28); ctx.stroke(); ctx.beginPath(); ctx.arc(cx,cy,R*0.72,0,6.28); ctx.stroke();
+    ctx.fillStyle='#1d1d1d'; ctx.beginPath(); for(let i=0;i<3;i++){ const a=i*2.094-Math.PI/2; ctx.moveTo(cx,cy); ctx.arc(cx,cy,R*0.5,a-0.42,a+0.42); ctx.closePath(); } ctx.fill();
+    ctx.fillStyle='#c79a1c'; ctx.beginPath(); ctx.arc(cx,cy,R*0.13,0,6.28); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.22)'; ctx.beginPath(); ctx.ellipse(cx-R*0.4,cy-R*0.42,R*0.25,R*0.14,-0.7,0,6.28); ctx.fill();
+  } else if(sub==='coil'){   // tesla coil feeding the reactor shield
+    const R=o.w/2; ctx.fillStyle='#3a404a'; ctx.beginPath(); ctx.arc(cx,cy,R,0,6.28); ctx.fill();
+    for(let i=0;i<3;i++){ ctx.strokeStyle=i%2?'#b8722e':'#d98c3a'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(cx,cy,R*(0.78-i*0.2),0,6.28); ctx.stroke(); }
+    ctx.fillStyle='#dfe6f0'; ctx.beginPath(); ctx.arc(cx,cy,R*0.18,0,6.28); ctx.fill();
+    const Rr=duel.lab&&duel.lab.reactor;
+    if(Rr && Rr.shield){   // crackling arc to the shield
+      const dx=Rr.x-cx, dy=Rr.y-cy, d=Math.hypot(dx,dy)||1, ex=Rr.x-dx/d*112, ey=Rr.y-dy/d*112, seg=8, flick=Math.floor(t*18+o.ph*5);
+      ctx.strokeStyle='rgba(150,235,255,'+(0.55+0.4*Math.sin(t*30+o.ph))+')'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(cx,cy);
+      for(let i=1;i<seg;i++){ const p=i/seg, j=(hash2(flick,i)-0.5)*26; ctx.lineTo(cx+(ex-cx)*p - dy/d*j, cy+(ey-cy)*p + dx/d*j); }
+      ctx.lineTo(ex,ey); ctx.stroke(); }
+  }
+}
+function drawLabDoors(){
+  const t=performance.now()/1000;
+  for(const d of duel.labDoors){
+    const op=d.open||0, horiz=d.w>=d.h;
+    if(d.id==='core'){   // sealed core vault: an energy field that fades out when it unseals
+      if(op<1){ ctx.save(); ctx.globalAlpha=1-op;
+        const g=ctx.createLinearGradient(d.x,0,d.x+d.w,0); g.addColorStop(0,'rgba(90,200,255,.25)'); g.addColorStop(0.5,'rgba(150,235,255,.55)'); g.addColorStop(1,'rgba(90,200,255,.25)');
+        ctx.fillStyle=g; ctx.fillRect(d.x,d.y-4,d.w,d.h+8);
+        ctx.strokeStyle='rgba(200,245,255,.85)'; ctx.lineWidth=1.5; ctx.beginPath();
+        for(let i=0;i<6;i++){ const x=d.x+((i*27+t*60)%d.w); ctx.moveTo(x,d.y-4); ctx.lineTo(x,d.y+d.h+4); } ctx.stroke(); ctx.restore(); }
+    } else {   // main blast door: two hazard-striped slabs that slide into the wall
+      const pw=d.w/2*(1-op);
+      if(pw>1){ hazardFill(d.x,d.y,pw,d.h); hazardFill(d.x+d.w-pw,d.y,pw,d.h);
+        ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2; ctx.strokeRect(d.x+1,d.y+1,pw-2,d.h-2); ctx.strokeRect(d.x+d.w-pw+1,d.y+1,pw-2,d.h-2); }
+    }
+    // door posts with status lights
+    const sealed=op<0.02, pulse=0.6+0.4*Math.sin(t*5), lit=sealed?'255,70,60':'90,255,120';
+    for(const px of horiz?[d.x-12,d.x+d.w]:[]){
+      ctx.fillStyle='#22262d'; ctx.fillRect(px,d.y-6,12,d.h+12);
+      ctx.fillStyle='rgba('+lit+','+pulse+')'; ctx.beginPath(); ctx.arc(px+6,d.y+d.h/2,4,0,6.28); ctx.fill();
+      ctx.fillStyle='rgba('+lit+','+(0.25*pulse)+')'; ctx.beginPath(); ctx.arc(px+6,d.y+d.h/2,12,0,6.28); ctx.fill(); }
+  }
+}
+function drawLabReactor(){
+  const R=duel.lab.reactor, t=performance.now()/1000;
+  ctx.save(); ctx.translate(R.x,R.y);
+  if(R.dead){   // what's left: a scorched pit, embers and smoke
+    const g=ctx.createRadialGradient(0,0,10,0,0,150); g.addColorStop(0,'#0b0a09'); g.addColorStop(0.6,'rgba(25,20,16,.85)'); g.addColorStop(1,'rgba(25,20,16,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,150,0,6.28); ctx.fill();
+    for(let i=0;i<10;i++){ const a=i*0.63+t*0.2, rr=30+((i*37)%70); ctx.fillStyle='rgba(255,'+(120+i*8)+',40,'+(0.5+0.4*Math.sin(t*4+i))+')'; ctx.beginPath(); ctx.arc(Math.cos(a)*rr,Math.sin(a)*rr,2.5,0,6.28); ctx.fill(); }
+    for(let i=0;i<5;i++){ const s=(t*0.5+i*0.2)%1; ctx.globalAlpha=(1-s)*0.35; ctx.fillStyle='#3a3632'; ctx.beginPath(); ctx.arc(Math.sin(t+i)*30, -s*120, 20+s*40, 0,6.28); ctx.fill(); }
+    ctx.globalAlpha=1; ctx.restore(); return;
+  }
+  const oct=(r)=>{ ctx.beginPath(); for(let i=0;i<8;i++){ const a=i*Math.PI/4+Math.PI/8; ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); } ctx.closePath(); };
+  const pulse=0.5+0.5*Math.sin(t*(R.shield?2.2:5));
+  const glow=ctx.createRadialGradient(0,0,20,0,0,175); glow.addColorStop(0,'rgba(120,255,110,'+(0.30+0.15*pulse)+')'); glow.addColorStop(1,'rgba(120,255,110,0)');
+  ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(0,0,175,0,6.28); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.save(); ctx.translate(6,8); oct(94); ctx.fill(); ctx.restore();
+  ctx.fillStyle='#363d49'; oct(94); ctx.fill(); ctx.strokeStyle='#1b1f26'; ctx.lineWidth=4; oct(94); ctx.stroke();
+  ctx.fillStyle='#2a303b'; oct(78); ctx.fill();
+  ctx.fillStyle='#8a93a1'; for(let i=0;i<8;i++){ const a=i*Math.PI/4+Math.PI/8; ctx.beginPath(); ctx.arc(Math.cos(a)*86, Math.sin(a)*86, 3, 0, 6.28); ctx.fill(); }
+  const cg=ctx.createRadialGradient(-8,-10,4,0,0,50); cg.addColorStop(0,'#f2ffe0'); cg.addColorStop(0.35,'#9dff7a'); cg.addColorStop(1,'#1d6a28');
+  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(0,0,46+pulse*3,0,6.28); ctx.fill();
+  ctx.lineWidth=5; ctx.lineCap='round';
+  for(let i=0;i<3;i++){ const rr=58+i*8, sp=(i%2?-1:1)*(R.shield?0.8:2.4)*(1+i*0.3), a0=t*sp+i;
+    ctx.strokeStyle='rgba(170,255,180,'+(0.75-i*0.18)+')';
+    for(let k=0;k<3;k++){ ctx.beginPath(); ctx.arc(0,0,rr,a0+k*2.094,a0+k*2.094+1.1); ctx.stroke(); } }
+  ctx.lineCap='butt';
+  if(R.flash>0){ ctx.globalAlpha=Math.min(1,R.flash*10)*0.8; ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(0,0,60,0,6.28); ctx.fill(); ctx.globalAlpha=1; }
+  if(R.shield){   // shield bubble with a slow hex shimmer
+    ctx.fillStyle='rgba(120,220,255,.10)'; ctx.beginPath(); ctx.arc(0,0,112,0,6.28); ctx.fill();
+    ctx.strokeStyle='rgba(150,235,255,'+(0.55+0.3*pulse)+')'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,0,112,0,6.28); ctx.stroke();
+    ctx.save(); ctx.beginPath(); ctx.arc(0,0,110,0,6.28); ctx.clip(); ctx.strokeStyle='rgba(150,235,255,.16)'; ctx.lineWidth=1.2; ctx.rotate(t*0.15);
+    for(let y=-120;y<=120;y+=26) for(let x=-120;x<=120;x+=30){ const ox=x+((y/26)&1?15:0); ctx.beginPath(); for(let i=0;i<6;i++){ const a=i*Math.PI/3; ctx.lineTo(ox+Math.cos(a)*12, y+Math.sin(a)*12); } ctx.closePath(); ctx.stroke(); }
+    ctx.restore();
+  }
+  ctx.restore();
+  if(!R.shield){   // armour bar
+    const bw=220, bx=R.x-bw/2, by=R.y-140, fr=Math.max(0,R.hp/R.hpMax);
+    ctx.fillStyle='rgba(0,0,0,.65)'; roundRectPath(bx-3,by-3,bw+6,16,8); ctx.fill();
+    const g=ctx.createLinearGradient(bx,0,bx+bw,0); g.addColorStop(0,'#ff4b3b'); g.addColorStop(1,'#ffb04a');
+    ctx.fillStyle=g; roundRectPath(bx,by,Math.max(4,bw*fr),10,5); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 12px '+CF; ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.fillText('ZOMBIFIER REACTOR', R.x, by-5); ctx.textBaseline='alphabetic';
+  }
+}
+function drawLabRoofs(me){   // outside: one solid roof · inside: fog over every room you're not in (unexplored rooms stay dark)
+  const lab=duel.lab, L=lab.L, T=W8_LAB.t, t=performance.now()/1000;
+  const pcx=me?me.x+DUEL_PS/2:-1e9, pcy=me?me.y+DUEL_PS/2:-1e9;
+  if(!war8InLab(pcx,pcy)){
+    const x=L.x+T, y=L.y+T, w=L.w-2*T, h=L.h-2*T;
+    ctx.fillStyle='#3b414b'; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.lineWidth=2; ctx.beginPath(); for(let px=x+130; px<x+w; px+=130){ ctx.moveTo(px,y); ctx.lineTo(px,y+h); } ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1; ctx.beginPath(); for(let px=x+132; px<x+w; px+=130){ ctx.moveTo(px,y); ctx.lineTo(px,y+h); } ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.10)'; ctx.lineWidth=8; ctx.strokeRect(x+4,y+4,w-8,h-8);
+    for(const [ux,uy] of [[260,260],[2300,320],[420,1700],[2250,1820],[1900,700],[650,900]]){   // rooftop AC units
+      const ax=L.x+ux, ay=L.y+uy;
+      ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(ax+5,ay+7,90,64);
+      ctx.fillStyle='#6c7480'; ctx.fillRect(ax,ay,90,64); ctx.strokeStyle='#2c3139'; ctx.lineWidth=2; ctx.strokeRect(ax,ay,90,64);
+      for(const fx of [23,67]){ ctx.fillStyle='#262b33'; ctx.beginPath(); ctx.arc(ax+fx,ay+32,17,0,6.28); ctx.fill();
+        ctx.save(); ctx.translate(ax+fx,ay+32); ctx.rotate(t*6+fx); ctx.fillStyle='#8a93a1'; for(let i=0;i<3;i++){ ctx.rotate(2.094); ctx.fillRect(-2,-15,4,13); } ctx.restore(); } }
+    const R=lab.reactor;   // skylight over the reactor
+    const sg=ctx.createRadialGradient(R.x,R.y,10,R.x,R.y,150); sg.addColorStop(0,'rgba(140,255,120,'+(0.55+0.2*Math.sin(t*2.4))+')'); sg.addColorStop(1,'rgba(40,120,50,.25)');
+    ctx.fillStyle=sg; ctx.fillRect(R.x-120,R.y-120,240,240);
+    ctx.strokeStyle='#2a3038'; ctx.lineWidth=6; ctx.strokeRect(R.x-120,R.y-120,240,240);
+    ctx.lineWidth=3; ctx.beginPath(); for(let k=-60;k<=60;k+=60){ ctx.moveTo(R.x+k,R.y-120); ctx.lineTo(R.x+k,R.y+120); ctx.moveTo(R.x-120,R.y+k); ctx.lineTo(R.x+120,R.y+k); } ctx.stroke();
+    const hx=L.x+2150, hy=L.y+1450;   // helipad
+    ctx.fillStyle='#454c57'; ctx.beginPath(); ctx.arc(hx,hy,150,0,6.28); ctx.fill();
+    ctx.strokeStyle='#d9b01f'; ctx.lineWidth=8; ctx.beginPath(); ctx.arc(hx,hy,130,0,6.28); ctx.stroke();
+    ctx.fillStyle='#d9d9d9'; ctx.font='bold 150px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('H', hx, hy+8);
+    const ex=L.x+600, ey=L.y+1500;   // Zombifier emblem painted on the roof
+    ctx.strokeStyle='rgba(125,255,106,.45)'; ctx.lineWidth=14; ctx.beginPath(); ctx.arc(ex,ey,150,0,6.28); ctx.stroke();
+    ctx.fillStyle='rgba(125,255,106,.42)'; ctx.font='bold 170px '+CF; ctx.fillText('Z', ex, ey+10);
+    hazardFill(L.x+1150, L.y+L.h-T-34, 300, 30);   // warning band over the door
+    ctx.textBaseline='alphabetic';
+    return;
+  }
+  for(const r of lab.rooms){
+    if(war8InRect(pcx,pcy,r,-46)) continue;   // the room you're in (or standing in the doorway of) is lit
+    if(r.seen){ ctx.fillStyle='rgba(8,11,16,.62)'; ctx.fillRect(r.x,r.y,r.w,r.h); continue; }
+    ctx.fillStyle='#22272f'; ctx.fillRect(r.x,r.y,r.w,r.h);
+    ctx.strokeStyle='rgba(255,255,255,.04)'; ctx.lineWidth=2; ctx.beginPath(); for(let px=r.x+90; px<r.x+r.w; px+=90){ ctx.moveTo(px,r.y); ctx.lineTo(px,r.y+r.h); } ctx.stroke();
+    ctx.fillStyle='rgba(200,215,235,.16)'; ctx.font='bold '+(r.h<400?40:56)+'px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(r.name, r.x+r.w/2, r.y+r.h/2-(r.h<400?0:20));
+    if(r.h>=400){ ctx.font='bold 70px '+CF; ctx.fillStyle='rgba(200,215,235,.10)'; ctx.fillText('?', r.x+r.w/2, r.y+r.h/2+50); }
+    ctx.textBaseline='alphabetic';
   }
 }
 function drawVehicleBody(kind,w,h,occupied){
@@ -8602,11 +9263,18 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
   const x0=cx-10,y0=cy-10,x1=cx+VW+10,y1=cy+VH+10;
   if(duel.war){
     drawWarGround(x0,y0,x1,y1);
-    if(duel.buildings) for(const bd of duel.buildings){ if(bd.x>x1||bd.x+bd.w<x0||bd.y>y1||bd.y+bd.h<y0) continue;   // interior floor
-      ctx.fillStyle='#413b33'; ctx.fillRect(bd.x, bd.y, bd.w, bd.h);
-      ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; for(let fx=bd.x+28; fx<bd.x+bd.w; fx+=34){ ctx.beginPath(); ctx.moveTo(fx,bd.y); ctx.lineTo(fx,bd.y+bd.h); ctx.stroke(); } }
+    if(duel.lab) drawLabGround(x0,y0,x1,y1);
+    if(duel.buildings) for(const bd of duel.buildings){ if(bd.x>x1||bd.x+bd.w<x0||bd.y>y1||bd.y+bd.h<y0) continue;   // interior floor: worn planks
+      ctx.fillStyle='#4a4035'; ctx.fillRect(bd.x, bd.y, bd.w, bd.h);
+      ctx.strokeStyle='rgba(0,0,0,.22)'; ctx.lineWidth=1.5; ctx.beginPath();
+      for(let fy=bd.y+22; fy<bd.y+bd.h; fy+=22){ ctx.moveTo(bd.x,fy); ctx.lineTo(bd.x+bd.w,fy); }
+      for(let fy=bd.y, row=0; fy<bd.y+bd.h; fy+=22, row++){ for(let fx=bd.x+((row*53)%120); fx<bd.x+bd.w; fx+=120){ ctx.moveTo(fx,fy); ctx.lineTo(fx,fy+22); } }
+      ctx.stroke();
+      const g=ctx.createRadialGradient(bd.x+bd.w/2,bd.y+bd.h/2,Math.min(bd.w,bd.h)*0.2,bd.x+bd.w/2,bd.y+bd.h/2,Math.max(bd.w,bd.h)*0.7);
+      g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,.35)'); ctx.fillStyle=g; ctx.fillRect(bd.x,bd.y,bd.w,bd.h); }
     ctx.strokeStyle='#2a2016'; ctx.lineWidth=10; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
     for(const o of duel.obs){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue; drawWarProp(o); }
+    if(duel.lab){ drawLabDoors(); drawLabReactor(); }
   } else {
     for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
       ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
@@ -8619,29 +9287,53 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
   drawDuelSplats();
   if(duel.vehicles) for(const v of duel.vehicles){ if(v.x<x0-90||v.x>x1+90||v.y<y0-90||v.y>y1+90) continue; drawVehicle(v); }
   for(const k of duel.pickups){ if(!k.taken) drawDuelPickup(k); }
-  for(const b of duel.bullets){ if(b.shell){ ctx.fillStyle='#ffd24a'; ctx.beginPath(); ctx.arc(b.x,b.y,6,0,6.28); ctx.fill(); ctx.fillStyle='rgba(255,150,40,.5)'; ctx.beginPath(); ctx.arc(b.x,b.y,9,0,6.28); ctx.fill(); }
-    else { ctx.fillStyle=b.team===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); } }
+  ctx.lineCap='round';
+  for(const b of duel.bullets){ const vl=Math.hypot(b.vx||0,b.vy||0)||1, ux=(b.vx||0)/vl, uy=(b.vy||0)/vl;
+    if(b.shell){   // tank shell: glowing slug with a smoky trail
+      ctx.strokeStyle='rgba(120,110,100,.35)'; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(b.x-ux*46,b.y-uy*46); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.fillStyle='rgba(255,150,40,.45)'; ctx.beginPath(); ctx.arc(b.x,b.y,10,0,6.28); ctx.fill();
+      ctx.fillStyle='#ffe08a'; ctx.beginPath(); ctx.arc(b.x,b.y,5.5,0,6.28); ctx.fill(); }
+    else {   // tracer: team-coloured streak with a hot white core
+      const L=Math.min(26, 6+(b.t||0)*400);
+      ctx.strokeStyle=b.team===1?'rgba(126,224,106,.75)':'rgba(255,107,107,.75)'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(b.x-ux*L,b.y-uy*L); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.strokeStyle='rgba(255,255,235,.95)'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(b.x-ux*L*0.6,b.y-uy*L*0.6); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
+  ctx.lineCap='butt';
   for(const f of duel.fighters){ if(f.dead||f._inVehicle) continue; drawDuelSoldier(f, f.team===1?'#6ad06a':'#ff6b6b', f===me);
     if(f.spawnProtT>0){ ctx.save(); ctx.globalAlpha=0.3+0.25*Math.sin(performance.now()/110); ctx.strokeStyle='#7fe0ff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(f.x+DUEL_PS/2,f.y+DUEL_PS/2,DUEL_PS*0.72,0,6.28); ctx.stroke(); ctx.restore(); } }
   if(duel.campaign8){   // Mission 8: horde zombies + lab scientists
     for(const z of duel.zombies){ if(z.dead||z.x<x0-60||z.x>x1+60||z.y<y0-60||z.y>y1+60) continue; drawWarZombie(z); }
     for(const s of duel.scientists){ if(s.dead||s.x<x0-60||s.x>x1+60||s.y<y0-60||s.y>y1+60) continue; drawScientist(s); }
   }
-  if(duel.blasts) for(const bl of duel.blasts){ if(bl.t<0) continue; const pr=bl.t/0.45, r=10+pr*72; ctx.globalAlpha=1-pr;
-    ctx.fillStyle='rgba(255,150,40,'+(0.4*(1-pr))+')'; ctx.beginPath(); ctx.arc(bl.x,bl.y,r*0.62,0,6.28); ctx.fill();
-    ctx.strokeStyle='#ffb04a'; ctx.lineWidth=5*(1-pr)+1; ctx.beginPath(); ctx.arc(bl.x,bl.y,r,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
+  if(duel.blasts) for(const bl of duel.blasts){ if(bl.t<0) continue; const pr=bl.t/0.45, r=10+pr*78;   // explosion: white flash → fireball → smoke ring
+    if(pr<0.25){ ctx.fillStyle='rgba(255,250,220,'+(0.9*(1-pr/0.25))+')'; ctx.beginPath(); ctx.arc(bl.x,bl.y,24+pr*80,0,6.28); ctx.fill(); }
+    const fg=ctx.createRadialGradient(bl.x,bl.y,0,bl.x,bl.y,r*0.75);
+    fg.addColorStop(0,'rgba(255,230,140,'+(0.85*(1-pr))+')'); fg.addColorStop(0.5,'rgba(255,140,40,'+(0.6*(1-pr))+')'); fg.addColorStop(1,'rgba(120,40,10,0)');
+    ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(bl.x,bl.y,r*0.75,0,6.28); ctx.fill();
+    ctx.globalAlpha=(1-pr)*0.8; ctx.strokeStyle='#ffb04a'; ctx.lineWidth=5*(1-pr)+1; ctx.beginPath(); ctx.arc(bl.x,bl.y,r,0,6.28); ctx.stroke();
+    ctx.strokeStyle='rgba(60,52,46,.6)'; ctx.lineWidth=10*(1-pr); ctx.beginPath(); ctx.arc(bl.x,bl.y,r*1.08,0,6.28); ctx.stroke(); ctx.globalAlpha=1; }
   drawDuelBlood();
+  drawWarFx();
   if(duel.war && duel.buildings){   // roofs hide each building's interior until you step inside it
     const pcx=me?me.x+DUEL_PS/2:0, pcy=me?me.y+DUEL_PS/2:0, t=26;
     for(const bd of duel.buildings){ if(bd.x>x1||bd.x+bd.w<x0||bd.y>y1||bd.y+bd.h<y0) continue;
       const inside = me && pcx>bd.x && pcx<bd.x+bd.w && pcy>bd.y && pcy<bd.y+bd.h;
       if(inside) continue;   // you're in → see the interior
-      const rx=bd.x+t, ry=bd.y+t, rw=bd.w-2*t, rh=bd.h-2*t;
-      ctx.fillStyle='#514a40'; ctx.fillRect(rx,ry,rw,rh);
-      ctx.fillStyle='rgba(0,0,0,.16)'; for(let sx=rx+26; sx<rx+rw; sx+=30) ctx.fillRect(sx,ry,2,rh);   // rooftop panel lines
-      ctx.strokeStyle='#3a352d'; ctx.lineWidth=2; ctx.strokeRect(rx+1,ry+1,rw-2,rh-2);
+      const rx=bd.x+t, ry=bd.y+t, rw=bd.w-2*t, rh=bd.h-2*t, sd=hash2(bd.x|0,bd.y|0), horiz=rw>=rh;
+      ctx.fillStyle=['#5a5146','#4e5458','#5c4b40'][Math.floor(sd*3)]; ctx.fillRect(rx,ry,rw,rh);
+      ctx.fillStyle='rgba(0,0,0,.16)';   // corrugated sheet
+      if(horiz) for(let sx=rx+7; sx<rx+rw; sx+=14) ctx.fillRect(sx,ry,3,rh); else for(let sy=ry+7; sy<ry+rh; sy+=14) ctx.fillRect(rx,sy,rw,3);
+      ctx.fillStyle='rgba(255,255,255,.05)';
+      if(horiz) for(let sx=rx+3; sx<rx+rw; sx+=14) ctx.fillRect(sx,ry,2,rh); else for(let sy=ry+3; sy<ry+rh; sy+=14) ctx.fillRect(rx,sy,rw,2);
+      ctx.fillStyle='rgba(0,0,0,.22)'; if(horiz) ctx.fillRect(rx,ry+rh/2-3,rw,6); else ctx.fillRect(rx+rw/2-3,ry,6,rh);   // ridge cap
+      ctx.fillStyle='rgba(255,255,255,.08)'; if(horiz) ctx.fillRect(rx,ry+rh/2-3,rw,2); else ctx.fillRect(rx+rw/2-3,ry,2,rh);
+      if(sd>0.35){ const ax=rx+rw*(0.18+0.5*sd), ay=ry+rh*0.22;   // rooftop vent box
+        ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(ax+4,ay+5,46,34); ctx.fillStyle='#737b85'; ctx.fillRect(ax,ay,46,34);
+        ctx.fillStyle='#3a4048'; for(let k=0;k<4;k++) ctx.fillRect(ax+6,ay+6+k*7,34,3); ctx.strokeStyle='#2c3138'; ctx.lineWidth=1.5; ctx.strokeRect(ax,ay,46,34); }
+      ctx.strokeStyle='#2e2a25'; ctx.lineWidth=3; ctx.strokeRect(rx+1.5,ry+1.5,rw-3,rh-3);
+      ctx.strokeStyle='rgba(255,255,255,.07)'; ctx.lineWidth=2; ctx.strokeRect(rx+5,ry+5,rw-10,rh-10);
     }
   }
+  if(duel.lab) drawLabRoofs(me);
 }
 function drawMateArrow(f){   // friendly marker floating over a teammate in shootout
   const mx=f.x+DUEL_PS/2, my=f.y-18 + Math.sin(performance.now()/220)*2;
@@ -8665,15 +9357,24 @@ function drawTeamView(v){
   if(duel.war){   // war: mark EVERY living teammate as a squadmate
     for(const mate of duel.fighters){ if(mate===me || mate.dead || mate.team!==me.team) continue;
       const md=Math.hypot(mate.x-me.x, mate.y-me.y), msc=1 - Math.min(0.65, md/2600*0.65);
-      drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE', msc); }
+      drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', mate.hpMax||DUEL_HP, '', msc); }
   } else { const mate=(me._squad && !me._squad.dead && me._squad.team===me.team) ? me._squad : duel.fighters.find(f=>f!==me && f.team===me.team && !f.dead);   // shootout: your single squadmate
     if(mate){ const md=Math.hypot(mate.x-me.x, mate.y-me.y); const msc=1 - Math.min(0.65, md/2600*0.65);   // marker shrinks the farther the squadmate is
       drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:mate.x,y:mate.y,w:DUEL_PS,h:DUEL_PS,hp:mate.hp}, '#5fd3ff', DUEL_HP, 'SQUADMATE', msc); } }
-  if(duel.war && !me._inVehicle && !me.dead){   // point to the nearest empty vehicle so you can find one to drive
+  if(duel.campaign8 && duel.lab && !me.dead){   // Mission 8 objective marker
+    const lab=duel.lab, R=lab.reactor; let tgt=null, lbl='';
+    if(duel.phase==='assault'){ tgt={x:lab.entry.x, y:lab.L.y+lab.L.h-10}; lbl='LAB ENTRANCE'; }
+    else if(duel.phase==='lab'){
+      if(duel.labDoors[1].opening && duel.scientists.some(s=>s.chief && !s.dead) && !(duel.labRoom && duel.labRoom.id==='core')){ tgt={x:lab.doorCore.x+lab.doorCore.w/2, y:lab.doorCore.y}; lbl='CORE VAULT'; }
+      else if(!R.shield && !R.dead){ tgt={x:R.x, y:R.y}; lbl='REACTOR'; } }
+    const onScreen = tgt && tgt.x>camX+40 && tgt.x<camX+VW-40 && tgt.y>camY+60 && tgt.y<camY+VH-40;
+    if(tgt && !(onScreen && lbl==='REACTOR')) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:tgt.x-22,y:tgt.y-22,w:44,h:44}, '#ffd14b', 0, lbl);
+  }
+  if(duel.war && !me._inVehicle && !me.dead && !(duel.campaign8 && duel.phase!=='war')){   // point to the nearest empty vehicle so you can find one to drive
     let best=null,bd=1e9; const cx=me.x+DUEL_PS/2, cy=me.y+DUEL_PS/2;
     for(const vh of duel.vehicles){ if(vh.occupied||vh.wreck) continue; const d=Math.hypot(vh.x-cx,vh.y-cy); if(d<bd){bd=d;best=vh;} }
     if(best) drawMateMarker(v.rx,v.ry,v.rw,v.rh, camX,camY,z, {x:best.x-DUEL_PS/2,y:best.y-DUEL_PS/2,w:DUEL_PS,h:DUEL_PS}, '#ffd24a', 0, best.kind.toUpperCase()); }
-  if(duel.split){ drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-12); if(duel.war) drawWarSplitHUD(v, me); }
+  if(duel.split){ drawTeamWeaponLine(me, v.rx+10, v.ry+v.rh-(duel.war?72:12)); if(duel.war) drawWarSplitHUD(v, me); }   // war: sits above the shop row
 }
 function drawWarSplitHUD(v, me){   // per-player money + compact shop inside one split half
   const rx=v.rx, ry=v.ry, rw=v.rw, rh=v.rh;
@@ -8719,7 +9420,7 @@ function drawCommsUI(){
     // controller: inline "next order" chip — D-pad ▲▼ changes it, X sends, Y opens the full page
     const cmd=ALLY_CMDS[duel.commsSel||0];
     ctx.save(); ctx.textBaseline='middle';
-    const bx=12, by=62, bw=270, bh=32;
+    const bx=12, by=72, bw=270, bh=32;
     ctx.fillStyle='rgba(24,40,64,.92)'; roundRectPath(bx,by,bw,bh,8); ctx.fill();
     ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(bx,by,bw,bh,8); ctx.stroke();
     ctx.fillStyle='#8fd0ff'; ctx.font='bold 13px '+CF; ctx.textAlign='left'; ctx.fillText('▲▼', bx+8, by+bh/2+1);
@@ -8755,27 +9456,102 @@ function drawCommsUI(){
   ctx.fillStyle='#9fb0c9'; ctx.font='11px '+CF; ctx.textAlign='center'; ctx.fillText(hint, W/2, rs[rs.length-1].y+rs[rs.length-1].h+18);
   ctx.restore();
 }
+// ---- war HUD pieces ----
+function warScorePills(mine, theirs, goal){   // two progress pills: your team (left) vs the enemy (right)
+  const pw=Math.min(220, W*0.27), ph=24, y=8;
+  const pill=(x, label, val, c1, c2, right)=>{
+    ctx.fillStyle='rgba(6,10,14,.72)'; roundRectPath(x,y,pw,ph,12); ctx.fill();
+    const fr=clamp(val/goal,0,1), fw=Math.max(ph, pw*fr);
+    if(val>0){ const g=ctx.createLinearGradient(0,y,0,y+ph); g.addColorStop(0,c1); g.addColorStop(1,c2); ctx.fillStyle=g; ctx.globalAlpha=0.85;
+      roundRectPath(right?x+pw-fw:x, y, fw, ph, 12); ctx.fill(); ctx.globalAlpha=1; }
+    ctx.lineWidth=1.5; ctx.strokeStyle='rgba(255,255,255,.22)'; roundRectPath(x,y,pw,ph,12); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='bold 13px '+CF; ctx.textBaseline='middle';
+    ctx.textAlign=right?'right':'left'; ctx.fillText(label, right?x+pw-12:x+12, y+ph/2+1);
+    ctx.textAlign=right?'left':'right'; ctx.fillText(val+' / '+goal, right?x+12:x+pw-12, y+ph/2+1);
+    ctx.textBaseline='alphabetic'; };
+  pill(12, 'YOUR TEAM', mine, '#5fd36a', '#2f8a3c', false);
+  pill(W-12-pw, 'ENEMY', theirs, '#ff7a6b', '#b8352c', true);
+}
+function objBanner(title, sub, col, frac){   // the current objective, top-centre
+  const w=Math.min(400, W-300), h=frac!=null?54:46, x=W/2-w/2, y=6;
+  ctx.save();
+  ctx.fillStyle='rgba(6,10,14,.78)'; roundRectPath(x,y,w,h,12); ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle=col; ctx.globalAlpha=0.7; roundRectPath(x,y,w,h,12); ctx.stroke(); ctx.globalAlpha=1;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=col; ctx.font='bold 16px '+CF; ctx.fillText(title, W/2, y+16);
+  ctx.fillStyle='#cfd8e3'; ctx.font='bold 11px '+CF; ctx.fillText(sub, W/2, y+33);
+  if(frac!=null){ const bw=w-40, bx=W/2-bw/2, by=y+h-11;
+    ctx.fillStyle='rgba(255,255,255,.12)'; roundRectPath(bx,by,bw,5,3); ctx.fill();
+    ctx.fillStyle=col; roundRectPath(bx,by,Math.max(5,bw*clamp(frac,0,1)),5,3); ctx.fill(); }
+  ctx.restore();
+}
+function drawWar8HUD(me){
+  const lab=duel.lab;
+  if(duel.phase==='war'){ warScorePills(duel.score1||0, duel.score2||0, duel.warGoal); }   // race to 100 — 100 for them = mission failed
+  else if(duel.phase==='assault'){
+    const d=me ? Math.round(Math.hypot(lab.entry.x-(me.x+DUEL_PS/2), lab.L.y+lab.L.h-(me.y+DUEL_PS/2))/10) : 0;
+    objBanner('GET INSIDE THE LAB', 'the blast door is open · '+d+'m · your squad is with you', '#ffd14b');
+  } else {
+    const wingLeft=duel.scientists.filter(s=>!s.chief && !s.dead).length, chief=duel.scientists.find(s=>s.chief), R=lab.reactor;
+    if(wingLeft>0) objBanner('FIND THE SCIENTISTS', (4-wingLeft)+' of 4 down · one hides in each wing', '#7fe0ff', (4-wingLeft)/4);
+    else if(chief && !chief.dead) objBanner('KILL THE CHIEF SCIENTIST', 'the core vault is open — north of the corridor', '#ffb04a');
+    else if(!R.dead) objBanner('DESTROY THE REACTOR', Math.max(0,Math.ceil(R.hp))+' / '+R.hpMax+' armour', '#ff6b5b', R.hp/R.hpMax);
+    else objBanner('THE LAB IS GOING DOWN!', 'nice work, soldier', '#7ee06a');
+    drawLabMinimap(me);
+  }
+  if(duel.radio){ const r=duel.radio, a=Math.min(1, r.t*2, (5.5-r.t)*4), w=Math.min(470, W-40), x=W/2-w/2, y=H-118;   // the general on the radio
+    ctx.save(); ctx.globalAlpha=a;
+    ctx.fillStyle='rgba(8,14,10,.86)'; roundRectPath(x,y,w,50,10); ctx.fill();
+    ctx.fillStyle='#ffd14b'; roundRectPath(x,y,6,50,3); ctx.fill();
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillStyle='#ffd14b'; ctx.font='bold 10px '+CF; ctx.fillText('U.S. GENERAL — RADIO', x+16, y+13);
+    ctx.fillStyle='#eef4e8'; ctx.font='bold 12px '+CF; wrapText(r.text, x+16, y+31, w-28, 14);
+    ctx.restore(); }
+  if(duel.roomBanner){ const b=duel.roomBanner, a=Math.min(1, b.t*2.5, (2.4-b.t)*5);   // entering a new room
+    ctx.save(); ctx.globalAlpha=Math.max(0,a); ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.font='bold 30px '+CF; ctx.fillText(b.text, W/2+2, H*0.3+2);
+    ctx.fillStyle='#eaf6ff'; ctx.fillText(b.text, W/2, H*0.3);
+    const tw=ctx.measureText(b.text).width; ctx.fillStyle='#7fe0ff'; ctx.fillRect(W/2-tw/2, H*0.3+20, tw, 2);
+    ctx.restore(); }
+}
+function wrapText(text, x, y, maxW, lh){   // single-line if it fits, else two lines centred on y
+  if(ctx.measureText(text).width<=maxW){ ctx.fillText(text, x, y); return; }
+  const words=text.split(' '); let line='', lines=[];
+  for(const w of words){ const t=line?line+' '+w:w; if(ctx.measureText(t).width>maxW && line){ lines.push(line); line=w; } else line=t; }
+  lines.push(line); lines=lines.slice(0,2);
+  lines.forEach((l,i)=>ctx.fillText(l, x, y+(i-(lines.length-1)/2)*lh));
+}
+function drawLabMinimap(me){   // floor plan: explored rooms, scientists you've found, you and your squad
+  const lab=duel.lab, L=lab.L, mw=150, mh=Math.round(mw*L.h/L.w), x=12, y=150, sc=mw/L.w, t=performance.now()/1000;
+  ctx.save();
+  ctx.fillStyle='rgba(6,10,14,.78)'; roundRectPath(x-6,y-18,mw+12,mh+24,10); ctx.fill();
+  ctx.fillStyle='#9fb4c9'; ctx.font='bold 10px '+CF; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText('LAB MAP', x, y-9);
+  ctx.fillStyle='#14181e'; ctx.fillRect(x,y,mw,mh);
+  const cur=duel.labRoom;
+  for(const r of lab.rooms){
+    const rx=x+(r.x-L.x)*sc, ry=y+(r.y-L.y)*sc, rw=r.w*sc, rh=r.h*sc;
+    ctx.fillStyle = r===cur ? '#4f6a86' : r.seen ? '#34414f' : '#1e242c'; ctx.fillRect(rx,ry,rw,rh);
+    const sci=duel.scientists.find(s=>s.room===r);
+    if(sci && sci.dead){ ctx.strokeStyle='#7ee06a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(rx+rw/2-5,ry+rh/2); ctx.lineTo(rx+rw/2-1,ry+rh/2+4); ctx.lineTo(rx+rw/2+6,ry+rh/2-4); ctx.stroke(); }
+    else if(sci && r.seen){ ctx.fillStyle='rgba(255,90,80,'+(0.6+0.4*Math.sin(t*6))+')'; ctx.beginPath(); ctx.arc(x+(sci.x-L.x)*sc, y+(sci.y-L.y)*sc, 3, 0, 6.28); ctx.fill(); }
+    else if(!r.seen){ ctx.fillStyle='rgba(200,215,235,.35)'; ctx.font='bold 10px '+CF; ctx.textAlign='center'; ctx.fillText('?', rx+rw/2, ry+rh/2); }
+  }
+  if(lab.reactor && !lab.reactor.dead){ const R=lab.reactor; ctx.fillStyle=R.shield?'rgba(127,224,255,.8)':'rgba(255,107,91,'+(0.6+0.4*Math.sin(t*8))+')'; ctx.beginPath(); ctx.arc(x+(R.x-L.x)*sc, y+(R.y-L.y)*sc, 3.5, 0, 6.28); ctx.fill(); }
+  for(const f of duel.fighters){ if(f.dead||f.team!==1||f===me) continue; ctx.fillStyle='#5fd3ff'; ctx.fillRect(x+(f.x+DUEL_PS/2-L.x)*sc-1, y+(f.y+DUEL_PS/2-L.y)*sc-1, 2.5, 2.5); }
+  if(me && !me.dead){ const px=x+(me.x+DUEL_PS/2-L.x)*sc, py=y+(me.y+DUEL_PS/2-L.y)*sc;
+    ctx.fillStyle='#ffe14b'; ctx.strokeStyle='#000'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(clamp(px,x,x+mw), clamp(py,y,y+mh), 3.5, 0, 6.28); ctx.fill(); ctx.stroke(); }
+  ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.lineWidth=1; ctx.strokeRect(x+0.5,y+0.5,mw-1,mh-1);
+  ctx.restore();
+}
 function drawTeamHUD(){
   ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
   if(duel.war){
     const me=warMe();
-    if(duel.campaign8){
-      if(duel.phase==='lab'){
-        ctx.textAlign='center'; ctx.fillStyle='#ffd14b'; ctx.font='bold 15px '+CF;
-        ctx.fillText(duel.labEnemyN>0 ? 'CLEAR THE LAB — ENEMIES '+duel.labEnemyN
-                                      : 'KILL THE SCIENTISTS — '+duel.scientists.filter(s=>!s.dead).length+' LEFT', W/2, 20);
-        ctx.textAlign='left'; ctx.shadowBlur=0;
-      } else {   // war phase: race to 100 — enemy kills count too, and 100 for them = mission failed
-        ctx.fillStyle='#6ad06a'; ctx.font='bold 15px '+CF; ctx.textAlign='left'; ctx.fillText('YOUR TEAM  '+(duel.score1||0)+' / '+duel.warGoal, 12, 20);
-        ctx.textAlign='right'; ctx.fillStyle='#ff6b6b'; ctx.fillText((duel.score2||0)+' / '+duel.warGoal+'  ENEMY', W-12, 20);
-        ctx.textAlign='left'; ctx.shadowBlur=0;
-      }
-    } else {
-    const myScore=(me&&me.team===2)?(duel.score2||0):(duel.score1||0), foeScore=(me&&me.team===2)?(duel.score1||0):(duel.score2||0);
-    ctx.fillStyle='#6ad06a'; ctx.font='bold 15px '+CF; ctx.fillText('YOUR TEAM  '+myScore+' / '+duel.warGoal, 12, 20);
-    ctx.textAlign='right'; ctx.fillStyle='#ff6b6b'; ctx.fillText(foeScore+' / '+duel.warGoal+'  ENEMY', W-12, 20);
     ctx.shadowBlur=0;
-    }
+    if(duel.campaign8) drawWar8HUD(me);
+    else { const myScore=(me&&me.team===2)?(duel.score2||0):(duel.score1||0), foeScore=(me&&me.team===2)?(duel.score1||0):(duel.score2||0);
+      warScorePills(myScore, foeScore, duel.warGoal); }
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     if(me && me.dead && me.respawnT!=null){ ctx.save(); ctx.textAlign='center'; ctx.fillStyle='rgba(6,10,16,.66)'; roundRectPath(W/2-96, H*0.4-18, 192, 40, 9); ctx.fill();
       ctx.fillStyle='#ffd14b'; ctx.font='bold 15px '+CF; ctx.fillText('RESPAWNING… '+Math.ceil(me.respawnT), W/2, H*0.4+8); ctx.restore(); }
     // DRIVE / EXIT button — shown when driving or standing next to a vehicle
@@ -8784,8 +9560,8 @@ function drawTeamHUD(){
       ctx.fillStyle=duel.driving?'rgba(150,60,40,.92)':'rgba(40,80,50,.9)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
       ctx.lineWidth=2; ctx.strokeStyle=duel.driving?'#ff9a6a':'#7fe0a0'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
       ctx.fillStyle='#eafff0'; ctx.font='bold 13px '+CF; ctx.fillText(duel.driving?'EXIT':'DRIVE', b.x+b.w/2, b.y+b.h/2+1); ctx.restore(); }
-    if(me && me.dead) {} else if(me && duel.driving){ ctx.save(); ctx.textAlign='left'; ctx.fillStyle='#ffd8a0'; ctx.font='bold 12px '+CF; ctx.fillText(duel.driving.kind==='tank'?'TANK — fire the cannon!':'JEEP — mounted gun', 12, 66); ctx.restore(); }
-    else if(!duel.split && me) drawTeamWeaponLine(me, 12, 46);
+    if(me && me.dead) {} else if(me && duel.driving){ ctx.save(); ctx.textAlign='left'; ctx.fillStyle='#ffd8a0'; ctx.font='bold 12px '+CF; ctx.fillText(duel.driving.kind==='tank'?'TANK — fire the cannon!':'JEEP — mounted gun', 12, 62); ctx.restore(); }
+    else if(!duel.split && me) drawTeamWeaponLine(me, 12, 62);
     // cash + buy shop (solo/online only — split-screen draws its own per-player shop inside each half)
     if(!duel.split){
     const myCash=(me&&me.cash)||0;
@@ -8816,24 +9592,41 @@ function drawTeamHUD(){
   ctx.fillStyle='#6ad06a'; ctx.font='bold 14px '+CF; ctx.fillText((t1>1?'YOUR TEAM ':'YOU ')+a1+'/'+t1, 12, 20);
   ctx.textAlign='right'; ctx.fillStyle='#ff6b6b'; ctx.fillText('ENEMY '+a2+'/'+t2, W-12, 20);
   ctx.shadowBlur=0;
-  if(!duel.split && warMe()) drawTeamWeaponLine(warMe(), 12, 46);
+  if(!duel.split && warMe()) drawTeamWeaponLine(warMe(), 12, 62);
 }
 function drawTeamWeaponLine(f,x,y){
-  ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.8)'; ctx.shadowBlur=3;
-  ctx.fillStyle=f.dead?'#ff5b5b':'#6ad06a'; ctx.font='bold 12px '+CF; ctx.fillText(f.dead?'DOWN':('HP '+Math.max(0,f.hp)), x, y-15);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  const hpMax=f.hpMax||DUEL_HP, fr=clamp(Math.max(0,f.hp)/hpMax,0,1), bw=112, by=y-27;   // health bar
+  ctx.fillStyle='rgba(6,10,14,.72)'; roundRectPath(x,by,bw,12,6); ctx.fill();
+  if(!f.dead){ const g=ctx.createLinearGradient(0,by,0,by+12); const c=fr>0.5?['#7dea7a','#3c9a45']:fr>0.25?['#ffe07a','#c99a1f']:['#ff8a7a','#c0362b'];
+    g.addColorStop(0,c[0]); g.addColorStop(1,c[1]); ctx.fillStyle=g; roundRectPath(x+2,by+2,Math.max(6,(bw-4)*fr),8,4); ctx.fill(); }
+  ctx.strokeStyle='rgba(255,255,255,.2)'; ctx.lineWidth=1; roundRectPath(x,by,bw,12,6); ctx.stroke();
+  ctx.shadowColor='rgba(0,0,0,.8)'; ctx.shadowBlur=3;
+  ctx.fillStyle=f.dead?'#ff5b5b':'#e8f5e2'; ctx.font='bold 10px '+CF; ctx.fillText(f.dead?'DOWN':(Math.max(0,f.hp)+' HP'), x+bw+6, by+10);
+  ctx.font='bold 12px '+CF;
   const wpn=f.weapon||'pistol';
-  if(wpn==='pistol'){ if(f.reloadT>0){ ctx.fillStyle='#ffb15a'; ctx.fillText('RELOADING…',x,y);} else { ctx.fillStyle='#dfeed6'; ctx.fillText('PISTOL '+f.mag+'/'+DUEL_MAG,x,y);} }
+  if(wpn==='pistol'){ if(f.reloadT>0){ ctx.fillStyle='#ffb15a'; ctx.fillText('RELOADING…',x,y);} else { ctx.fillStyle='#dfeed6'; ctx.fillText('PISTOL '+f.mag+'/'+(f.magMax||DUEL_MAG),x,y);} }
   else { ctx.fillStyle=wpn==='rifle'?'#7fd0ff':'#ffd24a'; ctx.fillText((wpn==='rifle'?'RIFLE':'SHOTGUN')+' ×'+f.wammo,x,y); }
   ctx.shadowBlur=0;
 }
 function drawTeamOver(){
-  ctx.fillStyle='rgba(6,10,16,.80)'; ctx.fillRect(0,0,W,H);
+  const k=clamp((duel.overT||0)/0.35,0,1), ease=1-Math.pow(1-k,3);   // fade + slide in
+  ctx.fillStyle='rgba(6,10,16,'+(0.78*ease)+')'; ctx.fillRect(0,0,W,H);
   const win=duel.winner===1;
-  ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  const title = duel.campaign8 ? (win?'LAB DESTROYED!':'YOU DIED') : (win?'YOUR TEAM WINS! ':'ENEMY WINS');
-  ctx.fillStyle=win?'#7ee06a':'#ff7a7a'; ctx.font='bold 34px '+CF; ctx.fillText(title, W/2, H/2-8); ctx.shadowBlur=0;
-  ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
-  ctx.fillStyle='#e6f2df'; ctx.font='bold 15px '+CF; ctx.fillText(duel.split?'any button to leave':'tap to leave', W/2, H/2+28); ctx.globalAlpha=1;
+  const title = duel.campaign8 ? (win?'LAB DESTROYED!':(duel.phase==='war'?'THE ENEMY GOT 100':'YOU DIED')) : (win?'YOUR TEAM WINS!':'ENEMY WINS');
+  const sub = duel.campaign8 ? (win?'The Zombifiers’ reactor is rubble.':'Regroup and try again, soldier.')
+            : duel.war ? ('FINAL  '+(duel.score1||0)+'  —  '+(duel.score2||0)) : (win?'Clean work out there.':'They got you this time.');
+  const col=win?'#7ee06a':'#ff7a7a', cw=Math.min(440,W-40), ch=150, cx=W/2-cw/2, cy=H/2-ch/2+(1-ease)*30;
+  ctx.save(); ctx.globalAlpha=ease;
+  ctx.fillStyle='rgba(10,16,22,.92)'; roundRectPath(cx,cy,cw,ch,18); ctx.fill();
+  ctx.lineWidth=2.5; ctx.strokeStyle=col; roundRectPath(cx,cy,cw,ch,18); ctx.stroke();
+  ctx.fillStyle=col; roundRectPath(cx+cw/2-60,cy-3,120,6,3); ctx.fill();
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
+  ctx.fillStyle=col; ctx.font='bold 34px '+CF; ctx.fillText(title, W/2, cy+50); ctx.shadowBlur=0;
+  ctx.fillStyle='#cfd8e3'; ctx.font='bold 14px '+CF; ctx.fillText(sub, W/2, cy+86);
+  ctx.globalAlpha=ease*(0.55+0.45*Math.abs(Math.sin(performance.now()/400)));
+  ctx.fillStyle='#e6f2df'; ctx.font='bold 14px '+CF; ctx.fillText(duel.split?'any button to leave':'tap to continue', W/2, cy+122);
+  ctx.restore(); ctx.textBaseline='alphabetic';
 }
 // is the straight line between two duelists blocked by a wall?
 function aiLineBlocked(a,b){
