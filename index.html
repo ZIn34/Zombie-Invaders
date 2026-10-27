@@ -220,9 +220,26 @@ function renderFrame(){
     try{ render(); } finally { W=_W; H=_H; }
     ctx.restore();
     ctx.save(); ctx.strokeStyle='rgba(120,150,120,.35)'; ctx.lineWidth=2; ctx.strokeRect(offX+1, 1, cardW-2, H-2); ctx.restore();
+    syncCursor(false);
     return;
   }
   render();
+  drawCrosshair();
+}
+// keyboard + mouse: a small crosshair (plus with a centre dot) under the mouse while aiming; the system cursor hides over the canvas
+function crosshairOn(){ return isAimState() && lastPtr==='mouse' && mouseW.on && !Pad.connected; }
+function syncCursor(on){ const c=on?'none':''; if(canvas.style.cursor!==c) canvas.style.cursor=c; }
+function drawCrosshair(){
+  const on=crosshairOn(); syncCursor(on); if(!on) return;
+  const x=Math.round(mouseW.x)+0.5, y=Math.round(mouseW.y)+0.5, g=3, L=7;
+  ctx.save(); ctx.lineCap='round';
+  for(const [col,lw] of [['rgba(0,0,0,.65)',4],['#ffffff',1.8]]){   // dark outline, then white so it reads on any ground
+    ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.beginPath();
+    ctx.moveTo(x-g-L,y); ctx.lineTo(x-g,y); ctx.moveTo(x+g,y); ctx.lineTo(x+g+L,y);
+    ctx.moveTo(x,y-g-L); ctx.lineTo(x,y-g); ctx.moveTo(x,y+g); ctx.lineTo(x,y+g+L); ctx.stroke(); }
+  ctx.fillStyle='rgba(0,0,0,.65)'; ctx.beginPath(); ctx.arc(x,y,2.4,0,6.28); ctx.fill();
+  ctx.fillStyle='#ff4b4b'; ctx.beginPath(); ctx.arc(x,y,1.4,0,6.28); ctx.fill();
+  ctx.restore();
 }
 window.addEventListener('resize', ()=>{ syncViewport(); fit(); }); fit();
 
