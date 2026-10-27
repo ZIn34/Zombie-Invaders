@@ -447,14 +447,48 @@ const Music = (() => {
 /* ============================ INPUT =================================== */
 const keys = {};
 const pressed = {};
+// Older / console browsers (e.g. the Switch's) may leave e.code empty and only fill keyCode — rebuild the code from it.
+const KEYCODE_NAMES={8:'Backspace',9:'Tab',13:'Enter',27:'Escape',32:'Space',37:'ArrowLeft',38:'ArrowUp',39:'ArrowRight',40:'ArrowDown'};
+function keyCodeOf(e){
+  if(e.code) return e.code;
+  const k=e.keyCode||e.which||0;
+  if(KEYCODE_NAMES[k]) return KEYCODE_NAMES[k];
+  if(k>=65&&k<=90) return 'Key'+String.fromCharCode(k);
+  if(k>=48&&k<=57) return 'Digit'+(k-48);
+  return e.key||'';
+}
+const FIRE_ALIASES=['Enter','NumpadEnter'];   // a D-pad + A button often arrives as arrows + Enter: Enter fires too
 window.addEventListener('keydown', e=>{
-  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
-  if(!keys[e.code]) pressed[e.code]=true;
-  keys[e.code]=true;
+  const code=keyCodeOf(e); inputSeen.key=(e.key||'?')+' / '+(e.code||'(none)')+' / '+(e.keyCode||0);
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space','Enter'].includes(code)) e.preventDefault();
+  if(!keys[code]) pressed[code]=true;
+  keys[code]=true;
+  if(FIRE_ALIASES.includes(code)){ if(!keys['Space']) pressed['Space']=true; keys['Space']=true; }
   Sound.resume(); Music.start();
-  if(e.code==='KeyM'){ const m=Sound.toggle(); Music.refresh(); toast(m?'MUTED':'SOUND ON'); }
+  if(code==='KeyM'){ const m=Sound.toggle(); Music.refresh(); toast(m?'MUTED':'SOUND ON'); }
 });
-window.addEventListener('keyup', e=>{ keys[e.code]=false; });
+window.addEventListener('keyup', e=>{ const code=keyCodeOf(e); keys[code]=false; if(FIRE_ALIASES.includes(code)) keys['Space']=false; });
+window.addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });   // never leave a key stuck down
+// INPUT CHECK: open the game with ?input to see what this browser sends (controllers, keys, pointer)
+const inputSeen={key:'—', ptr:'—'};
+if(/[?&]input\b/.test(location.search)){
+  const box=document.createElement('div');
+  box.style.cssText='position:fixed;left:6px;top:6px;z-index:99999;max-width:92vw;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.82);color:#9f9;font:12px/1.45 monospace;pointer-events:none;white-space:pre-wrap';
+  if(document.body) document.body.appendChild(box); else document.addEventListener('DOMContentLoaded', ()=>document.body.appendChild(box));
+  window.addEventListener('pointerdown', e=>{ inputSeen.ptr=e.pointerType||'?'; }, true);
+  setInterval(()=>{
+    const L=['INPUT CHECK (press buttons, move sticks, tap)', 'Gamepad API: '+(navigator.getGamepads?'yes':'NO')];
+    const gs=navigator.getGamepads?Array.from(navigator.getGamepads()).filter(Boolean):[];
+    L.push('Controllers seen: '+gs.length);
+    for(const g of gs){ const b=[]; (g.buttons||[]).forEach((x,i)=>{ if(x&&x.pressed) b.push(i); });
+      L.push('  '+g.id.slice(0,40)+' ['+(g.mapping||'no mapping')+']');
+      L.push('  buttons down: '+(b.join(',')||'none')+'  sticks: '+(g.axes||[]).map(a=>a.toFixed(1)).join(' ')); }
+    L.push('Last key (key / code / keyCode): '+inputSeen.key);
+    L.push('Last touch/click: '+inputSeen.ptr);
+    L.push('Touchscreen: '+((('ontouchstart' in window)||navigator.maxTouchPoints>0)?'yes':'no'));
+    box.textContent=L.join('\n');
+  }, 200);
+}
 
 // Touch controls: analog joystick (move) + fire button
 const touch = {mvx:0,mvy:0,fire:false, aimx:0,aimy:0,aimActive:false, aimTurn:false, gaim:0, gaimActive:false, lookx:0,looky:0,lookActive:false};
@@ -2802,13 +2836,21 @@ function aimThrough(cx, cy, tx, ty, muzzleAt){
   for(let i=0;i<4;i++){ const m=muzzleAt(a); a=Math.atan2(ty-m.y, tx-m.x); }
   return a;
 }
+// keyboard-only players (no mouse over the game, e.g. a console browser's D-pad): face the way you walk
+function keyMoveAim(){
+  if(crosshairOn()) return null;
+  let x=0,y=0;
+  if(keys['ArrowLeft']||keys['KeyA'])x--; if(keys['ArrowRight']||keys['KeyD'])x++;
+  if(keys['ArrowUp']||keys['KeyW'])y--;   if(keys['ArrowDown']||keys['KeyS'])y++;
+  return (x||y) ? Math.atan2(y,x) : null;
+}
 // manual aim from the aim stick or a screen tap (cam has camX/camY); null if neither is active
 function aimAngleFromInput(p, cam){
   if(touch.gaimActive) return touch.gaim;   // gamepad left stick aims
   if(touch.aimActive) return Math.atan2(touch.aimy, touch.aimx);
   if(tapAim.active){ const zz=cam.zoom||1, wx=cam.camX+tapAim.x/zz, wy=cam.camY+tapAim.y/zz;
     return aimThrough(p.x+p.w/2, p.y+p.h/2, wx, wy, a=>{ const o=p.aim; p.aim=a; const m=playerFlashMuzzle(p); p.aim=o; return m; }); }
-  return null;
+  return keyMoveAim();
 }
 // the exact world point bullets leave from in twin-stick modes (rotates with aim) — the flash uses this too
 function explorePlayerMuzzle(p){
@@ -8502,6 +8544,7 @@ function humanDuelInputFor(f){
   else if(touch.aimTurn){ aim=Math.atan2(touch.aimy,touch.aimx); }   // stick turns the player; fire from the button
   else if(tapAim.active){ const z=duel.zoom||1;
     aim=aimThrough(f.x+DUEL_PS/2, f.y+DUEL_PS/2, duel.camX+tapAim.x/z, duel.camY+tapAim.y/z, a=>duelFlashPoint(Object.assign({}, f, {aim:a}))); fire=true; }
+  if(aim==null) aim=keyMoveAim();
   if(keys['Space']||touch.fire) fire=true;
   return {mvx,mvy,aim,fire};
 }
@@ -9751,6 +9794,7 @@ function duelLocalInput(){
   else if(touch.aimTurn){ aim=Math.atan2(touch.aimy,touch.aimx); }   // stick turns the player; fire from the button
   else if(tapAim.active && duel){ const me=duel[duel.meKey], z=duel.zoom||1;    // tap the screen to aim + fire there
     aim=aimThrough(me.x+DUEL_PS/2, me.y+DUEL_PS/2, duel.camX+tapAim.x/z, duel.camY+tapAim.y/z, a=>duelFlashPoint(Object.assign({}, me, {aim:a}))); fire=true; }
+  if(aim==null) aim=keyMoveAim();
   if(keys['Space']||touch.fire) fire=true;
   return {mvx,mvy,aim,fire};
 }
