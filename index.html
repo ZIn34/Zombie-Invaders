@@ -2793,11 +2793,21 @@ function zOnScreen(z){
   const zm=ex.zoom||1;
   return cx>=ex.camX-10 && cx<=ex.camX+W/zm+10 && cy>=ex.camY-10 && cy<=ex.camY+H/zm+10;
 }
+// Aim so the BULLET hits the point you clicked. Shots leave the gun muzzle, which sits off to the gun-hand side of the
+// body, so aiming from the body centre made every shot land to the right of the crosshair. Solve for the angle whose
+// muzzle line passes through the target (a few quick refinements; very close targets fall back to the centre angle).
+function aimThrough(cx, cy, tx, ty, muzzleAt){
+  let a=Math.atan2(ty-cy, tx-cx);
+  if(Math.hypot(tx-cx, ty-cy)<46) return a;
+  for(let i=0;i<4;i++){ const m=muzzleAt(a); a=Math.atan2(ty-m.y, tx-m.x); }
+  return a;
+}
 // manual aim from the aim stick or a screen tap (cam has camX/camY); null if neither is active
 function aimAngleFromInput(p, cam){
   if(touch.gaimActive) return touch.gaim;   // gamepad left stick aims
   if(touch.aimActive) return Math.atan2(touch.aimy, touch.aimx);
-  if(tapAim.active){ const zz=cam.zoom||1, wx=cam.camX+tapAim.x/zz, wy=cam.camY+tapAim.y/zz; return Math.atan2(wy-(p.y+p.h/2), wx-(p.x+p.w/2)); }
+  if(tapAim.active){ const zz=cam.zoom||1, wx=cam.camX+tapAim.x/zz, wy=cam.camY+tapAim.y/zz;
+    return aimThrough(p.x+p.w/2, p.y+p.h/2, wx, wy, a=>{ const o=p.aim; p.aim=a; const m=playerFlashMuzzle(p); p.aim=o; return m; }); }
   return null;
 }
 // the exact world point bullets leave from in twin-stick modes (rotates with aim) — the flash uses this too
@@ -8489,7 +8499,8 @@ function humanDuelInputFor(f){
   if(touch.gaimActive){ aim=touch.gaim; }
   else if(touch.aimActive){ aim=Math.atan2(touch.aimy,touch.aimx); fire=true; }
   else if(touch.aimTurn){ aim=Math.atan2(touch.aimy,touch.aimx); }   // stick turns the player; fire from the button
-  else if(tapAim.active){ const z=duel.zoom||1; aim=Math.atan2((duel.camY+tapAim.y/z)-(f.y+DUEL_PS/2),(duel.camX+tapAim.x/z)-(f.x+DUEL_PS/2)); fire=true; }
+  else if(tapAim.active){ const z=duel.zoom||1;
+    aim=aimThrough(f.x+DUEL_PS/2, f.y+DUEL_PS/2, duel.camX+tapAim.x/z, duel.camY+tapAim.y/z, a=>duelFlashPoint(Object.assign({}, f, {aim:a}))); fire=true; }
   if(keys['Space']||touch.fire) fire=true;
   return {mvx,mvy,aim,fire};
 }
@@ -9737,7 +9748,7 @@ function duelLocalInput(){
   else if(touch.aimActive){ aim=Math.atan2(touch.aimy,touch.aimx); fire=true; }   // aim stick aims + fires
   else if(touch.aimTurn){ aim=Math.atan2(touch.aimy,touch.aimx); }   // stick turns the player; fire from the button
   else if(tapAim.active && duel){ const me=duel[duel.meKey], z=duel.zoom||1;    // tap the screen to aim + fire there
-    aim=Math.atan2((duel.camY+tapAim.y/z)-(me.y+DUEL_PS/2), (duel.camX+tapAim.x/z)-(me.x+DUEL_PS/2)); fire=true; }
+    aim=aimThrough(me.x+DUEL_PS/2, me.y+DUEL_PS/2, duel.camX+tapAim.x/z, duel.camY+tapAim.y/z, a=>duelFlashPoint(Object.assign({}, me, {aim:a}))); fire=true; }
   if(keys['Space']||touch.fire) fire=true;
   return {mvx,mvy,aim,fire};
 }
