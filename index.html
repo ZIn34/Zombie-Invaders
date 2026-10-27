@@ -9971,10 +9971,10 @@ function drawDuelPickup(k){
   ctx.fillText(k.type==='rifle'?'RIF':'SG', k.x, k.y+1); ctx.textBaseline='alphabetic';
   ctx.restore();
 }
-function drawDuelHUD(){   // 1v1: same pills + health/weapon line as the team shootouts
+function drawDuelHUD(){   // 1v1: same pills (fighters left) + health/weapon line as the team shootouts
   const me=duel[duel.meKey], foe=duel[duel.foeKey];
-  const mh=me.hpMax||DUEL_HP, fh=foe.hpMax||DUEL_HP;
-  drawSidePills('YOU', Math.max(0,me.hp)+' HP', me.hp/mh, duel.campaign5?'ENEMY SOLDIER':'ENEMY', Math.max(0,foe.hp)+' HP', foe.hp/fh);
+  const a1=me.hp>0?1:0, a2=foe.hp>0?1:0;
+  drawSidePills('YOU', a1+' / 1', a1, duel.campaign5?'ENEMY SOLDIER':'ENEMY', a2+' / 1', a2);
   drawTeamWeaponLine(me, 12, 62);
 }
 function drawDuelOver(){
