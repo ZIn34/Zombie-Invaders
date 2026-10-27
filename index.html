@@ -4535,6 +4535,7 @@ function drawGun(p, artHasGun){
 
 function drawPlayer(){ drawPlayerObj(player, !!explore); }
 function drawPlayerObj(p, faceAim){
+  if(faceAim && p.aim!=null && isAimState() && p===player){ const m=playerFlashMuzzle(p); drawAimLine(m.x, m.y, p.aim, null); }   // twin-stick modes: aim line from the gun
   if(p.down){   // downed co-op player: a faint ghost that can roam the map as a spectator
     const cx=p.x+p.w/2, fy=p.y+p.h;
     ctx.save(); ctx.globalAlpha=0.28; ctx.translate(cx,fy);
@@ -8748,7 +8749,8 @@ function duelAdvanceLook(me){   // smooth a "look" vector toward wherever the pl
   if(!duel) return;
   let ang=null;
   if(touch.lookActive) ang=Math.atan2(touch.looky, touch.lookx);   // mobile: the look stick pans the view
-  else if(me && me.aim!=null) ang=me.aim;                          // otherwise follow the aim/mouse direction
+  else if(crosshairOn()) ang=null;   // mouse: keep the camera steady so the spot under the crosshair stays put while you fire
+  else if(me && me.aim!=null) ang=me.aim;                          // otherwise follow the aim direction (sticks / pad)
   const cx=(ang==null)?0:Math.cos(ang), cy=(ang==null)?0:Math.sin(ang);
   if(duel._lvx==null){ duel._lvx=cx; duel._lvy=cy; }
   else { const k=0.10; duel._lvx+=(cx-duel._lvx)*k; duel._lvy+=(cy-duel._lvy)*k; }
@@ -9902,7 +9904,22 @@ function drawDuelSoldier(pl, ring, isMe){
   if(pl.flash>0 && sil){ ctx.globalAlpha=Math.min(1,pl.flash*6); ctx.drawImage(sil,-w/2,-h/2,w,h); ctx.globalAlpha=1; }
   ctx.restore();
   drawMuzzleFlash(pl);
-  if(isMe){ ctx.fillStyle=ring; ctx.beginPath(); ctx.moveTo(cx,pl.y-14); ctx.lineTo(cx-6,pl.y-24); ctx.lineTo(cx+6,pl.y-24); ctx.closePath(); ctx.fill(); }
+  if(isMe){ ctx.fillStyle=ring; ctx.beginPath(); ctx.moveTo(cx,pl.y-14); ctx.lineTo(cx-6,pl.y-24); ctx.lineTo(cx+6,pl.y-24); ctx.closePath(); ctx.fill();
+    if(pl.aim!=null){ const m=duelFlashPoint(pl); drawAimLine(m.x, m.y, pl.aim, (x,y)=>duelBlocks(x-2,y-2,4,4)); } }
+}
+// red dotted aim line from the gun (aim stick, controller and mouse). Stops at the first wall when the walls are known.
+function drawAimLine(mx, my, aim, blocks){
+  const L=320, ux=Math.cos(aim), uy=Math.sin(aim); let len=L;
+  if(blocks){ for(let d=10; d<=L; d+=10){ if(blocks(mx+ux*d, my+uy*d)){ len=d-4; break; } } }
+  if(len<12) return;
+  const g=ctx.createLinearGradient(mx,my,mx+ux*L,my+uy*L); g.addColorStop(0,'rgba(255,70,60,.9)'); g.addColorStop(1,'rgba(255,70,60,0)');
+  ctx.save(); ctx.lineCap='round'; ctx.setLineDash([1,9]); ctx.lineDashOffset=-((performance.now()/35)%10);
+  ctx.strokeStyle='rgba(40,0,0,.45)'; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(mx+ux*8,my+uy*8); ctx.lineTo(mx+ux*len,my+uy*len); ctx.stroke();   // dark halo so it reads on bright ground
+  ctx.strokeStyle=g; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(mx+ux*8,my+uy*8); ctx.lineTo(mx+ux*len,my+uy*len); ctx.stroke();
+  ctx.setLineDash([]);
+  if(len<L){ const a=0.9*(1-len/L)+0.15, ex=mx+ux*len, ey=my+uy*len;   // the dot where it meets a wall
+    ctx.fillStyle='rgba(255,70,60,'+a+')'; ctx.beginPath(); ctx.arc(ex,ey,3,0,6.28); ctx.fill(); }
+  ctx.restore();
 }
 // shared muzzle-flash: draws the current recoil frame at (mx,my), flame pointing along `aim`.
 // The art points UP by default, so we rotate by aim+π/2 and anchor the barrel end at the bottom.
