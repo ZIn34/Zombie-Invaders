@@ -26,8 +26,7 @@
   }
   #stage{
     position:relative; display:flex; flex-direction:column;
-    box-shadow:0 0 0 3px #1c2b18, 0 0 60px rgba(93,255,106,.15), 0 20px 60px rgba(0,0,0,.7);
-    border-radius:10px; overflow:hidden; background:#04070b;
+    overflow:hidden; background:#04070b;   /* full-bleed: the canvas fills the whole window */
   }
   canvas{display:block; image-rendering:auto; filter:saturate(0.78) contrast(1.14) brightness(0.88);}
   /* dedicated control bar below the play field — never overlaps gameplay */
@@ -167,32 +166,39 @@ function syncControls(){   // only show the joystick/pause/fire bar during actua
     if(want!==_aimLbl){ _aimLbl=want; const l=aj.querySelector('.aimlbl'); if(l) l.textContent=want; } }
 }
 
-/* ---------- Fit stage to viewport while keeping aspect ratio ---------- */
+/* ---------- Full-screen stage ----------
+   The canvas always fills the window (backing store at screen resolution, so it's crisp). The game draws in logical
+   units (W×H) through VIEW: gameplay views and wide screens stretch W×H to the window's shape so the world fills it;
+   fixed-layout screens (portrait horde modes, portrait menus) keep their 430×560 layout, centred over the game's own
+   grass backdrop instead of black bars. */
 const PORT_DIMS={w:430,h:560}, LAND_DIMS={w:760,h:430};
-let _landActive=false;
+let _landActive=false, _booted=false;
+const VIEW={s:1, ox:0, oy:0, flex:false};
+function flexState(){ return _booted && (_landActive || isAimState()); }   // these screens lay out against any W×H
 function fit(){
-  const pad = 14;
-  // reserve the control-bar height only when it's actually shown; menus/portrait-in-landscape just pillarbox (green sides)
-  const ctrlH = _landActive ? 0 : (_ctrlShown ? 150 : 0);
-  const availW = window.innerWidth - pad, availH = window.innerHeight - pad - ctrlH;
-  const scale = Math.min(availW / W, availH / H, _landActive ? 2.4 : 1.5);
-  const stage = document.getElementById('stage');
-  const controls = document.getElementById('controls');
-  canvas.style.width = (W*scale)+'px';
-  canvas.style.height = (H*scale)+'px';
-  if(controls) controls.style.height = _landActive ? '' : (ctrlH+'px');
-  stage.style.width = (W*scale)+'px';
+  const overlay = _landActive || window.innerWidth>window.innerHeight;   // wide window: touch controls float over the field's edges
+  document.body.classList.toggle('landscape', overlay);
+  const ctrlH = overlay ? 0 : (_ctrlShown ? 150 : 0);   // tall window: the touch-control bar sits under the canvas
+  const cw=Math.max(1, window.innerWidth), ch=Math.max(1, window.innerHeight-ctrlH);
+  const stage=document.getElementById('stage'), controls=document.getElementById('controls');
+  canvas.style.width=cw+'px'; canvas.style.height=ch+'px'; stage.style.width=cw+'px';
+  if(controls) controls.style.height = overlay ? '' : (ctrlH+'px');
+  let dpr=Math.min(window.devicePixelRatio||1, 2); if(cw*ch*dpr*dpr>2.8e6) dpr=Math.sqrt(2.8e6/(cw*ch));   // cap the pixel count for speed
+  const bw=Math.round(cw*dpr), bh=Math.round(ch*dpr);
+  if(canvas.width!==bw || canvas.height!==bh){ canvas.width=bw; canvas.height=bh; }
+  const base=_landActive?LAND_DIMS:PORT_DIMS, flex=flexState(), asp=cw/ch;
+  let w=base.w, h=base.h;
+  if(flex){ if(asp>=base.w/base.h){ w=Math.round(base.h*asp); } else { h=Math.round(base.w/asp); } }   // grow the short side to the window's shape
+  const sc=Math.min(bw/w, bh/h);
+  VIEW.s=sc; VIEW.ox=(bw-w*sc)/2; VIEW.oy=(bh-h*sc)/2; VIEW.flex=flex;
+  const changed=(w!==W || h!==H); W=w; H=h;
+  if(changed && _booted){ if(typeof layoutBuildBar==='function') layoutBuildBar(); if(typeof layoutMenu==='function') layoutMenu(); }
   if(typeof applyFireBtnPos==='function') applyFireBtnPos();   // keep a custom-placed fire button aligned to the canvas
 }
-// switch to a wide landscape canvas when the phone is sideways during twin-stick play
+// switch between the wide (landscape) and tall (portrait) layouts
 function applyViewport(){
-  const d=_landActive?LAND_DIMS:PORT_DIMS;
-  if(canvas.width!==d.w || canvas.height!==d.h){ canvas.width=d.w; canvas.height=d.h; }
-  W=d.w; H=d.h;
-  if(typeof layoutBuildBar==='function'){ layoutBuildBar(); }
-  if(typeof layoutMenu==='function'){ layoutMenu(); }
-  document.body.classList.toggle('landscape', _landActive);
   fit();
+  if(_booted){ if(typeof layoutBuildBar==='function') layoutBuildBar(); if(typeof layoutMenu==='function') layoutMenu(); }
 }
 function fullLandState(){ return state===STATE.MENU || isAimState(); }   // screens that fill the wide canvas natively
 function portraitOnlyState(){   // portrait-designed gameplay that must keep the tall canvas
@@ -205,12 +211,25 @@ function syncViewport(){
   const wide = window.innerWidth > window.innerHeight;
   const want = wide && !portraitOnlyState();   // full-land gameplay/menu AND card screens all use the wide canvas
   if(want!==_landActive){ _landActive=want; applyViewport(); }
+  else if(flexState()!==VIEW.flex) fit();   // e.g. menu → portrait horde mode: switch between stretched and centred
 }
 function stagePortrait(){   // classic horde modes lay out against the tall canvas — switch BEFORE building the wave
   if(_landActive){ _landActive=false; applyViewport(); }
 }
-// draw a portrait screen (430×560 layout) as a centred card on the wide landscape canvas
 function renderFrame(){
+  ctx.setTransform(1,0,0,1,0,0);
+  const box = VIEW.ox>0.5 || VIEW.oy>0.5;   // fixed layout narrower than the screen → fill the rest with the grass backdrop
+  const seam = box && state!==STATE.MENU;     // the menu IS the grass, so it blends in with no frame
+  if(box){ const _W=W,_H=H; W=canvas.width/VIEW.s; H=canvas.height/VIEW.s;
+    ctx.setTransform(VIEW.s,0,0,VIEW.s,0,0);
+    try{ drawBackground(); } finally { W=_W; H=_H; }
+    if(seam){ ctx.fillStyle='rgba(4,8,4,0.5)'; ctx.fillRect(0,0,canvas.width/VIEW.s,canvas.height/VIEW.s); } }
+  ctx.setTransform(VIEW.s,0,0,VIEW.s,VIEW.ox,VIEW.oy);
+  if(box){ ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip(); }
+  try{ renderView(); } finally { if(box) ctx.restore(); if(seam){ ctx.save(); ctx.strokeStyle='rgba(120,150,120,.35)'; ctx.lineWidth=2; ctx.strokeRect(1,1,W-2,H-2); ctx.restore(); } }
+}
+// draw a portrait screen (430×560 layout) as a centred card on the wide landscape canvas
+function renderView(){
   if(uiCard()){
     const SW=PORT_DIMS.w, SH=PORT_DIMS.h, sc=H/SH, cardW=SW*sc, offX=Math.round((W-cardW)/2);
     drawBackground();                                                    // grass fills the whole wide canvas as a backdrop
@@ -502,8 +521,9 @@ function togglePause(){
 // tap canvas to start / restart / open tutorial
 function canvasPoint(e){
   const r=canvas.getBoundingClientRect();
-  const cx=(e.clientX-r.left)*(canvas.width/r.width), cy=(e.clientY-r.top)*(canvas.height/r.height);   // physical canvas coords
-  if(uiCard()){ const SH=PORT_DIMS.h, sc=canvas.height/SH, offX=(canvas.width-PORT_DIMS.w*sc)/2;
+  const bx=(e.clientX-r.left)*(canvas.width/r.width), by=(e.clientY-r.top)*(canvas.height/r.height);   // backing-store pixels
+  const cx=(bx-VIEW.ox)/VIEW.s, cy=(by-VIEW.oy)/VIEW.s;                                                // → logical W×H units
+  if(uiCard()){ const SH=PORT_DIMS.h, sc=H/SH, offX=(W-PORT_DIMS.w*sc)/2;
     return { x:(cx-offX)/sc, y:cy/sc }; }   // map into the portrait card's 430×560 space
   return { x:cx, y:cy };
 }
@@ -10377,6 +10397,7 @@ function drawNetCard(title, r, y){
 }
 
 /* ============================ GO ==================================== */
+_booted=true; fit(); layoutBuildBar(); layoutMenu();
 requestAnimationFrame(loop);
 })();
 </script>
