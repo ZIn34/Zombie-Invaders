@@ -4898,8 +4898,10 @@ function drawToast(){
   const a=clamp(toastT/0.5,0,1);
   ctx.globalAlpha=a;
   ctx.textAlign='center'; ctx.font='bold 19px "Comic Sans MS","Comic Neue",system-ui,sans-serif';
+  let tf=19; while(tf>12 && ctx.measureText(toastMsg).width>W-60){ tf--; ctx.font='bold '+tf+'px "Comic Sans MS","Comic Neue",system-ui,sans-serif'; }   // fit narrow screens
   const pop=1+0.18*clamp((toastT-1.42)/0.18,0,1), tw=ctx.measureText(toastMsg).width;   // little pop as it appears
-  ctx.save(); ctx.translate(W/2, 72); ctx.scale(pop,pop);
+  const ty=(state===STATE.DUEL)?Math.max(120, H*0.27):72;
+  ctx.save(); ctx.translate(W/2, ty); ctx.scale(pop,pop);
   ctx.fillStyle='rgba(6,12,6,.55)'; roundRectPath(-tw/2-18,-17,tw+36,30,15); ctx.fill();
   ctx.fillStyle='#0a2a06'; ctx.fillText(toastMsg, 2, 6+2);
   ctx.fillStyle='#ffe14b'; ctx.fillText(toastMsg, 0, 6);
@@ -7357,28 +7359,19 @@ function drawTargetPractice(){
   ctx.fillStyle='#252d3c'; ctx.fillRect(0,0,W,H);
   ctx.save(); ctx.scale(z,z); ctx.translate(-cx,-cy);
   const x0=cx-10, y0=cy-10, x1=cx+W/z+10, y1=cy+H/z+10;
-  for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-    ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
-  for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+  drawArenaFloor(x0,y0,x1,y1);
   drawDuelSplats();
   for(const k of duel.pickups){ if(k.taken) continue; drawDuelPickup(k); }
   for(const tg of duel.targets) drawTargetObj(tg);
-  for(const b of duel.bullets){ ctx.fillStyle='#7ee06a'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); }
+  drawDuelBullets(()=>'#7ee06a');
   drawDuelSoldier(duel.p1, '#6ad06a', true);
   drawDuelBlood();
   ctx.restore();
   drawGloom(0.4);
   const pl=duel.p1;
-  ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
-  ctx.fillStyle='#ffe14b'; ctx.font='bold 15px '+CF; ctx.fillText('TARGET PRACTICE', 14, 28);
-  ctx.fillStyle='#eafff0'; ctx.font='bold 14px '+CF; ctx.fillText('HITS: '+(duel.hits||0), 14, 48);
-  ctx.textAlign='right'; ctx.fillStyle=(pl.reloadT>0)?'#ff5b5b':'#ffe14b';
-  ctx.fillText(pl.reloadT>0?'RELOAD':(''+pl.mag), W-14, 28); ctx.shadowBlur=0;
-  ctx.textAlign='center'; ctx.fillStyle='#bcd0ff'; ctx.font='11px '+CF; ctx.fillText('pause to leave', W/2, H-12);
+  hudPill(12, 8, Math.min(260, W-24), 'TARGET PRACTICE', 'HITS '+(duel.hits||0), null, PILL_GREEN, false);
+  drawTeamWeaponLine(pl, 12, 62);
+  ctx.textAlign='center'; ctx.fillStyle='#bcd0ff'; ctx.font='11px '+CF; ctx.fillText('pause to leave', W/2, H-12); ctx.textAlign='left';
 }
 /* ===== CAMPAIGN MISSION 5 — gun-zombie shootout ===== */
 function setupShootout5(){
@@ -7467,16 +7460,10 @@ function drawDuelWorldClipped(hv, z){
   ctx.fillStyle='#252d3c'; ctx.fillRect(hv.rx,hv.ry,hv.rw,hv.rh);
   ctx.translate(hv.rx,hv.ry); ctx.scale(z,z); ctx.translate(-Math.round(camX),-Math.round(camY));
   const x0=camX-10, y0=camY-10, x1=camX+VW+10, y1=camY+VH+10;
-  for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-    ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
-  for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+  drawArenaFloor(x0,y0,x1,y1);
   drawDuelSplats();
   for(const k of duel.pickups){ if(k.taken) continue; drawDuelPickup(k); }
-  for(const b of duel.bullets){ ctx.fillStyle=DUEL_COLS[((b.own||1)-1)%4]; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); }
+  drawDuelBullets(b=>DUEL_COLS[((b.own||1)-1)%4]);
   { const ps=duel.locals||[duel.p1,duel.p2];
     for(let i=0;i<ps.length;i++){ if(!ps[i].dead) drawDuelSoldier(ps[i], DUEL_COLS[i], me===ps[i]); } }
   drawDuelBlood();
@@ -7519,31 +7506,14 @@ function drawDuelHalfHUD(hv){
     ctx.fillStyle=hv.col; ctx.font='bold 12px '+CF; ctx.fillText(hv.tag, hv.rx+10, hv.ry+22);
     ctx.textAlign='center'; ctx.fillStyle='#ff8a8a'; ctx.font='bold 20px '+CF;
     ctx.fillText('ELIMINATED', hv.rx+hv.rw/2, hv.ry+hv.rh/2); ctx.textAlign='left'; ctx.shadowBlur=0; return; }
-  // health bar top of each half
-  const bx=hv.rx+10, by=hv.ry+14, bw=140, bh=13;
-  ctx.fillStyle=hv.col; ctx.font='bold 12px '+CF; ctx.fillText(hv.tag+'  '+Math.max(0,pl.hp), bx, by-3);
-  ctx.fillStyle='rgba(0,0,0,.45)'; roundRectPath(bx,by,bw,bh,5); ctx.fill();
-  ctx.fillStyle=hv.col; roundRectPath(bx,by,bw*clamp(pl.hp/DUEL_HP,0,1),bh,5); ctx.fill();
-  // weapon + ammo at the bottom of each half
-  const wy=hv.ry+hv.rh-12;
-  const wpn=pl.weapon||'pistol';
-  ctx.font='bold 12px '+CF;
-  if(wpn==='pistol'){
-    if(pl.reloadT>0){ ctx.fillStyle='#ffb15a'; ctx.fillText('RELOADING…', bx, wy); }
-    else { ctx.fillStyle='#dfeed6'; ctx.fillText('PISTOL', bx, wy);
-      for(let i=0;i<DUEL_MAG;i++){ ctx.fillStyle=i<pl.mag?'#ffe14b':'rgba(255,255,255,.18)';
-        ctx.beginPath(); ctx.arc(bx+58+i*10, wy-4, 3.2, 0, 6.28); ctx.fill(); } }
-  } else { ctx.fillStyle=wpn==='rifle'?'#7fd0ff':'#ffd24a'; ctx.fillText((wpn==='rifle'?'RIFLE':'SHOTGUN')+' ×'+pl.wammo, bx, wy); }
-  ctx.shadowBlur=0;
+  ctx.shadowBlur=0;   // same pill + health/weapon line as the other shootouts, tinted with this player's colour
+  const bx=hv.rx+10, c=hv.col;
+  hudPill(bx, hv.ry+8, Math.min(170, hv.rw-20), hv.tag, Math.max(0,pl.hp)+' HP', pl.hp/(pl.hpMax||DUEL_HP), [c, c], false);
+  drawTeamWeaponLine(pl, bx, hv.ry+hv.rh-12);
 }
 function drawDuelLocalOver(){
-  ctx.fillStyle='rgba(6,10,16,.80)'; ctx.fillRect(0,0,W,H);
   const winP='P'+(duel.winner||1), winC=DUEL_COLS[((duel.winner||1)-1)%4];
-  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  ctx.fillStyle=winC; ctx.font='bold 40px '+CF; ctx.fillText(winP+' WINS! ', W/2, H/2-8); ctx.shadowBlur=0;
-  ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
-  ctx.fillStyle='#e6f2df'; ctx.font='bold 15px '+CF; ctx.fillText('any button to leave', W/2, H/2+28); ctx.globalAlpha=1;
+  drawEndCard(overClock(), winP+' WINS!', 'last one standing', winC, 'any button to leave');
 }
 
 /* ================= TEAM SHOOTOUT (2v2): humans + bots, two teams ================= */
@@ -9248,6 +9218,36 @@ function drawVehicle(v){
     if(v.hp<v.hpMax){ const bw=vehRadius(v)*1.5, bx=v.x-bw/2, by=v.y-vehRadius(v)-12, fr=Math.max(0,v.hp/v.hpMax);
       ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(bx,by,bw,4); ctx.fillStyle=fr>0.5?'#5dff8a':fr>0.25?'#ffd14b':'#ff5b5b'; ctx.fillRect(bx,by,bw*fr,4); } }
 }
+// ---------- SHOOTOUT ARENA — one floor/obstacle/bullet renderer for 1v1, 1v2, 2v2, split-screen and target practice ----------
+function drawArenaFloor(x0,y0,x1,y1){
+  const T=64;
+  for(let y=Math.floor(y0/T)*T; y<y1; y+=T) for(let x=Math.floor(x0/T)*T; x<x1; x+=T){
+    ctx.fillStyle=((x/T+y/T)&1)?'#33405e':'#2d3854'; ctx.fillRect(x,y,T,T); }
+  ctx.fillStyle='rgba(255,255,255,.035)';   // bevelled tile seams
+  for(let y=Math.floor(y0/T)*T; y<y1; y+=T) ctx.fillRect(x0,y,x1-x0,2);
+  for(let x=Math.floor(x0/T)*T; x<x1; x+=T) ctx.fillRect(x,y0,2,y1-y0);
+  const AW=(duel.W||DUEL_W), AH=(duel.H||DUEL_H);
+  ctx.strokeStyle='#1c2436'; ctx.lineWidth=14; ctx.strokeRect(-3,-3,AW+6,AH+6);
+  ctx.strokeStyle='#5c7399'; ctx.lineWidth=6; ctx.strokeRect(0,0,AW,AH);
+  for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
+    ctx.fillStyle='rgba(6,10,20,.35)'; roundRectPath(o.x+5,o.y+7,o.w,o.h,6); ctx.fill();
+    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
+    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
+}
+function drawDuelBullets(colOf){   // tracer streaks with a hot white core; tank shells get a smoky trail
+  ctx.lineCap='round';
+  for(const b of duel.bullets){ if(b.dead) continue; const vl=Math.hypot(b.vx||0,b.vy||0)||1, ux=(b.vx||0)/vl, uy=(b.vy||0)/vl;
+    if(b.shell){
+      ctx.strokeStyle='rgba(120,110,100,.35)'; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(b.x-ux*46,b.y-uy*46); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.fillStyle='rgba(255,150,40,.45)'; ctx.beginPath(); ctx.arc(b.x,b.y,10,0,6.28); ctx.fill();
+      ctx.fillStyle='#ffe08a'; ctx.beginPath(); ctx.arc(b.x,b.y,5.5,0,6.28); ctx.fill(); }
+    else {
+      const L=Math.min(26, 6+(b.t||0)*400);
+      ctx.strokeStyle=colOf(b); ctx.globalAlpha=0.8; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(b.x-ux*L,b.y-uy*L); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.globalAlpha=1;
+      ctx.strokeStyle='rgba(255,255,235,.95)'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(b.x-ux*L*0.6,b.y-uy*L*0.6); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
+  ctx.lineCap='butt';
+}
 function drawDuelSceneWorld(cx,cy,VW,VH,me){
   const x0=cx-10,y0=cy-10,x1=cx+VW+10,y1=cy+VH+10;
   if(duel.war){
@@ -9264,29 +9264,11 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
     ctx.strokeStyle='#2a2016'; ctx.lineWidth=10; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
     for(const o of duel.obs){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue; drawWarProp(o); }
     if(duel.lab){ drawLabDoors(); drawLabReactor(); }
-  } else {
-    for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-      ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-    ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
-    for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-      ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-      ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-      ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
-  }
+  } else drawArenaFloor(x0,y0,x1,y1);
   drawDuelSplats();
   if(duel.vehicles) for(const v of duel.vehicles){ if(v.x<x0-90||v.x>x1+90||v.y<y0-90||v.y>y1+90) continue; drawVehicle(v); }
   for(const k of duel.pickups){ if(!k.taken) drawDuelPickup(k); }
-  ctx.lineCap='round';
-  for(const b of duel.bullets){ const vl=Math.hypot(b.vx||0,b.vy||0)||1, ux=(b.vx||0)/vl, uy=(b.vy||0)/vl;
-    if(b.shell){   // tank shell: glowing slug with a smoky trail
-      ctx.strokeStyle='rgba(120,110,100,.35)'; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(b.x-ux*46,b.y-uy*46); ctx.lineTo(b.x,b.y); ctx.stroke();
-      ctx.fillStyle='rgba(255,150,40,.45)'; ctx.beginPath(); ctx.arc(b.x,b.y,10,0,6.28); ctx.fill();
-      ctx.fillStyle='#ffe08a'; ctx.beginPath(); ctx.arc(b.x,b.y,5.5,0,6.28); ctx.fill(); }
-    else {   // tracer: team-coloured streak with a hot white core
-      const L=Math.min(26, 6+(b.t||0)*400);
-      ctx.strokeStyle=b.team===1?'rgba(126,224,106,.75)':'rgba(255,107,107,.75)'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(b.x-ux*L,b.y-uy*L); ctx.lineTo(b.x,b.y); ctx.stroke();
-      ctx.strokeStyle='rgba(255,255,235,.95)'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(b.x-ux*L*0.6,b.y-uy*L*0.6); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
-  ctx.lineCap='butt';
+  drawDuelBullets(b=>b.team===1?'#7ee06a':'#ff6b6b');
   for(const f of duel.fighters){ if(f.dead||f._inVehicle) continue; drawDuelSoldier(f, f.team===1?'#6ad06a':'#ff6b6b', f===me);
     if(f.spawnProtT>0){ ctx.save(); ctx.globalAlpha=0.3+0.25*Math.sin(performance.now()/110); ctx.strokeStyle='#7fe0ff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(f.x+DUEL_PS/2,f.y+DUEL_PS/2,DUEL_PS*0.72,0,6.28); ctx.stroke(); ctx.restore(); } }
   if(duel.campaign8){   // Mission 8: horde zombies + lab scientists
@@ -9368,7 +9350,7 @@ function drawTeamView(v){
 function drawWarSplitHUD(v, me){   // per-player money + compact shop inside one split half
   const rx=v.rx, ry=v.ry, rw=v.rw, rh=v.rh;
   ctx.save(); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.shadowColor='rgba(0,0,0,.7)'; ctx.shadowBlur=3;
-  ctx.fillStyle='#ffe14b'; ctx.font='bold 15px '+CF; ctx.fillText('$'+(me.cash||0), rx+10, ry+38); ctx.shadowBlur=0;
+  ctx.fillStyle='#ffe14b'; ctx.font='bold 15px '+CF; ctx.fillText('$'+(me.cash||0), rx+10, ry+56); ctx.shadowBlur=0;   // below the score pills
   const n=WAR_SHOP.length, gap=6, bw=Math.min(94,(rw-20-gap*(n-1))/n), bh=28, y=ry+rh-bh-30, x0=rx+10;
   me._shopBtns=[];
   ctx.textAlign='center';
@@ -9380,7 +9362,7 @@ function drawWarSplitHUD(v, me){   // per-player money + compact shop inside one
     me._shopBtns.push({x:bx,y:y,w:bw,h:bh,key:it.key}); }
   ctx.fillStyle='#bfe0c0'; ctx.font='bold 9px '+CF; ctx.fillText('◀▶ pick · Y buy · B vehicle', rx+rw/2, y+bh+11);
   // radio-order chip (top-right of this half): D-pad ▲▼ selects, X sends to your army
-  const oc=ALLY_CMDS[me._cmdSel||0], ow=176, oh=26, ox=rx+rw-ow-10, oy=ry+30;
+  const oc=ALLY_CMDS[me._cmdSel||0], ow=Math.min(176, rw-20), oh=26, ox=rx+rw-ow-10, oy=ry+40;
   ctx.fillStyle='rgba(24,40,64,.9)'; roundRectPath(ox,oy,ow,oh,7); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle='#7fb0ff'; roundRectPath(ox,oy,ow,oh,7); ctx.stroke();
   ctx.textAlign='left'; ctx.fillStyle='#8fd0ff'; ctx.font='bold 10px '+CF; ctx.fillText('▲▼', ox+7, oy+oh/2+4);
@@ -9446,23 +9428,49 @@ function drawCommsUI(){
   ctx.restore();
 }
 // ---- war HUD pieces ----
-function warScorePills(mine, theirs, goal){   // two progress pills: your team (left) vs the enemy (right)
-  const pw=Math.min(220, W*0.27), ph=24, y=8;
-  const pill=(x, label, val, c1, c2, right)=>{
-    ctx.fillStyle='rgba(6,10,14,.72)'; roundRectPath(x,y,pw,ph,12); ctx.fill();
-    const fr=clamp(val/goal,0,1), fw=Math.max(ph, pw*fr);
-    if(val>0){ const g=ctx.createLinearGradient(0,y,0,y+ph); g.addColorStop(0,c1); g.addColorStop(1,c2); ctx.fillStyle=g; ctx.globalAlpha=0.85;
-      roundRectPath(right?x+pw-fw:x, y, fw, ph, 12); ctx.fill(); ctx.globalAlpha=1; }
-    ctx.lineWidth=1.5; ctx.strokeStyle='rgba(255,255,255,.22)'; roundRectPath(x,y,pw,ph,12); ctx.stroke();
-    ctx.fillStyle='#fff'; ctx.font='bold 13px '+CF; ctx.textBaseline='middle';
-    ctx.textAlign=right?'right':'left'; ctx.fillText(label, right?x+pw-12:x+12, y+ph/2+1);
-    ctx.textAlign=right?'left':'right'; ctx.fillText(val+' / '+goal, right?x+12:x+pw-12, y+ph/2+1);
-    ctx.textBaseline='alphabetic'; };
-  pill(12, 'YOUR TEAM', mine, '#5fd36a', '#2f8a3c', false);
-  pill(W-12-pw, 'ENEMY', theirs, '#ff7a6b', '#b8352c', true);
+// ---- HUD pills + end card, shared by every shootout and war mode so they all read the same ----
+const PILL_GREEN=['#5fd36a','#2f8a3c'], PILL_RED=['#ff7a6b','#b8352c'];
+function hudPill(x, y, pw, label, valText, frac, cols, right){   // dark rounded pill, coloured fill = frac (null → no fill)
+  const ph=24;
+  ctx.save(); ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(6,10,14,.72)'; roundRectPath(x,y,pw,ph,12); ctx.fill();
+  if(frac!=null && frac>0){ const fw=Math.max(ph, pw*clamp(frac,0,1)), g=ctx.createLinearGradient(0,y,0,y+ph);
+    g.addColorStop(0,cols[0]); g.addColorStop(1,cols[1]); ctx.fillStyle=g; ctx.globalAlpha=0.85;
+    roundRectPath(right?x+pw-fw:x, y, fw, ph, 12); ctx.fill(); ctx.globalAlpha=1; }
+  ctx.lineWidth=1.5; ctx.strokeStyle='rgba(255,255,255,.22)'; roundRectPath(x,y,pw,ph,12); ctx.stroke();
+  let fs=13; ctx.font='bold '+fs+'px '+CF;   // shrink the text until label + value fit (narrow portrait screens)
+  while(fs>9 && ctx.measureText(label).width+ctx.measureText(valText).width+34>pw){ fs--; ctx.font='bold '+fs+'px '+CF; }
+  ctx.fillStyle='#fff'; ctx.textBaseline='middle';
+  ctx.textAlign=right?'right':'left'; ctx.fillText(label, right?x+pw-12:x+12, y+ph/2+1);
+  ctx.textAlign=right?'left':'right'; ctx.fillText(valText, right?x+12:x+pw-12, y+ph/2+1);
+  ctx.restore();
 }
+function hudPillW(){ return Math.min(220, (W-36)/2); }
+function drawSidePills(lLabel, lText, lFrac, rLabel, rText, rFrac){   // your side (left, green) vs the enemy (right, red)
+  const pw=Math.min(hudPillW(), (W-36)/2);
+  hudPill(12, 8, pw, lLabel, lText, lFrac, PILL_GREEN, false);
+  hudPill(W-12-pw, 8, pw, rLabel, rText, rFrac, PILL_RED, true);
+}
+function warScorePills(mine, theirs, goal){ drawSidePills('YOUR TEAM', mine+' / '+goal, mine/goal, 'ENEMY', theirs+' / '+goal, theirs/goal); }
+function drawEndCard(t, title, sub, col, prompt){   // match-over card: fade + slide in, title, one line, pulsing prompt
+  const k=clamp((t||0)/0.35,0,1), ease=1-Math.pow(1-k,3);
+  ctx.save(); ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(6,10,16,'+(0.78*ease)+')'; ctx.fillRect(0,0,W,H);
+  const cw=Math.min(440,W-32), ch=150, cx=W/2-cw/2, cy=H/2-ch/2+(1-ease)*30;
+  ctx.globalAlpha=ease;
+  ctx.fillStyle='rgba(10,16,22,.92)'; roundRectPath(cx,cy,cw,ch,18); ctx.fill();
+  ctx.lineWidth=2.5; ctx.strokeStyle=col; roundRectPath(cx,cy,cw,ch,18); ctx.stroke();
+  ctx.fillStyle=col; roundRectPath(cx+cw/2-60,cy-3,120,6,3); ctx.fill();
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
+  ctx.fillStyle=col; ctx.font='bold '+(cw<360?28:34)+'px '+CF; ctx.fillText(title, W/2, cy+50); ctx.shadowBlur=0;
+  ctx.fillStyle='#cfd8e3'; ctx.font='bold 14px '+CF; ctx.fillText(sub, W/2, cy+86);
+  ctx.globalAlpha=ease*(0.55+0.45*Math.abs(Math.sin(performance.now()/400)));
+  ctx.fillStyle='#e6f2df'; ctx.font='bold 14px '+CF; ctx.fillText(prompt, W/2, cy+122);
+  ctx.restore(); ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+}
+function overClock(){ if(!duel) return 0; if(duel.overT!=null) return duel.overT; if(duel._ovAt==null) duel._ovAt=performance.now(); return (performance.now()-duel._ovAt)/1000; }
 function objBanner(title, sub, col, frac){   // the current objective, top-centre
-  const w=Math.min(400, W-300), h=frac!=null?54:46, x=W/2-w/2, y=6;
+  const narrow=W<600, w=narrow?W-24:Math.min(400, W-300), h=frac!=null?54:46, x=W/2-w/2, y=narrow?H-h-30:6;   // portrait: just above the cash line
   ctx.save();
   ctx.fillStyle='rgba(6,10,14,.78)'; roundRectPath(x,y,w,h,12); ctx.fill();
   ctx.lineWidth=2; ctx.strokeStyle=col; ctx.globalAlpha=0.7; roundRectPath(x,y,w,h,12); ctx.stroke(); ctx.globalAlpha=1;
@@ -9488,7 +9496,7 @@ function drawWar8HUD(me){
     else objBanner('THE LAB IS GOING DOWN!', 'nice work, soldier', '#7ee06a');
     drawLabMinimap(me);
   }
-  if(duel.radio){ const r=duel.radio, a=Math.min(1, r.t*2, (5.5-r.t)*4), w=Math.min(470, W-40), x=W/2-w/2, y=H-118;   // the general on the radio
+  if(duel.radio){ const r=duel.radio, a=Math.min(1, r.t*2, (5.5-r.t)*4), w=Math.min(420, W-24), x=W/2-w/2, y=W<600&&duel.phase!=='war'?H-150:H-118;   // the general on the radio
     ctx.save(); ctx.globalAlpha=a;
     ctx.fillStyle='rgba(8,14,10,.86)'; roundRectPath(x,y,w,50,10); ctx.fill();
     ctx.fillStyle='#ffd14b'; roundRectPath(x,y,6,50,3); ctx.fill();
@@ -9498,9 +9506,10 @@ function drawWar8HUD(me){
     ctx.restore(); }
   if(duel.roomBanner){ const b=duel.roomBanner, a=Math.min(1, b.t*2.5, (2.4-b.t)*5);   // entering a new room
     ctx.save(); ctx.globalAlpha=Math.max(0,a); ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.font='bold 30px '+CF; ctx.fillText(b.text, W/2+2, H*0.3+2);
-    ctx.fillStyle='#eaf6ff'; ctx.fillText(b.text, W/2, H*0.3);
-    const tw=ctx.measureText(b.text).width; ctx.fillStyle='#7fe0ff'; ctx.fillRect(W/2-tw/2, H*0.3+20, tw, 2);
+    ctx.fillStyle='rgba(0,0,0,.55)'; const by=W<600?H*0.47:H*0.3;   // portrait: clear of the lab map and pop-ups
+    ctx.font='bold 30px '+CF; ctx.fillText(b.text, W/2+2, by+2);
+    ctx.fillStyle='#eaf6ff'; ctx.fillText(b.text, W/2, by);
+    const tw=ctx.measureText(b.text).width; ctx.fillStyle='#7fe0ff'; ctx.fillRect(W/2-tw/2, by+20, tw, 2);
     ctx.restore(); }
 }
 function wrapText(text, x, y, maxW, lh){   // single-line if it fits, else two lines centred on y
@@ -9578,9 +9587,8 @@ function drawTeamHUD(){
   }
   const t1=duel.fighters.filter(f=>f.team===1).length, t2=duel.fighters.filter(f=>f.team===2).length;
   const a1=duel.fighters.filter(f=>f.team===1&&!f.dead).length, a2=duel.fighters.filter(f=>f.team===2&&!f.dead).length;
-  ctx.fillStyle='#6ad06a'; ctx.font='bold 14px '+CF; ctx.fillText((t1>1?'YOUR TEAM ':'YOU ')+a1+'/'+t1, 12, 20);
-  ctx.textAlign='right'; ctx.fillStyle='#ff6b6b'; ctx.fillText('ENEMY '+a2+'/'+t2, W-12, 20);
   ctx.shadowBlur=0;
+  drawSidePills(t1>1?'YOUR TEAM':'YOU', a1+' / '+t1, a1/t1, 'ENEMY', a2+' / '+t2, a2/t2);
   if(!duel.split && warMe()) drawTeamWeaponLine(warMe(), 12, 62);
 }
 function drawTeamWeaponLine(f,x,y){
@@ -9595,27 +9603,17 @@ function drawTeamWeaponLine(f,x,y){
   ctx.font='bold 12px '+CF;
   const wpn=f.weapon||'pistol';
   if(wpn==='pistol'){ if(f.reloadT>0){ ctx.fillStyle='#ffb15a'; ctx.fillText('RELOADING…',x,y);} else { ctx.fillStyle='#dfeed6'; ctx.fillText('PISTOL '+f.mag+'/'+(f.magMax||DUEL_MAG),x,y);} }
-  else { ctx.fillStyle=wpn==='rifle'?'#7fd0ff':'#ffd24a'; ctx.fillText((wpn==='rifle'?'RIFLE':'SHOTGUN')+' ×'+f.wammo,x,y); }
+  else { ctx.fillStyle=wpn==='rifle'?'#7fd0ff':'#ffd24a'; ctx.fillText((wpn==='rifle'?'RIFLE':'SHOTGUN')+((f.permRifle||!isFinite(f.wammo))?'':' ×'+f.wammo),x,y); }
   ctx.shadowBlur=0;
 }
 function drawTeamOver(){
-  const k=clamp((duel.overT||0)/0.35,0,1), ease=1-Math.pow(1-k,3);   // fade + slide in
-  ctx.fillStyle='rgba(6,10,16,'+(0.78*ease)+')'; ctx.fillRect(0,0,W,H);
   const win=duel.winner===1;
-  const title = duel.campaign8 ? (win?'LAB DESTROYED!':(duel.phase==='war'?'THE ENEMY GOT 100':'YOU DIED')) : (win?'YOUR TEAM WINS!':'ENEMY WINS');
+  let title = duel.campaign8 ? (win?'LAB DESTROYED!':(duel.phase==='war'?'THE ENEMY GOT 100':'YOU DIED')) : (win?'YOUR TEAM WINS!':'ENEMY WINS');
   const sub = duel.campaign8 ? (win?'The Zombifiers’ reactor is rubble.':'Regroup and try again, soldier.')
             : duel.war ? ('FINAL  '+(duel.score1||0)+'  —  '+(duel.score2||0)) : (win?'Clean work out there.':'They got you this time.');
-  const col=win?'#7ee06a':'#ff7a7a', cw=Math.min(440,W-40), ch=150, cx=W/2-cw/2, cy=H/2-ch/2+(1-ease)*30;
-  ctx.save(); ctx.globalAlpha=ease;
-  ctx.fillStyle='rgba(10,16,22,.92)'; roundRectPath(cx,cy,cw,ch,18); ctx.fill();
-  ctx.lineWidth=2.5; ctx.strokeStyle=col; roundRectPath(cx,cy,cw,ch,18); ctx.stroke();
-  ctx.fillStyle=col; roundRectPath(cx+cw/2-60,cy-3,120,6,3); ctx.fill();
-  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  ctx.fillStyle=col; ctx.font='bold 34px '+CF; ctx.fillText(title, W/2, cy+50); ctx.shadowBlur=0;
-  ctx.fillStyle='#cfd8e3'; ctx.font='bold 14px '+CF; ctx.fillText(sub, W/2, cy+86);
-  ctx.globalAlpha=ease*(0.55+0.45*Math.abs(Math.sin(performance.now()/400)));
-  ctx.fillStyle='#e6f2df'; ctx.font='bold 14px '+CF; ctx.fillText(duel.split?'any button to leave':'tap to continue', W/2, cy+122);
-  ctx.restore(); ctx.textBaseline='alphabetic';
+  const solo=!duel.war && !duel.split && duel.fighters.filter(f=>f.team===1).length===1;   // 1v2: same wording as 1v1
+  if(solo) title = win?'YOU WIN!':'YOU LOSE';
+  drawEndCard(overClock(), title, sub, win?'#7ee06a':'#ff7a7a', duel.split?'any button to leave':'tap to continue');
 }
 // is the straight line between two duelists blocked by a wall?
 function aiLineBlocked(a,b){
@@ -9798,21 +9796,12 @@ function drawDuel(){
   const cx=Math.round(duel.camX), cy=Math.round(duel.camY), z=duel.zoom||1;
   ctx.fillStyle='#252d3c'; ctx.fillRect(0,0,W,H);
   ctx.save(); ctx.scale(z,z); ctx.translate(-cx,-cy);
-  // ground grid
   const x0=cx-10, y0=cy-10, x1=cx+W/z+10, y1=cy+H/z+10;
-  for(let y=Math.floor(y0/64)*64; y<y1; y+=64) for(let x=Math.floor(x0/64)*64; x<x1; x+=64){
-    ctx.fillStyle=((x/64+y/64)&1)?'#33405e':'#2b3652'; ctx.fillRect(x,y,64,64); }
-  ctx.strokeStyle='#5c7399'; ctx.lineWidth=8; ctx.strokeRect(0,0,(duel.W||DUEL_W),(duel.H||DUEL_H));
-  // obstacles
-  for(const o of ((duel.obs)||DUEL_OBS)){ if(o.x>x1||o.x+o.w<x0||o.y>y1||o.y+o.h<y0) continue;
-    ctx.fillStyle='#61759a'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.fill();
-    ctx.fillStyle='#7d90ab'; roundRectPath(o.x+3,o.y+3,o.w-6,Math.max(4,o.h*0.35),5); ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle='#42567b'; roundRectPath(o.x,o.y,o.w,o.h,6); ctx.stroke(); }
-  drawDuelSplats();   // blood decals on the ground
-  // weapon pickups
+  drawArenaFloor(x0,y0,x1,y1);   // same arena look as the team shootouts
+  drawDuelSplats();
   for(const k of duel.pickups){ if(k.taken) continue; drawDuelPickup(k); }
-  // bullets
-  for(const b of duel.bullets){ ctx.fillStyle=b.own===1?'#7ee06a':'#ff6b6b'; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill(); }
+  const mine=(duel.meKey==='p1'?1:2);
+  drawDuelBullets(b=>b.own===mine?'#7ee06a':'#ff6b6b');
   // soldiers
   drawDuelSoldier(duel.p1, '#6ad06a', duel.meKey==='p1');
   drawDuelSoldier(duel.p2, '#ff6b6b', duel.meKey==='p2');
@@ -9965,42 +9954,17 @@ function drawDuelPickup(k){
   ctx.fillText(k.type==='rifle'?'RIF':'SG', k.x, k.y+1); ctx.textBaseline='alphabetic';
   ctx.restore();
 }
-function drawDuelHUD(){
+function drawDuelHUD(){   // 1v1: same pills + health/weapon line as the team shootouts
   const me=duel[duel.meKey], foe=duel[duel.foeKey];
-  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
-  duelBar(12, 16, 'YOU', me.hp, '#6ad06a', false);
-  duelBar(W-12-150, 16, 'ENEMY', foe.hp, '#ff6b6b', true);
-  // my weapon + ammo
-  const wpn=me.weapon||'pistol';
-  ctx.font='bold 13px '+CF; ctx.textAlign='left';
-  if(wpn==='pistol'){
-    if(me.reloadT>0){ ctx.fillStyle='#ffb15a'; ctx.fillText('RELOADING…', 12, 46); }
-    else { ctx.fillStyle='#dfeed6'; ctx.fillText('PISTOL', 12, 46);
-      for(let i=0;i<DUEL_MAG;i++){ ctx.fillStyle=i<me.mag?'#ffe14b':'rgba(255,255,255,.18)';
-        ctx.beginPath(); ctx.arc(70+i*11, 42, 3.5, 0, 6.28); ctx.fill(); } }
-  } else {
-    ctx.fillStyle=wpn==='rifle'?'#7fd0ff':'#ffd24a';
-    ctx.fillText(me.permRifle ? 'RIFLE' : ((wpn==='rifle'?'RIFLE':'SHOTGUN')+'  ×'+me.wammo), 12, 46);
-  }
-  ctx.textAlign='center'; ctx.fillStyle='rgba(220,230,245,.5)'; ctx.font='11px '+CF;
-  ctx.fillText(duel.campaign5?'take down the enemy soldier · cover blocks shots':'hunt them down · grab weapons · cover blocks shots', W/2, H-8);
-}
-function duelBar(x,y,label,hp,col,right){
-  const w=150,h=14; ctx.fillStyle='rgba(0,0,0,.45)'; roundRectPath(x,y,w,h,5); ctx.fill();
-  const fr=clamp(hp/DUEL_HP,0,1); ctx.fillStyle=col;
-  if(right){ roundRectPath(x+w*(1-fr),y,w*fr,h,5); } else { roundRectPath(x,y,w*fr,h,5); } ctx.fill();
-  ctx.fillStyle='#fff'; ctx.font='bold 11px '+CF; ctx.textAlign=right?'right':'left';
-  ctx.fillText(label+'  '+Math.max(0,hp), right?x+w:x, y-4);
+  const mh=me.hpMax||DUEL_HP, fh=foe.hpMax||DUEL_HP;
+  drawSidePills('YOU', Math.max(0,me.hp)+' HP', me.hp/mh, duel.campaign5?'ENEMY SOLDIER':'ENEMY', Math.max(0,foe.hp)+' HP', foe.hp/fh);
+  drawTeamWeaponLine(me, 12, 62);
 }
 function drawDuelOver(){
-  ctx.fillStyle='rgba(6,10,16,.78)'; ctx.fillRect(0,0,W,H);
   const meWon = (duel.winner===(duel.meKey==='p1'?1:2));
-  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=6;
-  ctx.fillStyle=meWon?'#7ee06a':'#ff7a7a'; ctx.font='bold 36px '+CF;
-  ctx.fillText(duel.campaign5 ? (meWon?'ENEMY DESTROYED!':'YOU DIED') : (meWon?'YOU WIN!':'YOU LOSE'), W/2, H/2-10); ctx.shadowBlur=0;
-  ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(performance.now()/400));
-  ctx.fillStyle='#e6f2df'; ctx.font='bold 16px '+CF; ctx.fillText(duel.campaign5?(meWon?'+20 coins':'tap to retry'):'tap to leave', W/2, H/2+30); ctx.globalAlpha=1;
+  const title = duel.campaign5 ? (meWon?'ENEMY DESTROYED!':'YOU DIED') : (meWon?'YOU WIN!':'YOU LOSE');
+  const sub = duel.campaign5 ? (meWon?'+20 coins':'Shake it off and go again.') : (meWon?'Clean work out there.':'They got you this time.');
+  drawEndCard(overClock(), title, sub, meWon?'#7ee06a':'#ff7a7a', duel.campaign5&&!meWon?'tap to retry':'tap to continue');
 }
 
 /* -------------------------------- UI -------------------------------- */
