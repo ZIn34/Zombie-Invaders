@@ -2245,7 +2245,7 @@ function update(dt){
   } else if(state===STATE.DUEL){
     if(duel && duel.targetPractice){ if(pressed['Escape']){ duel=null; mode='arcade'; state=STATE.MENU; } else updateTargetPractice(dt); }
     else if(duel && duel.team){ if(pressed['Escape']) teamDuelEnd();
-      else if(duel.net && net && net.role==='host'){ updateTeamDuel(dt); net.snapT-=dt; if(net.snapT<=0){ net.snapT=1/15; NetIO.broadcast(warSnapshot()); } }   // online: comms never freeze the sim
+      else if(duel.net && net && net.role==='host'){ updateTeamDuel(dt); net.snapT-=dt; if(net.snapT<=0){ net.snapT=((net.playerCount||2)>10)?1/12:1/15; NetIO.broadcast(warSnapshot()); } }   // online: comms never freeze the sim (a little less often in very full rooms)
       else if(duel.net && net){ updateWarGuest(dt); }
       else if(!duel.commsOpen) updateTeamDuel(dt); }   // comms menu (touch) fully freezes the fight
     else if(duel && duel.local){ if(pressed['Escape']) duelLocalEnd(); else updateDuelLocal(dt); }
@@ -6381,7 +6381,7 @@ function drawOnlinePick(){
   drawVersusModeButton(opCoopBtn, '#2fa35a','#1c7a41','#5dff8a','CO-OP',
     'team up online — shared cash', 'defend the flag together');
   drawVersusModeButton(opWarBtn, '#c0392b','#7a1f14','#ff8a6a','WAR',
-    'up to 5 per team online', 'bots fill the empty slots');
+    'up to 10 per team online', 'bots fill the empty slots');
 }
 const playNormalBtn  = {x:W/2-150, y:100, w:300, h:66};
 const playOpenBtn    = {x:W/2-150, y:172, w:300, h:66};
@@ -6437,7 +6437,7 @@ const netModeBtn = {x:W/2-150, y:80, w:300, h:32};   // HORDE ↔ SHOOTOUT match
 const qmMinusBtn = {x:W/2-120, y:190, w:70, h:70};
 const qmPlusBtn  = {x:W/2+50,  y:190, w:70, h:70};
 const qmGoBtn    = {x:W/2-130, y:300, w:260, h:56};
-function qmMax(){ return (net&&net.war)?10:4; }
+function qmMax(){ return (net&&net.war)?20:4; }
 
 let net=null;
 const CODE_ALPHA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -6507,7 +6507,7 @@ const NetIO = {
   quickMatch(){
     if(typeof Peer==='undefined'){ net.status='network library still loading — try again'; return; }
     net.role=null; net.public=true; net.lobby='searching'; net.status='searching for a game…'; net.probeMatched=false;
-    net.maxPlayers = net.coop ? Math.min((net.war?10:4), Math.max(2, net.qmCount||2)) : 2;   // versus is always 2
+    net.maxPlayers = net.coop ? Math.min((net.war?20:4), Math.max(2, net.qmCount||2)) : 2;   // versus is always 2
     this.conns=[]; net._started=false;
     this._tryClaim(0);
   },
@@ -6575,7 +6575,7 @@ function netReadCodeInput(){ return netInput? netInput.value.trim().toUpperCase(
 
 function netEnterLobby(){ net=netNew(); state=STATE.NETLOBBY; }
 function netEnterCoopLobby(){ net=netNew(); net.gtype='coop'; net.coop=true; state=STATE.NETLOBBY; }
-function netEnterWarLobby(){ net=netNew(); net.gtype='war'; net.coop=true; net.war=true; state=STATE.NETLOBBY; }   // reuses the multi-player lobby; up to 10
+function netEnterWarLobby(){ net=netNew(); net.gtype='war'; net.coop=true; net.war=true; state=STATE.NETLOBBY; }   // reuses the multi-player lobby; up to 20
 function netQuit(){ try{ NetIO.send({t:'bye'}); }catch(e){} try{ if(net&&net._autoStart) clearTimeout(net._autoStart); }catch(e){} NetIO.cleanup(); netShowCodeInput(false); if(mode==='net'||mode==='duel') mode='arcade'; net=null; coop=null; duel=null; codef=null; if(explore&&explore.defense2) explore=null; }
 
 function netToggleMode(){ net.gtype = (net.gtype==='duel')?'horde':'duel'; Sound.hit(); }
@@ -6584,7 +6584,7 @@ function netLobbyTap(p){
   if(net.lobby==='choose'){
     if(!net.coop && inRect(p, netModeBtn)){ netToggleMode(); return; }   // pick HORDE or SHOOTOUT before you host/quick-match
     if(inRect(p, netQuickBtn)){ if(net.coop){ net.qmCount=Math.min(qmMax(),Math.max(2,net.qmCount||2)); net.lobby='qmcount'; Sound.hit(); } else NetIO.quickMatch(); }   // war/coop: pick how many players first
-    else if(inRect(p, netHostBtn)){ if(net.coop) NetIO.hostMulti(net.war?10:4); else NetIO.host(); }   // war rooms hold up to 10, co-op up to 4
+    else if(inRect(p, netHostBtn)){ if(net.coop) NetIO.hostMulti(net.war?20:4); else NetIO.host(); }   // war rooms hold up to 20 (10 per team), co-op up to 4
     else if(inRect(p, netJoinBtn)){ net.lobby='joining'; net.status=''; netShowCodeInput(true); }
   } else if(net.lobby==='qmcount'){   // choose the target player count, then start searching
     if(inRect(p, qmMinusBtn)){ net.qmCount=Math.max(2,(net.qmCount||2)-1); Sound.hit(); }
@@ -8190,10 +8190,10 @@ function drawScientist(s){
     ctx.fillStyle=fr>0.5?'#ffd14b':'#ff5b5b'; roundRectPath(s.x-bw/2, ty, bw*fr, 4, 2); ctx.fill(); }
 }
 
-/* ===================== ONLINE WAR (host-authoritative, up to 5 per team) ===================== */
-function warAssignRoster(count){   // balance players across the two teams, ≤5 each; returns per-player {team, slot(=fighter index)}
+/* ===================== ONLINE WAR (host-authoritative, up to 10 per team) ===================== */
+function warAssignRoster(count){   // balance players across the two teams, ≤10 each; returns per-player {team, slot(=fighter index)}
   const roster=[]; let t1=0,t2=0;
-  for(let p=0;p<count;p++){ let team; if(t1<=t2 && t1<5) team=1; else if(t2<5) team=2; else team=1;
+  for(let p=0;p<count;p++){ let team; if(t1<=t2 && t1<10) team=1; else if(t2<10) team=2; else team=1;
     const s = team===1 ? t1++ : t2++; roster.push({team, slot: team===1 ? s : 10+s}); }
   return roster;
 }
@@ -8789,9 +8789,9 @@ function botDrive(f, dt){
   if(foe && fd<(v.kind==='tank'?1250:900) && v.cd<=0){ if(v.kind==='tank'){ tankFire(v,f.team); v.cd=1.35; } else { jeepFire(v,f.team); v.cd=0.14; } }
 }
 function tankFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2+18), my=v.y+Math.sin(a)*(v.w/2+18);
-  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*920,vy:Math.sin(a)*920,team,t:0,shell:true,owner:v.driver}); v.flash=1; Sound.tank(); shake(7,.28); }
+  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*920,vy:Math.sin(a)*920,team,t:0,shell:true,owner:v.driver,src:v}); v.flash=1; Sound.tank(); shake(7,.28); }
 function jeepFire(v,team){ const a=v.angle, mx=v.x+Math.cos(a)*(v.w/2-8), my=v.y+Math.sin(a)*(v.w/2-8);   // barrel tip pulled back 20px onto the mounted gun
-  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*DUEL_BSPD,vy:Math.sin(a)*DUEL_BSPD,team,t:0,owner:v.driver}); v.flash=1; Sound.rifle(); }
+  duel.bullets.push({x:mx,y:my,vx:Math.cos(a)*DUEL_BSPD,vy:Math.sin(a)*DUEL_BSPD,team,t:0,owner:v.driver,src:v}); v.flash=1; Sound.rifle(); }
 function shellExplode(b){
   if(duel.blasts) duel.blasts.push({x:b.x,y:b.y,t:0}); duelBlood(b.x,b.y,16); shake(9,.32);
   for(const f of duel.fighters){ if(f.dead||f.team===b.team||f._inVehicle||f.spawnProtT>0) continue;   // instant-kill foot soldiers in the blast
@@ -8905,7 +8905,8 @@ function updateTeamDuel(dt){
     if(duelBlocks(b.x-2,b.y-2,4,4)){ b.dead=true; if(b.shell) shellExplode(b); else if(duel.war) warFx(b.x-b.vx*0.008, b.y-b.vy*0.008, 'spark');
       if(duel.campaign8) war8BulletHitsWall(b); continue; }
     if(enemyBarrierBlocks(b.team, b.y)){ b.dead=true; continue; }   // enemy fire can't cross into your spawn either
-    if(duel.vehicles){ let vh=false; for(const v of duel.vehicles){ if(Math.abs(b.x-v.x)<vehRadius(v)+3 && Math.abs(b.y-v.y)<vehRadius(v)+3){
+    if(duel.vehicles){ let vh=false; for(const v of duel.vehicles){ if(v===b.src) continue;   // the gun sits inside its own hull — never hit yourself
+      if(Math.abs(b.x-v.x)<vehRadius(v)+3 && Math.abs(b.y-v.y)<vehRadius(v)+3){
         b.dead=true;
         if(b.shell){ shellExplode(b); }   // shells detonate on the hull (AoE handles the damage)
         else if(!v.wreck && v.driver && v.driver.team!==b.team){ v.hp-=1; if(v.hp<=0) destroyVehicle(v, b.team, b.owner); }
@@ -9394,7 +9395,9 @@ function drawDuelSceneWorld(cx,cy,VW,VH,me){
     if(duel.lab){ drawLabDoors(); drawLabReactor(); }
   } else drawArenaFloor(x0,y0,x1,y1);
   drawDuelSplats();
-  if(duel.vehicles) for(const v of duel.vehicles){ if(v.x<x0-90||v.x>x1+90||v.y<y0-90||v.y>y1+90) continue; drawVehicle(v); }
+  if(duel.vehicles) for(const v of duel.vehicles){ if(v.x<x0-90||v.x>x1+90||v.y<y0-90||v.y>y1+90) continue; drawVehicle(v);
+    const mine = me && !v.wreck && (v.driver===me || (me._inVehicle && Math.hypot(v.x-(me.x+DUEL_PS/2), v.y-(me.y+DUEL_PS/2))<4));   // online guests have no driver link, so match by position
+    if(mine){ const off=v.kind==='tank'?v.w/2+18:v.w/2-8; drawAimLine(v.x+Math.cos(v.angle)*off, v.y+Math.sin(v.angle)*off, v.angle, (x,y)=>duelBlocks(x-2,y-2,4,4)); } }
   for(const k of duel.pickups){ if(!k.taken) drawDuelPickup(k); }
   drawDuelBullets(b=>b.team===1?'#7ee06a':'#ff6b6b');
   for(const f of duel.fighters){ if(f.dead||f._inVehicle) continue; drawDuelSoldier(f, f.team===1?'#6ad06a':'#ff6b6b', f===me);
