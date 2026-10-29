@@ -712,6 +712,7 @@ function canvasTap(p, pid){
       state=STATE.MENU; }
   } else if(state===STATE.PLAYPICK){
     if(inRect(p, backBtn)) state=STATE.MENU;
+    else if(botPickerTap(p, BOT_ROW_PLAY)) {}
     else if(inRect(p, playNormalBtn)) startGame();
     else if(inRect(p, playCoopNormalBtn)) startCoopNormal();
     else if(inRect(p, playOpenBtn)) setupEndless();
@@ -739,7 +740,8 @@ function canvasTap(p, pid){
     else if(inRect(p, splitOpenBtn)) startLocalOpenWorld();
     else if(inRect(p, splitWarBtn)) startWarSplit();
   } else if(state===STATE.DEFSETUP){
-    if(inRect(p, backBtn)) state=defPendingCoop?STATE.SPLITPICK:STATE.PLAYPICK;
+    if(botPickerTap(p, BOT_ROW_DEF)) {}
+    else if(inRect(p, backBtn)) state=defPendingCoop?STATE.SPLITPICK:STATE.PLAYPICK;
     else if(inRect(p, defLeaderBtn)) enterLeader(defPendingCoop?'coopdef':'defense', STATE.DEFSETUP);
     else if(inRect(p, defStartBtn)){ if(defPendingCoop) startLocalCoop(); else setupDefense(); }
     else { for(const bl of defLimitBtns){ if(inRect(p,bl)){
@@ -836,11 +838,11 @@ function netPadTargets(){
 function padTargets(){
   switch(state){
     case STATE.MENU: return [playBtn, campBtn, coopBtn, storeBtn, tutBtn, targetBtn, menuLeaderBtn, menuAcctBtn, gearBtn];
-    case STATE.PLAYPICK: return [playNormalBtn, playCoopNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn, diffBtns[0], diffBtns[1], diffBtns[2], backBtn];
+    case STATE.PLAYPICK: return [playNormalBtn, playCoopNormalBtn, playOpenBtn, playDefenseBtn, playAIBtn, playSplitBtn].concat(botBtnRects(BOT_ROW_PLAY), [diffBtns[0], diffBtns[1], diffBtns[2], backBtn]);
     case STATE.SPLITPICK: return [splitCoopBtn, splitDuelBtn, splitShootCoopBtn, splitOpenBtn, splitWarBtn].concat(splitNumBtns, [backBtn]);
     case STATE.SHOOTPICK: return [shoot1v1Btn, shoot2v2Btn, shoot1v2Btn, shootWarBtn, shootPUBtn, backBtn];
     case STATE.MAPPICK: return [...mapPickBtns, mapRandomBtn, backBtn];
-    case STATE.DEFSETUP: return defLimitBtns.concat(diffBtns, [defStartBtn, defLeaderBtn, backBtn]);
+    case STATE.DEFSETUP: return defLimitBtns.concat(botBtnRects(BOT_ROW_DEF), diffBtns, [defStartBtn, defLeaderBtn, backBtn]);
     case STATE.LEADER: return [lbTabDef, lbTabCoop].concat(lbView==='defense'?lbDiffTabs:[], [lbNameBtn, backBtn]);
     case STATE.ONLINEPICK: return [opVersusBtn, opCoopBtn, opWarBtn, backBtn];
     case STATE.VERSUSPICK: return [vpLocalBtn, vpOnlineBtn, backBtn];
@@ -1232,7 +1234,7 @@ let defPendingCoop=false;// which defense the setup screen will launch
 let defWon=false;        // solo defense: reached the kill limit
 
 // player-facing options — separate for basic zombies and the boss (blood: 0 off / 1 normal / 2 extra)
-let settings={shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', fireBtnPos:null, padMap:null};
+let settings={bots:0, shakeBasic:true, shakeBoss:true, bloodBasic:1, bloodBoss:1, music:true, padAimLeft:true, swapSticks:false, aimStick:'tap', fireBtnPos:null, padMap:null};
 function applyStickLayout(){ try{ document.body.classList.toggle('swapsticks', !!settings.swapSticks); }catch(e){} }   // left/right-handed on-screen joysticks
 function applyFireBtnPos(){   // custom-placed FIRE button (button-aim scheme): position #tfire over the canvas at the saved spot
   try{ const fb=document.getElementById('tfire'); if(!fb) return;
@@ -1260,6 +1262,7 @@ let padBindWait=null;   // when set to an action key, the next controller button
 function saveSettings(){ try{ localStorage.setItem('zi_settings', JSON.stringify(Object.assign({}, settings, {difficulty}))); }catch(e){} }
 function loadSettings(){ try{ const s=JSON.parse(localStorage.getItem('zi_settings')); if(s){
   if(typeof s.difficulty==='number') difficulty=Math.max(0,Math.min(2,s.difficulty));
+  if(typeof s.bots==='number') settings.bots=Math.max(0,Math.min(4,s.bots|0));
   if(typeof s.padAimLeft==='boolean') settings.padAimLeft=s.padAimLeft;
   if(typeof s.shakeBasic==='boolean') settings.shakeBasic=s.shakeBasic;
   if(typeof s.shakeBoss==='boolean')  settings.shakeBoss=s.shakeBoss;
@@ -1326,11 +1329,95 @@ function stepClassicP2(p, inp, dt, chaseMode){   // P2's move / timers / ammo / 
     else { Sound.empty(); p.cd=0.25; } }
   return inp.fire && p.ammo>0;
 }
+
+/* ===== BOT ALLIES (0–4) — AI soldiers on your side in NORMAL, CO-OP NORMAL, OPEN WORLD, DEFENSE and CO-OP DEFENSE.
+   They can't be hurt and zombies ignore them (they can't lose you the game); their kills count for your team. ===== */
+let bots=[], botsKind=null;
+const BOT_COLS=['#9fe27f','#ff9ad6','#c79bff','#ffb15a'];
+function botsOn(kind){
+  if(!bots.length || botsKind!==kind || mode==='campaign' || mode==='net') return false;
+  if(kind==='classic') return !explore && !!player && (state===STATE.PLAY || state===STATE.PAUSE || state===STATE.WAVE || state===STATE.DEATH);
+  if(kind==='field')   return !!explore && !explore.coop && !!player;
+  if(kind==='codef')   return !!codef;
+  return false;
+}
+function spawnBots(kind){
+  bots=[]; botsKind=null;
+  const n=Math.max(0, Math.min(4, settings.bots|0)); if(!n || mode==='campaign' || mode==='net') return;
+  botsKind=kind;
+  const anchor = kind==='codef' ? ((codef.players||[codef.p1,codef.p2]).filter(Boolean)[0]) : player;
+  for(let i=0;i<n;i++){
+    const b=makePlayer(); b.isBot=true; b.botIdx=i; b.cd=0.3+i*0.15; b.ammo=99; b.aim=-Math.PI/2;
+    if(kind==='classic'){ b.x=clamp(W/2-b.w/2+(i%2?1:-1)*(150+Math.floor(i/2)*55), 8, W-b.w-8); b.y=H-84; }
+    else if(anchor){ const a=i*1.571+0.785; b.x=anchor.x+Math.cos(a)*90; b.y=anchor.y+Math.sin(a)*90; }
+    bots.push(b);
+  }
+}
+function botTimers(b, dt){ if(b.cd>0) b.cd-=dt; if(b.recoil>0) b.recoil-=dt*6; }
+function tickBotsClassic(dt){   // NORMAL: line up along the bottom, each bot takes the most dangerous zombie nobody else has
+  const tgts=zombies.filter(z=>z.alive); if(boss && !boss.dead) tgts.push(boss);
+  const taken=new Set();
+  for(const b of bots){
+    botTimers(b, dt);
+    let best=null, bs=-1e9;
+    for(const z of tgts){ if(taken.has(z) && tgts.length>bots.length) continue;
+      const sc=(z.y+z.h) - Math.abs((z.x+z.w/2)-(b.x+b.w/2))*0.3; if(sc>bs){ bs=sc; best=z; } }
+    if(best) taken.add(best);
+    const tx = best ? best.x+best.w/2 : W/2+(b.botIdx-1.5)*80;
+    const dx = tx-(b.x+b.w/2), mv = Math.abs(dx)>6 ? Math.sign(dx) : 0;
+    b.x=clamp(b.x+mv*230*dt, 8, W-b.w-8); b.y=H-84;
+    for(const o of classicPlayers().concat(bots)){ if(o===b) continue;   // keep shoulder room: never stand on top of another soldier
+      const ox=(b.x+b.w/2)-(o.x+o.w/2); if(Math.abs(ox)<42 && Math.abs(b.y-o.y)<40) b.x=clamp(b.x+(ox>=0?1:-1)*(42-Math.abs(ox))*0.5, 8, W-b.w-8); }
+    b.moving=mv!==0; if(b.moving) b.walkT+=dt*11;
+    if(best && Math.abs(dx)<22 && best.y>-10 && b.cd<=0){ fire(b); b.cd=0.42+Math.random()*0.12; }
+  }
+}
+function tickBotsField(dt, anchorOf, bossList){   // OPEN WORLD / DEFENSE / CO-OP DEFENSE: stay round a player, shoot the nearest threat
+  for(const b of bots){
+    botTimers(b, dt);
+    const a=anchorOf(b); if(!a) continue;
+    const slot=b.botIdx*1.571+0.785, sx=a.x+a.w/2+Math.cos(slot)*95, sy=a.y+a.h/2+Math.sin(slot)*95;
+    const bx=b.x+b.w/2, by=b.y+b.h/2;
+    let best=null, bd=430;
+    for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot(z.x+z.w/2-bx, z.y+z.h/2-by); if(d<bd){ bd=d; best=z; } }
+    for(const bo of (bossList||[])){ if(!bo||bo.dead) continue; const d=Math.hypot(bo.x+bo.w/2-bx, bo.y+bo.h/2-by); if(d<bd){ bd=d; best=bo; } }
+    const mx=sx-bx, my=sy-by, md=Math.hypot(mx,my);
+    let vx=0, vy=0; if(md>30){ vx=mx/md; vy=my/md; }
+    const sp=(md>260?1.15:0.8)*b.speed;   // catch up quickly if you've run off
+    b.x+=vx*sp*dt; b.y+=vy*sp*dt; b.moving=md>30; if(b.moving) b.walkT+=dt*11;
+    if(best){ b.aim=Math.atan2(best.y+best.h/2-by, best.x+best.w/2-bx); if(b.cd<=0){ exploreFire(b); b.cd=0.36+Math.random()*0.12; } }
+    else if(b.moving) b.aim=Math.atan2(vy,vx);
+  }
+}
+function drawBots(faceAim){
+  for(const b of bots){ drawPlayerObj(b, faceAim);
+    const x=b.x+b.w/2, y=b.y-12, col=BOT_COLS[b.botIdx%4], txt='BOT '+(b.botIdx+1);
+    ctx.save(); ctx.font='bold 10px '+CF; ctx.textAlign='center'; ctx.textBaseline='middle';
+    const w=ctx.measureText(txt).width+12;
+    ctx.fillStyle='rgba(6,10,14,.7)'; roundRectPath(x-w/2, y-7, w, 14, 7); ctx.fill();
+    ctx.strokeStyle=col; ctx.lineWidth=1.3; roundRectPath(x-w/2, y-7, w, 14, 7); ctx.stroke();
+    ctx.fillStyle=col; ctx.fillText(txt, x, y+1); ctx.restore(); }
+}
+// the BOTS picker (PLAY and DEFENSE setup screens)
+function botBtnRects(y){ return [0,1,2,3,4].map(n=>({n, x:W/2-68+n*40, y, w:34, h:22, bot:true})); }
+function drawBotPicker(y){
+  ctx.save(); ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillStyle='#c9e6b0'; ctx.font='bold 12px '+CF;
+  ctx.fillText('BOT ALLIES', W/2-78, y+11);
+  ctx.textAlign='center';
+  for(const b of botBtnRects(y)){ const sel=(settings.bots|0)===b.n;
+    ctx.fillStyle=sel?'#2a7d46':'rgba(255,255,255,.07)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=sel?'#7ee06a':'rgba(255,255,255,.22)'; roundRectPath(b.x,b.y,b.w,b.h,8); ctx.stroke();
+    ctx.fillStyle=sel?'#fff':'#9fb0a0'; ctx.font='bold 14px '+CF; ctx.fillText(''+b.n, b.x+b.w/2, b.y+b.h/2+1); }
+  ctx.restore();
+}
+function botPickerTap(p, y){ for(const b of botBtnRects(y)){ if(inRect(p,b)){ settings.bots=b.n; saveSettings(); Sound.hit(); toast(b.n?(b.n+' BOT ALL'+(b.n>1?'IES':'Y')+' WILL FIGHT WITH YOU'):'NO BOTS'); return true; } } return false; }
+const BOT_ROW_PLAY=459, BOT_ROW_DEF=300;
 function startCoopNormal(){
   startGame();
   wasCoopNormal=true;
   player2=makePlayer(); player2._mate=player;
   player.x=W/2-player.w/2-70; player2.x=W/2-player2.w/2+70;
+  spawnBots('classic');
   toast('CO-OP — P1: WASD + SPACE · P2: ARROWS + ENTER');
 }
 let bloodPools=[];   // blood spilling on the floor (basic-zombie EXTRA gore only)
@@ -2025,6 +2112,7 @@ function startGame(){
   buildBarricades();
   buildWave(wave);
   state=STATE.PLAY;
+  spawnBots('classic');
   toast('WAVE 1 — INCOMING!');
 }
 
@@ -2426,6 +2514,7 @@ function updatePlay(dt){
     else { Sound.empty(); p.cd=0.25; } // dry click when out of ammo
   }
   if(coopOn()) stepClassicP2(player2, classicP2Input(), dt, false);   // co-op: the second soldier
+  if(botsOn('classic')) tickBotsClassic(dt);   // bot allies
 
   // ---- player bullets ----
   for(const b of bullets){
@@ -2953,6 +3042,7 @@ function exploreFire(p){
   spawnParticles(cx,cy,'#ffe14b',3,180);
 }
 function updateExplore(dt){
+  if(botsOn('field')) tickBotsField(dt, ()=>player, explore.bosses);   // bot allies stick with you
   const p=player, ex=explore; if(!p||!ex) return;
   if(ex.coop && ex.split){ updateOpenCoop(dt); return; }
   if(ex.defense){ updateDefense(dt); return; }
@@ -3144,6 +3234,7 @@ function setupEndless(){
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
   zombies=[];
   endlessSpawn(6);
+  spawnBots('field');
   state=STATE.PLAY; toast('OPEN WORLD — SURVIVE!');
 }
 function endlessSpawn(n){
@@ -3511,6 +3602,7 @@ function setupDefense(){
   bullets=[]; ebullets=[]; powerups=[]; particles=[]; bloodPools=[]; chase=null; boss=null;
   zombies=[];
   defSpawn(5);
+  spawnBots('field');
   state=STATE.PLAY; toast('DEFENSE — PROTECT THE FLAG!');
 }
 let preMissionDiff=1;   // difficulty before a forced-difficulty campaign mission (restored on exit)
@@ -4653,7 +4745,9 @@ function drawGun(p, artHasGun){
   ctx.imageSmoothingEnabled=true;
 }
 
-function drawPlayer(){ drawPlayerObj(player, !!explore);
+function drawPlayer(){
+  if(botsOn('classic') || botsOn('field')) drawBots(!!explore);
+  drawPlayerObj(player, !!explore);
   if(coopOn()){ drawPlayerObj(player2, false); coopTag(player, 'P1', '#7fe0ff'); coopTag(player2, 'P2', '#ffd06a'); } }
 function coopTag(p, label, col){   // co-op: who's who, plus that soldier's ammo
   const x=p.x+p.w/2, y=p.y-12, txt=label+'  '+(p.ammo>0?p.ammo:'—');
@@ -7220,6 +7314,7 @@ function startLocalCoop(){
   zombies=[]; bullets=[]; ebullets=[]; particles=[]; bloodPools=[]; boss=null;
   padPrev=[{},{},{},{}];
   coopSpawn(5);
+  spawnBots('codef');
   state=STATE.COOPDEF; toast('SPLIT-SCREEN CO-OP ('+n+'P) — protect the flag together!');
 }
 // read the idx-th CONNECTED controller with its own edge-detection state.
@@ -7287,6 +7382,7 @@ function updateCoopLocal(dt){
     if(cs[i].cmdU) defBuyOrEquip(ps[i], cd, defWeaponBtns[0]); if(cs[i].cmdD) defBuyOrEquip(ps[i], cd, defWeaponBtns[1]);
   }
   coopSimWorld(dt);
+  if(botsOn('codef')) tickBotsField(dt, b=>{ const up=ps.filter(q=>!q.down); return up[b.botIdx%Math.max(1,up.length)]||cd.flag&&{x:cd.flag.x-24,y:cd.flag.y-24,w:48,h:48}; }, cd.bosses);   // bot allies
   if(cd.over || cd.flag.hp<=0) coopDefEnd(cd.kills);
 }
 function localGloom(rx,ry,rw,rh,k){ k=(k==null)?1:k;
@@ -7357,6 +7453,7 @@ function drawCoopDefLocal(){
     drawDefenseSpikes(cd); drawDefenseFlag(cd); drawDefenseWalls(cd); drawDefenseTurrets(cd); drawDefensePlasma(cd);
     drawZombies(); drawDefenseBoss(cd); drawBullets();
     for(const q of ps) drawPlayerObj(q, true);
+    if(botsOn('codef')) drawBots(true);
     drawParticles();
     if(hv.pl){ const gt=BUILD_BAR[(hv.pl.buildSel||0)].type; if(gt) drawBuildGhost(cd, hv.pl, gt, true); }   // each player sees their selected build's ghost
     ctx.restore();
@@ -10227,6 +10324,7 @@ function drawPlayPick(){
   drawPlayBtn(playDefenseBtn, '#2f7ad1','#1c559e','#7fb0ff','DEFENSE', 'buy turrets & walls · protect the flag');
   drawPlayBtn(playAIBtn, '#9f5ad1','#6f3aa0','#c79bff','SHOOTOUT vs AI', 'solo 1v1 duel against a bot');
   drawPlayBtn(playSplitBtn, '#7a4bd6','#4f2f9e','#b48bff','SPLIT SCREEN', 'co-op or versus · 2-4 controllers, 1 screen');
+  drawBotPicker(BOT_ROW_PLAY);
   drawDiffSelector();
 }
 function drawSplitPick(){
@@ -10321,6 +10419,7 @@ function drawDefSetup(){
     ctx.lineWidth=2; ctx.strokeStyle=sel?'#7fb0ff':'rgba(255,255,255,.22)'; roundRectPath(b.x,b.y,b.w,b.h,10); ctx.stroke();
     ctx.fillStyle=sel?'#fff':'#9fb0c9'; ctx.font='bold 15px '+CF; ctx.textBaseline='middle'; ctx.fillText(label, b.x+b.w/2, b.y+b.h/2+1); ctx.textBaseline='alphabetic'; }
   ctx.fillStyle='rgba(220,230,245,.5)'; ctx.font='11px '+CF; ctx.fillText(defKillLimit>0?('win at '+defKillLimit+' kills'):'survive as long as you can', W/2, 244);
+  drawBotPicker(BOT_ROW_DEF);
   drawDiffSelector();
   const s=defStartBtn, g=ctx.createLinearGradient(0,s.y,0,s.y+s.h); g.addColorStop(0,'#7ee06a'); g.addColorStop(1,'#3ea22f');
   ctx.fillStyle=g; roundRectPath(s.x,s.y,s.w,s.h,14); ctx.fill();
