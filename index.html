@@ -1365,28 +1365,82 @@ function tickBotsClassic(dt){   // NORMAL: line up along the bottom, each bot ta
     if(best) taken.add(best);
     const tx = best ? best.x+best.w/2 : W/2+(b.botIdx-1.5)*80;
     const dx = tx-(b.x+b.w/2), mv = Math.abs(dx)>6 ? Math.sign(dx) : 0;
-    b.x=clamp(b.x+mv*230*dt, 8, W-b.w-8); b.y=H-84;
+    b.x=clamp(b.x+mv*b.speed*0.85*dt, 8, W-b.w-8); b.y=H-84;
     for(const o of classicPlayers().concat(bots)){ if(o===b) continue;   // keep shoulder room: never stand on top of another soldier
       const ox=(b.x+b.w/2)-(o.x+o.w/2); if(Math.abs(ox)<42 && Math.abs(b.y-o.y)<40) b.x=clamp(b.x+(ox>=0?1:-1)*(42-Math.abs(ox))*0.5, 8, W-b.w-8); }
     b.moving=mv!==0; if(b.moving) b.walkT+=dt*11;
-    if(best && Math.abs(dx)<22 && best.y>-10 && b.cd<=0){ fire(b); b.cd=0.42+Math.random()*0.12; }
+    botPushZombies(b);
+    if(best && Math.abs(dx)<22 && best.y>-10 && b.cd<=0){ fire(b); b.cd=botFireCd(b); }
   }
 }
-function tickBotsField(dt, anchorOf, bossList){   // OPEN WORLD / DEFENSE / CO-OP DEFENSE: stay round a player, shoot the nearest threat
+function botFireCd(b){   // the same fire rates a human gets
+  const base=b.permRapid?0.11:0.28;
+  return (b.weapon==='spread' ? base*2.9 : base)+Math.random()*0.03;
+}
+function botPushZombies(b){   // a bot is a solid body: zombies bump against it instead of walking through
+  const bx=b.x+b.w/2, by=b.y+b.h/2;
+  for(const z of zombies){ if(!z.alive) continue;
+    const dx=z.x+z.w/2-bx, dy=z.y+z.h/2-by, d=Math.hypot(dx,dy), min=(b.w+z.w)*0.45;
+    if(d<min){ const push=min-(d||0.001), ux=d>0.001?dx/d:0, uy=d>0.001?dy/d:-1; z.x+=ux*push; z.y+=uy*push; } }
+}
+function tickBotsField(dt, anchorOf, bossList){   // OPEN WORLD / DEFENSE / CO-OP DEFENSE: bots play like people
+  const zone=botsKind==='codef'?codef:explore, flag=zone&&zone.flag;   // defense modes: guard the flag; open world: stay with a player
+  const move=botsKind==='codef'?codefMove:(zone&&zone.defense?defMove:null);
+  const others=(zone&&zone.players)?zone.players:(botsKind==='codef'?[zone.p1,zone.p2]:[player]);
   for(const b of bots){
     botTimers(b, dt);
     const a=anchorOf(b); if(!a) continue;
-    const slot=b.botIdx*1.571+0.785, sx=a.x+a.w/2+Math.cos(slot)*95, sy=a.y+a.h/2+Math.sin(slot)*95;
     const bx=b.x+b.w/2, by=b.y+b.h/2;
-    let best=null, bd=430;
-    for(const z of zombies){ if(!z.alive) continue; const d=Math.hypot(z.x+z.w/2-bx, z.y+z.h/2-by); if(d<bd){ bd=d; best=z; } }
-    for(const bo of (bossList||[])){ if(!bo||bo.dead) continue; const d=Math.hypot(bo.x+bo.w/2-bx, bo.y+bo.h/2-by); if(d<bd){ bd=d; best=bo; } }
-    const mx=sx-bx, my=sy-by, md=Math.hypot(mx,my);
-    let vx=0, vy=0; if(md>30){ vx=mx/md; vy=my/md; }
-    const sp=(md>260?1.15:0.8)*b.speed;   // catch up quickly if you've run off
-    b.x+=vx*sp*dt; b.y+=vy*sp*dt; b.moving=md>30; if(b.moving) b.walkT+=dt*11;
-    if(best){ b.aim=Math.atan2(best.y+best.h/2-by, best.x+best.w/2-bx); if(b.cd<=0){ exploreFire(b); b.cd=0.36+Math.random()*0.12; } }
-    else if(b.moving) b.aim=Math.atan2(vy,vx);
+    const hx=flag?flag.x:a.x+a.w/2, hy=flag?flag.y:a.y+a.h/2, leash=flag?470:380;   // the area this bot looks after
+    // reaction time: re-think a few times a second, not every frame
+    b.thinkT=(b.thinkT||0)-dt;
+    if(b.thinkT<=0){ b.thinkT=0.16+Math.random()*0.16; let best=null, bs=1e9;
+      const score=(t)=>{ const tx=t.x+t.w/2, ty=t.y+t.h/2, d=Math.hypot(tx-bx,ty-by); if(d>600) return 1e9;
+        return d+Math.hypot(tx-hx,ty-hy)*(flag?0.6:0.2); };   // close to me, and most dangerous to what we're protecting
+      for(const z of zombies){ if(!z.alive) continue; const sc=score(z); if(sc<bs){ bs=sc; best=z; } }
+      for(const bo of (bossList||[])){ if(!bo||bo.dead) continue; const sc=score(bo)-120; if(sc<bs){ bs=sc; best=bo; } }
+      b.tgt=best; }
+    const t=(b.tgt && (b.tgt.alive||(b.tgt.hp>0 && !b.tgt.dead))) ? b.tgt : null;
+    let mx=0, my=0;
+    // keep away from anything getting close — people back up and shoot
+    let ax=0, ay=0, crowd=0;
+    for(const z of zombies){ if(!z.alive) continue; const dx=bx-(z.x+z.w/2), dy=by-(z.y+z.h/2), d=Math.hypot(dx,dy);
+      if(d<175){ const w=(175-d)/175; ax+=dx/(d||1)*w; ay+=dy/(d||1)*w; crowd+=w; } }
+    if(crowd>0){ const l=Math.hypot(ax,ay)||1; mx+=ax/l*Math.min(1.6,0.7+crowd); my+=ay/l*Math.min(1.6,0.7+crowd); }
+    b.sideT=(b.sideT||0)-dt;
+    if(b.sideT<=0){ b.sideT=0.9+Math.random()*1.6; b.side=Math.random()<0.5?1:-1; }
+    if(t){   // hold a shooting distance and sidestep, like a player does
+      const tx=t.x+t.w/2-bx, ty=t.y+t.h/2-by, d=Math.hypot(tx,ty)||1, ux=tx/d, uy=ty/d;
+      if(d>330){ mx+=ux; my+=uy; } else if(d<230){ mx-=ux*0.8; my-=uy*0.8; }
+      mx+=-uy*(b.side||1)*0.55; my+=ux*(b.side||1)*0.55;
+    } else {   // nothing to shoot: wander to a new spot nearby, and sometimes just stand there
+      b.roamT=(b.roamT||0)-dt;
+      if(b.roamT<=0 || b.roamX==null){ b.roamT=1.5+Math.random()*2.5; const ra=Math.random()*6.283, rr=110+Math.random()*190; b.roamX=hx+Math.cos(ra)*rr; b.roamY=hy+Math.sin(ra)*rr; b.roamStop=Math.random()<0.25; }
+      const rx=b.roamX-bx, ry=b.roamY-by, rd=Math.hypot(rx,ry);
+      if(rd>26 && !b.roamStop){ mx+=rx/rd; my+=ry/rd; }
+    }
+    // don't wander off from what we're protecting
+    const hdx=hx-bx, hdy=hy-by, hd=Math.hypot(hdx,hdy);
+    if(hd>leash){ const k=Math.min(2,(hd-leash)/120+0.6); mx+=hdx/hd*k; my+=hdy/hd*k; }
+    // give the other soldiers room
+    for(const o of others.concat(bots)){ if(!o||o===b||o.down) continue; const dx=bx-(o.x+o.w/2), dy=by-(o.y+o.h/2), d=Math.hypot(dx,dy);
+      if(d<70){ mx+=dx/(d||1)*(70-d)/70*1.2; my+=dy/(d||1)*(70-d)/70*1.2; } }
+    const ml=Math.hypot(mx,my), wasX=b.x, wasY=b.y;
+    if(ml>0.12){ const nx=mx/Math.max(1,ml), ny=my/Math.max(1,ml), sp=b.speed*0.92;
+      if(move) move(b,nx,ny,dt,sp); else { b.x+=nx*sp*dt; b.y+=ny*sp*dt; }
+      b.moving=(b.x!==wasX||b.y!==wasY); if(b.moving) b.walkT+=dt*11;
+      if(!b.moving){ b.side=-(b.side||1); b.roamX=null; }   // walked into a wall: try another way
+    } else b.moving=false;
+    botPushZombies(b);
+    // aim: the gun swings round quickly (not instantly), with a little human wobble; only fire once it's on target
+    let want=null;
+    if(t) want=Math.atan2(t.y+t.h/2-by, t.x+t.w/2-bx);
+    else if(b.moving) want=Math.atan2(my,mx);
+    if(want!=null){ if(b.aim==null) b.aim=want;
+      const da=Math.atan2(Math.sin(want-b.aim),Math.cos(want-b.aim)), turn=11*dt;
+      b.aim+=Math.abs(da)<turn?da:Math.sign(da)*turn;
+      if(t && Math.abs(da)<0.16 && b.cd<=0 && Math.hypot(t.x+t.w/2-bx,t.y+t.h/2-by)<560){
+        const keep=b.aim; b.aim=keep+(Math.random()-0.5)*0.05; exploreFire(b); b.aim=keep; b.cd=botFireCd(b); } }
   }
 }
 function drawBots(faceAim){
@@ -3580,9 +3634,13 @@ function defEquipWeapon(pl, wp){
 function defBuyOrEquip(pl, ex, b){
   ex.ownedWeapons=ex.ownedWeapons||{};
   if(!ex.ownedWeapons[b.wp]){
-    if(ex.cash>=b.cost){ ex.cash-=b.cost; ex.ownedWeapons[b.wp]=true; defEquipWeapon(pl,b.wp); Sound.power(); toast(b.label+' BOUGHT!'); }
+    if(ex.cash>=b.cost){ ex.cash-=b.cost; ex.ownedWeapons[b.wp]=true; defEquipWeapon(pl,b.wp); botsArmLike(pl); Sound.power(); toast(b.label+' BOUGHT!'+(bots.length?' (bots too)':'')); }
     else { toast('NOT ENOUGH $'); Sound.empty(); }
-  } else defEquipWeapon(pl,b.wp);
+  } else { defEquipWeapon(pl,b.wp); botsArmLike(pl); }
+}
+function botsArmLike(pl){   // defense: your bot allies carry whatever gun you buy / switch to
+  if(!(botsOn('field') || botsOn('codef'))) return;
+  for(const b of bots){ b.permRapid=pl.permRapid; b.permSpread=pl.permSpread; b.weapon=pl.weapon; b.rapidT=0; }
 }
 function layoutBuildBar(){
   const n=BUILD_BAR.length, gap=5, bw=Math.min(80,(W-14-gap*(n-1))/n), total=n*bw+gap*(n-1), x0=(W-total)/2, y=6, h=44;
